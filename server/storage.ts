@@ -1,38 +1,74 @@
-import { type User, type InsertUser } from "@shared/schema";
-import { randomUUID } from "crypto";
-
-// modify the interface with any CRUD methods
-// you might need
+import { db } from "./db";
+import {
+  places, reviews, signatures,
+  type Place, type InsertPlace,
+  type Review, type InsertReview,
+  type Signature
+} from "@shared/schema";
+import { eq, desc, sql } from "drizzle-orm";
 
 export interface IStorage {
-  getUser(id: string): Promise<User | undefined>;
-  getUserByUsername(username: string): Promise<User | undefined>;
-  createUser(user: InsertUser): Promise<User>;
+  // Places
+  getPlaces(): Promise<Place[]>;
+  getPlace(id: number): Promise<Place | undefined>;
+  createPlace(place: InsertPlace): Promise<Place>;
+  searchPlaces(query: string): Promise<Place[]>;
+
+  // Reviews
+  getReviews(placeId?: number): Promise<Review[]>;
+  createReview(review: InsertReview): Promise<Review>;
+
+  // Petition
+  signPetition(): Promise<number>;
+  getPetitionCount(): Promise<number>;
 }
 
-export class MemStorage implements IStorage {
-  private users: Map<string, User>;
-
-  constructor() {
-    this.users = new Map();
+export class DatabaseStorage implements IStorage {
+  async getPlaces(): Promise<Place[]> {
+    return await db.select().from(places).orderBy(desc(places.updatedAt));
   }
 
-  async getUser(id: string): Promise<User | undefined> {
-    return this.users.get(id);
+  async getPlace(id: number): Promise<Place | undefined> {
+    const [place] = await db.select().from(places).where(eq(places.id, id));
+    return place;
   }
 
-  async getUserByUsername(username: string): Promise<User | undefined> {
-    return Array.from(this.users.values()).find(
-      (user) => user.username === username,
+  async createPlace(place: InsertPlace): Promise<Place> {
+    const [newPlace] = await db.insert(places).values(place).returning();
+    return newPlace;
+  }
+
+  async searchPlaces(query: string): Promise<Place[]> {
+    const lowercaseQuery = query.toLowerCase();
+    // Simple search - in a real app use ILIKE or TSVECTOR
+    // Drizzle with SQLite doesn't strictly have ILIKE everywhere, but this is PG.
+    // We can use sql`...` for ILIKE.
+    return await db.select().from(places).where(
+      sql`lower(${places.name}) LIKE ${`%${lowercaseQuery}%`}`
     );
   }
 
-  async createUser(insertUser: InsertUser): Promise<User> {
-    const id = randomUUID();
-    const user: User = { ...insertUser, id };
-    this.users.set(id, user);
-    return user;
+  async getReviews(placeId?: number): Promise<Review[]> {
+    if (placeId) {
+      return await db.select().from(reviews).where(eq(reviews.placeId, placeId)).orderBy(desc(reviews.createdAt));
+    }
+    return await db.select().from(reviews).orderBy(desc(reviews.createdAt));
+  }
+
+  async createReview(review: InsertReview): Promise<Review> {
+    const [newReview] = await db.insert(reviews).values(review).returning();
+    return newReview;
+  }
+
+  async signPetition(): Promise<number> {
+    await db.insert(signatures).values({});
+    return this.getPetitionCount();
+  }
+
+  async getPetitionCount(): Promise<number> {
+    const [result] = await db.select({ count: sql<number>`count(*)` }).from(signatures);
+    return Number(result.count);
   }
 }
 
-export const storage = new MemStorage();
+export const storage = new DatabaseStorage();
