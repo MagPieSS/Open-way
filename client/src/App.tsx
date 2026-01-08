@@ -4,6 +4,7 @@ import { QueryClientProvider } from "@tanstack/react-query";
 import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { Navigation } from "@/components/Navigation";
+import { Footer } from "@/components/Footer";
 import { useSettings } from "@/hooks/use-settings";
 import { useEffect } from "react";
 
@@ -54,11 +55,7 @@ function AppContent() {
       <main className="flex-grow pt-16">
         <Router />
       </main>
-      <footer className="bg-secondary py-8 border-t border-border">
-        <div className="max-w-7xl mx-auto px-4 text-center text-muted-foreground">
-          <p>© 2024 Open Way. Built for everyone.</p>
-        </div>
-      </footer>
+      <Footer />
     </div>
   );
 }
