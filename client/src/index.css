@@ -5,40 +5,45 @@
 @tailwind utilities;
 
 :root {
-  /* High contrast, accessible palette */
   --font-display: 'Lexend', sans-serif;
   --font-body: 'Atkinson Hyperlegible', sans-serif;
 
-  --background: 0 0% 100%;
+  --background: 220 20% 97%;
   --foreground: 222 47% 11%;
 
-  /* High contrast primary blue */
-  --primary: 221 83% 40%; 
-  --primary-foreground: 210 40% 98%;
+  --primary: 243 75% 59%; /* Indigo */
+  --primary-foreground: 0 0% 100%;
 
-  /* Soft secondary */
   --secondary: 210 40% 96%;
   --secondary-foreground: 222 47% 11%;
 
   --muted: 210 40% 96%;
   --muted-foreground: 215 16% 47%;
   
-  --accent: 34 90% 60%; /* Warm yellow/orange for highlights */
-  --accent-foreground: 222 47% 11%;
+  --accent: 330 81% 60%; /* Pink */
+  --accent-foreground: 0 0% 100%;
 
   --destructive: 0 84% 60%;
   --destructive-foreground: 210 40% 98%;
 
-  --border: 214 32% 85%; /* Slightly darker for better contrast */
-  --input: 214 32% 85%;
-  --ring: 221 83% 40%;
+  --border: 214 32% 91%;
+  --input: 214 32% 91%;
+  --ring: 243 75% 59%;
+
+  --card: 0 0% 100%;
+  --card-foreground: 222 47% 11%;
+  --card-border: 214 32% 91%;
+
+  --popover: 0 0% 100%;
+  --popover-foreground: 222 47% 11%;
+  --popover-border: 214 32% 91%;
 
   --radius: 0.75rem;
 
   /* Status Colors (HSL) */
-  --status-accessible: 142 76% 36%; /* High contrast green */
-  --status-partial: 38 92% 50%; /* High contrast yellow/orange */
-  --status-not-accessible: 0 72% 51%; /* High contrast red */
+  --status-accessible: 142 76% 36%; /* Green */
+  --status-partial: 45 93% 47%; /* Yellow */
+  --status-not-accessible: 0 72% 51%; /* Red */
 }
 
 /* Dark Mode Overrides */
@@ -46,20 +51,29 @@
   --background: 222 47% 11%;
   --foreground: 210 40% 98%;
 
-  --primary: 217 91% 60%;
-  --primary-foreground: 222 47% 11%;
+  --primary: 243 75% 65%;
+  --primary-foreground: 0 0% 100%;
 
-  --secondary: 217 19% 27%;
+  --secondary: 217 19% 20%;
   --secondary-foreground: 210 40% 98%;
 
-  --muted: 217 19% 27%;
+  --muted: 217 19% 20%;
   --muted-foreground: 215 20% 65%;
 
-  --accent: 34 90% 60%;
-  --accent-foreground: 222 47% 11%;
+  --accent: 330 81% 65%;
+  --accent-foreground: 0 0% 100%;
 
   --border: 217 19% 27%;
   --input: 217 19% 27%;
+  --ring: 243 75% 65%;
+
+  --card: 222 47% 15%;
+  --card-foreground: 210 40% 98%;
+  --card-border: 217 19% 27%;
+
+  --popover: 222 47% 15%;
+  --popover-foreground: 210 40% 98%;
+  --popover-border: 217 19% 27%;
 }
 
 /* High Contrast Mode Overrides */
@@ -75,13 +89,19 @@
   --border: 0 0% 100%;
   --input: 0 0% 100%;
   --ring: 60 100% 50%;
+  --card: 0 0% 10%;
+  --card-foreground: 0 0% 100%;
+  --card-border: 0 0% 100%;
+  --popover: 0 0% 10%;
+  --popover-foreground: 0 0% 100%;
+  --popover-border: 0 0% 100%;
 }
 
 @layer base {
   body {
     @apply bg-background text-foreground antialiased;
     font-family: var(--font-body);
-    font-size: 1.125rem; /* Larger base font size for readability */
+    font-size: 1.125rem;
     line-height: 1.6;
   }
 
@@ -105,3 +125,19 @@
 .text-accessible { color: hsl(var(--status-accessible)); }
 .text-partial { color: hsl(var(--status-partial)); }
 .text-not-accessible { color: hsl(var(--status-not-accessible)); }
+
+/* Dropdown animation */
+@keyframes dropdown-in {
+  from {
+    opacity: 0;
+    transform: translateY(-8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.animate-dropdown {
+  animation: dropdown-in 0.2s ease-out;
+}

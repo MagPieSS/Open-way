@@ -51,10 +51,10 @@ function AppContent() {
   return (
     <div className="flex flex-col min-h-screen">
       <Navigation />
-      <main className="flex-grow">
+      <main className="flex-grow pt-16">
         <Router />
       </main>
-      <footer className="bg-secondary py-12 border-t border-border">
+      <footer className="bg-secondary py-8 border-t border-border">
         <div className="max-w-7xl mx-auto px-4 text-center text-muted-foreground">
           <p>© 2024 Open Way. Built for everyone.</p>
         </div>
