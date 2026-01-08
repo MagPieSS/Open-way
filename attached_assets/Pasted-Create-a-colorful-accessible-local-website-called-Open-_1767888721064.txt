@@ -1,0 +1,155 @@
+Create a colorful, accessible local website called "Open Way" with the slogan
+"Move Your Way!"
+
+This project is a working front-end prototype built using:
+- HTML
+- CSS
+- JavaScript
+- Local JSON data and browser localStorage
+(No paid APIs required)
+
+Purpose:
+Open Way helps disabled individuals find, review, and share information
+about places in Philadelphia that are accessible, partially accessible,
+or not accessible. The platform emphasizes lived experience, community
+voices, and advocacy for better accessibility.
+
+--------------------------------
+GLOBAL DESIGN & ACCESSIBILITY
+--------------------------------
+- High-contrast, colorful, accessible design
+- Large, readable fonts
+- Clear text labels for all buttons and inputs
+- Keyboard-friendly navigation
+- Color-coded accessibility statuses:
+  Green = Accessible
+  Yellow = Partially Accessible
+  Red = Not Accessible
+
+--------------------------------
+HEADER / NAVIGATION
+--------------------------------
+- Fixed header on all pages
+- Top-left corner contains:
+  - A heart-shaped logo with a small navigation/location sign inside it
+  - Logo is clickable and returns users to the Home page
+- Navigation links:
+  Home | Places | Community | Submit | Petition | About | Settings
+
+--------------------------------
+PAGES TO INCLUDE
+--------------------------------
+
+1. Home Page
+   - App name "Open Way"
+   - Slogan "Move Your Way!"
+   - Heart + navigation sign logo
+   - Short mission statement
+   - Call-to-action buttons (Explore Places, Share a Review)
+
+2. Places Page (Core Feature)
+   - Display a list of places with:
+     - Name
+     - Category
+     - Accessibility status
+     - Short description
+     - At least one photo per place
+     - Last updated date
+   - Include a working search bar to filter places by name
+   - Allow users to view uploaded photos and read community reviews
+   - Gracefully handle missing photos or reviews
+
+   Include the following starter places and statuses:
+
+   - SEPTA Train Stations
+     Category: Transportation
+     Accessibility Status: Partially Accessible
+     Description: Some stations have elevators or ramps, but access varies
+     Include representative station photos
+
+   - Philadelphia Museum of Art
+     Category: Museum
+     Accessibility Status: Not Accessible
+     Description: Limited accessible entrances and challenging stair access
+     Include a photo of the building
+
+   - Free Library of Philadelphia
+     Category: Library
+     Accessibility Status: Partially Accessible
+     Description: Some accessible features are available, but barriers remain
+     Include a photo of the building
+
+   - Parkway Central Library
+     Category: Library
+     Accessibility Status: Not Accessible
+     Description: Major accessibility barriers reported by community members
+     Include a photo of the building
+
+3. Submit / Review Page
+   - Form allowing users to:
+     - Add or update places
+     - Write accessibility-focused reviews
+     - Upload one or more photos
+   - Submitted data updates:
+     - Places page
+     - Community page
+   - Automatically attach submission date
+
+4. Community Page
+   - Display a feed of community-submitted reviews
+   - Each entry shows:
+     - Place name
+     - Review text
+     - Uploaded photo (if available)
+     - Date submitted
+   - Emphasize lived experience and trust
+
+5. Petition Page
+   - Explain why accessibility matters in Philadelphia
+   - Advocacy message
+   - Petition section with:
+     - Sign button
+     - Visible counter that increases when signed
+
+6. About Page
+   - Explain:
+     - Why Open Way exists
+     - The problem it solves
+     - Who it is for
+   - Friendly, inclusive tone
+
+7. Settings Page
+   - Include common website settings such as:
+     - High contrast mode
+     - Dark mode / light mode toggle
+     - Text size controls (small / medium / large)
+     - Reduced motion toggle
+     - Font style selection
+     - Reset to default settings
+   - All settings should:
+     - Be clearly labeled
+     - Explain what they change
+     - Persist using localStorage
+
+--------------------------------
+DATA HANDLING
+--------------------------------
+- Use local JavaScript data or JSON files
+- Use browser localStorage to store:
+  - Places
+  - Reviews
+  - Uploaded images or image references
+  - Petition signatures
+  - User settings
+- Starter data should include the listed Philadelphia locations
+
+--------------------------------
+CODE REQUIREMENTS
+--------------------------------
+- Separate HTML, CSS, and JavaScript files
+- Clean, readable, well-commented code
+- Clear comments explaining how data flows between pages
+
+This project should feel like a real, community-centered accessibility
+platform focused on usability, trust, and advocacy rather than
+production-level infrastructure.
