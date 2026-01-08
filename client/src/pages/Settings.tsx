@@ -82,18 +82,24 @@ export default function Settings() {
               </div>
             </div>
             <div className="grid grid-cols-4 gap-2">
-              {(['sm', 'md', 'lg', 'xl'] as const).map((size) => (
+              {([
+                { value: 'sm', label: 'Small' },
+                { value: 'base', label: 'Medium' },
+                { value: 'lg', label: 'Large' },
+                { value: 'xl', label: 'Extra Large' }
+              ] as const).map((size) => (
                 <button
-                  key={size}
-                  onClick={() => setTextSize(size)}
+                  key={size.value}
+                  onClick={() => setTextSize(size.value)}
+                  data-testid={`button-textsize-${size.value}`}
                   className={`
                     py-3 rounded-xl border-2 font-bold transition-all
-                    ${textSize === size 
+                    ${textSize === size.value 
                       ? 'border-primary bg-primary/5 text-primary' 
                       : 'border-border hover:border-primary/30'}
                   `}
                 >
-                  <span className={`text-${size === 'sm' ? 'sm' : size === 'md' ? 'base' : size === 'lg' ? 'lg' : 'xl'}`}>
+                  <span className={`text-${size.value}`}>
                     Aa
                   </span>
                 </button>

@@ -4,11 +4,11 @@ import { persist } from 'zustand/middleware';
 interface SettingsState {
   theme: 'light' | 'dark';
   highContrast: boolean;
-  textSize: 'sm' | 'md' | 'lg' | 'xl';
+  textSize: 'sm' | 'base' | 'lg' | 'xl';
   reducedMotion: boolean;
   setTheme: (theme: 'light' | 'dark') => void;
   toggleHighContrast: () => void;
-  setTextSize: (size: 'sm' | 'md' | 'lg' | 'xl') => void;
+  setTextSize: (size: 'sm' | 'base' | 'lg' | 'xl') => void;
   toggleReducedMotion: () => void;
 }
 
@@ -17,7 +17,7 @@ export const useSettings = create<SettingsState>()(
     (set) => ({
       theme: 'light',
       highContrast: false,
-      textSize: 'md',
+      textSize: 'base',
       reducedMotion: false,
       
       setTheme: (theme) => {
