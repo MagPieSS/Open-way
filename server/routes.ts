@@ -1,14 +1,248 @@
-import type { Express } from "express";
+import type { Express, Request, Response, NextFunction } from "express";
 import type { Server } from "http";
 import { storage } from "./storage";
 import { api } from "@shared/routes";
 import { z } from "zod";
-import { ACCESSIBILITY_STATUS, ACCESSIBILITY_FEATURE_TYPES } from "@shared/schema";
+import { ACCESSIBILITY_STATUS, ACCESSIBILITY_FEATURE_TYPES, insertUserSchema, loginSchema } from "@shared/schema";
+import { 
+  registerUser, 
+  loginUser, 
+  verifyTwoFactor, 
+  toSafeUser,
+  enable2FA,
+  confirm2FA,
+  disable2FA,
+  regenerateBackupCodes
+} from "./auth";
+import { authRateLimiter } from "./index";
+
+// Middleware to check if user is authenticated
+function requireAuth(req: Request, res: Response, next: NextFunction) {
+  if (!req.session.userId) {
+    return res.status(401).json({ message: "Please log in to continue" });
+  }
+  next();
+}
+
+// Input sanitization helper - removes potential XSS and limits length
+function sanitizeString(input: string, maxLength: number = 1000): string {
+  return input
+    .replace(/<[^>]*>/g, "") // Remove HTML tags
+    .replace(/[<>]/g, "") // Remove angle brackets
+    .trim()
+    .slice(0, maxLength);
+}
 
 export async function registerRoutes(
   httpServer: Server,
   app: Express
 ): Promise<Server> {
+
+  // ==================== AUTHENTICATION ROUTES ====================
+
+  // Register a new user
+  app.post("/api/auth/register", authRateLimiter, async (req, res) => {
+    try {
+      const input = insertUserSchema.parse(req.body);
+      
+      // Email is already validated by Zod, just trim it (don't sanitize - would break @ symbol)
+      const result = await registerUser(
+        input.email.trim().toLowerCase(),
+        input.password,
+        input.displayName ? sanitizeString(input.displayName, 100) : undefined
+      );
+
+      if (!result.success) {
+        return res.status(400).json({ message: result.error });
+      }
+
+      // Auto-login after registration
+      req.session.userId = result.user!.id;
+      req.session.email = result.user!.email;
+
+      res.status(201).json({ user: result.user });
+    } catch (err) {
+      if (err instanceof z.ZodError) {
+        return res.status(400).json({ message: err.errors[0].message });
+      }
+      throw err;
+    }
+  });
+
+  // Login
+  app.post("/api/auth/login", authRateLimiter, async (req, res) => {
+    try {
+      const input = loginSchema.parse(req.body);
+      
+      const result = await loginUser(input.email, input.password);
+
+      if (!result.success) {
+        return res.status(401).json({ message: result.error });
+      }
+
+      // Check if 2FA is required
+      if (result.requires2FA) {
+        req.session.pending2FAUserId = result.user!.id;
+        return res.json({ requires2FA: true });
+      }
+
+      // Complete login
+      req.session.userId = result.user!.id;
+      req.session.email = result.user!.email;
+      delete req.session.pending2FAUserId;
+
+      res.json({ user: toSafeUser(result.user!) });
+    } catch (err) {
+      if (err instanceof z.ZodError) {
+        return res.status(400).json({ message: err.errors[0].message });
+      }
+      throw err;
+    }
+  });
+
+  // Verify 2FA code during login
+  app.post("/api/auth/verify-2fa", authRateLimiter, async (req, res) => {
+    const { code } = req.body;
+
+    if (!req.session.pending2FAUserId) {
+      return res.status(400).json({ message: "No pending 2FA verification" });
+    }
+
+    if (!code || typeof code !== "string") {
+      return res.status(400).json({ message: "Verification code is required" });
+    }
+
+    const result = await verifyTwoFactor(req.session.pending2FAUserId, sanitizeString(code, 20));
+
+    if (!result.success) {
+      return res.status(401).json({ message: result.error });
+    }
+
+    // Complete login
+    const user = await storage.getUserById(req.session.pending2FAUserId);
+    req.session.userId = user!.id;
+    req.session.email = user!.email;
+    delete req.session.pending2FAUserId;
+
+    res.json({ user: toSafeUser(user!) });
+  });
+
+  // Logout
+  app.post("/api/auth/logout", (req, res) => {
+    req.session.destroy((err) => {
+      if (err) {
+        return res.status(500).json({ message: "Failed to log out" });
+      }
+      res.clearCookie("openway.sid");
+      res.json({ success: true });
+    });
+  });
+
+  // Get current user
+  app.get("/api/auth/me", async (req, res) => {
+    if (!req.session.userId) {
+      return res.json({ user: null });
+    }
+
+    const user = await storage.getUserById(req.session.userId);
+    if (!user) {
+      req.session.destroy(() => {});
+      return res.json({ user: null });
+    }
+
+    res.json({ user: toSafeUser(user) });
+  });
+
+  // ==================== 2FA MANAGEMENT ROUTES ====================
+
+  // Start 2FA setup
+  app.post("/api/auth/2fa/setup", requireAuth, async (req, res) => {
+    const result = await enable2FA(req.session.userId!, req.session.email!);
+
+    if (!result.success) {
+      return res.status(400).json({ message: result.error });
+    }
+
+    res.json({
+      qrCode: result.qrCode,
+      secret: result.secret,
+      backupCodes: result.backupCodes,
+    });
+  });
+
+  // Confirm 2FA setup
+  app.post("/api/auth/2fa/confirm", requireAuth, authRateLimiter, async (req, res) => {
+    const { code } = req.body;
+
+    if (!code || typeof code !== "string") {
+      return res.status(400).json({ message: "Verification code is required" });
+    }
+
+    const result = await confirm2FA(req.session.userId!, sanitizeString(code, 10));
+
+    if (!result.success) {
+      return res.status(400).json({ message: result.error });
+    }
+
+    res.json({ success: true });
+  });
+
+  // Disable 2FA
+  app.post("/api/auth/2fa/disable", requireAuth, async (req, res) => {
+    await disable2FA(req.session.userId!);
+    res.json({ success: true });
+  });
+
+  // Regenerate backup codes
+  app.post("/api/auth/2fa/regenerate-backup", requireAuth, async (req, res) => {
+    const result = await regenerateBackupCodes(req.session.userId!);
+
+    if (!result.success) {
+      return res.status(400).json({ message: result.error });
+    }
+
+    res.json({ backupCodes: result.backupCodes });
+  });
+
+  // ==================== SAVED PLACES ROUTES ====================
+
+  // Get user's saved places
+  app.get("/api/saved-places", requireAuth, async (req, res) => {
+    const savedPlaces = await storage.getSavedPlaces(req.session.userId!);
+    res.json(savedPlaces);
+  });
+
+  // Save a place
+  app.post("/api/saved-places/:placeId", requireAuth, async (req, res) => {
+    const placeId = Number(req.params.placeId);
+    
+    const place = await storage.getPlace(placeId);
+    if (!place) {
+      return res.status(404).json({ message: "Place not found" });
+    }
+
+    const alreadySaved = await storage.isPlaceSaved(req.session.userId!, placeId);
+    if (alreadySaved) {
+      return res.status(400).json({ message: "Place already saved" });
+    }
+
+    const saved = await storage.savePlace(req.session.userId!, placeId);
+    res.status(201).json(saved);
+  });
+
+  // Unsave a place
+  app.delete("/api/saved-places/:placeId", requireAuth, async (req, res) => {
+    const placeId = Number(req.params.placeId);
+    await storage.unsavePlace(req.session.userId!, placeId);
+    res.json({ success: true });
+  });
+
+  // Check if place is saved
+  app.get("/api/saved-places/:placeId/check", requireAuth, async (req, res) => {
+    const placeId = Number(req.params.placeId);
+    const isSaved = await storage.isPlaceSaved(req.session.userId!, placeId);
+    res.json({ isSaved });
+  });
   
   // Categories
   app.get(api.categories.list.path, async (req, res) => {
@@ -125,11 +359,17 @@ export async function registerRoutes(
     }
   });
 
-  // Place Tips
-  app.post(api.placeTips.create.path, async (req, res) => {
+  // Place Tips (requires authentication)
+  app.post(api.placeTips.create.path, requireAuth, async (req, res) => {
     try {
       const input = api.placeTips.create.input.parse(req.body);
-      const tip = await storage.createPlaceTip(input);
+      // Sanitize input content
+      const sanitizedInput = {
+        ...input,
+        content: sanitizeString(input.content, 500),
+        author: input.author ? sanitizeString(input.author, 100) : undefined,
+      };
+      const tip = await storage.createPlaceTip(sanitizedInput);
       res.status(201).json(tip);
     } catch (err) {
       if (err instanceof z.ZodError) {
@@ -153,10 +393,19 @@ export async function registerRoutes(
     }
   });
 
-  app.post(api.reviews.create.path, async (req, res) => {
+  // Create review (requires authentication)
+  app.post(api.reviews.create.path, requireAuth, async (req, res) => {
     try {
       const input = api.reviews.create.input.parse(req.body);
-      const review = await storage.createReview(input);
+      // Sanitize input content
+      const sanitizedInput = {
+        ...input,
+        content: sanitizeString(input.content, 2000),
+        authorName: input.authorName ? sanitizeString(input.authorName, 100) : undefined,
+        authorRole: input.authorRole ? sanitizeString(input.authorRole, 100) : undefined,
+        userId: req.session.userId, // Link review to authenticated user
+      };
+      const review = await storage.createReview(sanitizedInput);
       res.status(201).json(review);
     } catch (err) {
       if (err instanceof z.ZodError) {
@@ -166,6 +415,7 @@ export async function registerRoutes(
     }
   });
 
+  // Vote review as helpful (no auth required - but could add to prevent spam)
   app.post('/api/reviews/:id/helpful', async (req, res) => {
     const id = Number(req.params.id);
     const review = await storage.incrementReviewHelpfulCount(id);
@@ -355,10 +605,18 @@ export async function registerRoutes(
     res.json(submissions);
   });
 
-  app.post(api.contact.submit.path, async (req, res) => {
+  // Contact submission with input sanitization (rate limited)
+  app.post(api.contact.submit.path, authRateLimiter, async (req, res) => {
     try {
       const input = api.contact.submit.input.parse(req.body);
-      const submission = await storage.createContactSubmission(input);
+      // Sanitize user input
+      const sanitizedInput = {
+        name: sanitizeString(input.name, 100),
+        email: sanitizeString(input.email, 254),
+        subject: input.subject ? sanitizeString(input.subject, 200) : undefined,
+        message: sanitizeString(input.message, 5000),
+      };
+      const submission = await storage.createContactSubmission(sanitizedInput);
       res.status(201).json(submission);
     } catch (err) {
       if (err instanceof z.ZodError) {

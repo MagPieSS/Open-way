@@ -22,6 +22,8 @@ import Events from "@/pages/Events";
 import Blog from "@/pages/Blog";
 import FAQ from "@/pages/FAQ";
 import Contact from "@/pages/Contact";
+import Login from "@/pages/Login";
+import Register from "@/pages/Register";
 import NotFound from "@/pages/not-found";
 
 function Router() {
@@ -40,6 +42,8 @@ function Router() {
       <Route path="/blog" component={Blog} />
       <Route path="/faq" component={FAQ} />
       <Route path="/contact" component={Contact} />
+      <Route path="/login" component={Login} />
+      <Route path="/register" component={Register} />
       <Route component={NotFound} />
     </Switch>
   );

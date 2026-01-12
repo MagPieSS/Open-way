@@ -3,6 +3,7 @@ import {
   places, reviews, signatures, categories, accessibilityFeatures,
   placeMedia, placeTips, petitionUpdates, events, resources,
   blogPosts, faqEntries, contactSubmissions, activityLog, partners,
+  users, savedPlaces,
   type Place, type InsertPlace,
   type Review, type InsertReview,
   type Signature, type InsertSignature,
@@ -18,6 +19,7 @@ import {
   type ContactSubmission, type InsertContactSubmission,
   type ActivityLog, type InsertActivityLog,
   type Partner, type InsertPartner,
+  type User, type SavedPlace, type InsertSavedPlace,
 } from "@shared/schema";
 import { eq, desc, sql, and } from "drizzle-orm";
 
@@ -105,6 +107,20 @@ export interface IStorage {
   getPartners(): Promise<Partner[]>;
   getFeaturedPartners(): Promise<Partner[]>;
   createPartner(partner: InsertPartner): Promise<Partner>;
+
+  // Users (Authentication)
+  getUserByEmail(email: string): Promise<User | undefined>;
+  getUserById(id: number): Promise<User | undefined>;
+  createUser(email: string, passwordHash: string, displayName?: string): Promise<User>;
+  updateUserLastLogin(id: number): Promise<void>;
+  updateUser2FA(id: number, enabled: boolean, secret?: string, backupCodes?: string[]): Promise<void>;
+  verifyBackupCode(id: number, code: string): Promise<boolean>;
+
+  // Saved Places
+  getSavedPlaces(userId: number): Promise<SavedPlace[]>;
+  savePlace(userId: number, placeId: number): Promise<SavedPlace>;
+  unsavePlace(userId: number, placeId: number): Promise<void>;
+  isPlaceSaved(userId: number, placeId: number): Promise<boolean>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -380,6 +396,70 @@ export class DatabaseStorage implements IStorage {
   async createPartner(partner: InsertPartner): Promise<Partner> {
     const [newPartner] = await db.insert(partners).values(partner).returning();
     return newPartner;
+  }
+
+  // Users (Authentication)
+  async getUserByEmail(email: string): Promise<User | undefined> {
+    const [user] = await db.select().from(users).where(eq(users.email, email.toLowerCase()));
+    return user;
+  }
+
+  async getUserById(id: number): Promise<User | undefined> {
+    const [user] = await db.select().from(users).where(eq(users.id, id));
+    return user;
+  }
+
+  async createUser(email: string, passwordHash: string, displayName?: string): Promise<User> {
+    const [newUser] = await db.insert(users).values({
+      email: email.toLowerCase(),
+      passwordHash,
+      displayName,
+    }).returning();
+    return newUser;
+  }
+
+  async updateUserLastLogin(id: number): Promise<void> {
+    await db.update(users).set({ lastLoginAt: new Date() }).where(eq(users.id, id));
+  }
+
+  async updateUser2FA(id: number, enabled: boolean, secret?: string, backupCodes?: string[]): Promise<void> {
+    await db.update(users).set({
+      twoFactorEnabled: enabled,
+      twoFactorSecret: secret,
+      backupCodes: backupCodes,
+    }).where(eq(users.id, id));
+  }
+
+  async verifyBackupCode(id: number, code: string): Promise<boolean> {
+    const user = await this.getUserById(id);
+    if (!user || !user.backupCodes) return false;
+    
+    const codeIndex = user.backupCodes.indexOf(code);
+    if (codeIndex === -1) return false;
+    
+    // Remove used backup code
+    const updatedCodes = user.backupCodes.filter((_, i) => i !== codeIndex);
+    await db.update(users).set({ backupCodes: updatedCodes }).where(eq(users.id, id));
+    return true;
+  }
+
+  // Saved Places
+  async getSavedPlaces(userId: number): Promise<SavedPlace[]> {
+    return await db.select().from(savedPlaces).where(eq(savedPlaces.userId, userId)).orderBy(desc(savedPlaces.savedAt));
+  }
+
+  async savePlace(userId: number, placeId: number): Promise<SavedPlace> {
+    const [saved] = await db.insert(savedPlaces).values({ userId, placeId }).returning();
+    return saved;
+  }
+
+  async unsavePlace(userId: number, placeId: number): Promise<void> {
+    await db.delete(savedPlaces).where(and(eq(savedPlaces.userId, userId), eq(savedPlaces.placeId, placeId)));
+  }
+
+  async isPlaceSaved(userId: number, placeId: number): Promise<boolean> {
+    const [saved] = await db.select().from(savedPlaces).where(and(eq(savedPlaces.userId, userId), eq(savedPlaces.placeId, placeId)));
+    return !!saved;
   }
 }
 

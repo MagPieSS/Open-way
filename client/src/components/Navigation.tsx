@@ -1,8 +1,10 @@
 import { Link, useLocation } from "wouter";
-import { Heart, Menu, MapPin, Settings, Home, Users, FileText, Megaphone, Info, X, BookOpen, Calendar, HelpCircle, Mail } from "lucide-react";
+import { Heart, Menu, MapPin, Settings, Home, Users, FileText, Megaphone, Info, X, BookOpen, Calendar, HelpCircle, Mail, User, LogIn, LogOut, Bookmark } from "lucide-react";
 import { useState, useEffect, useRef } from "react";
 import { useSettings } from "@/hooks/use-settings";
+import { useAuth } from "@/hooks/use-auth";
 import { GlobalSearch } from "@/components/GlobalSearch";
+import { Button } from "@/components/ui/button";
 
 interface NavGroup {
   label: string;
@@ -11,9 +13,16 @@ interface NavGroup {
 
 export function Navigation() {
   const [isOpen, setIsOpen] = useState(false);
-  const [location] = useLocation();
+  const [location, setLocation] = useLocation();
   const { textSize } = useSettings();
+  const { user, isAuthenticated, logout, isLoggingOut } = useAuth();
   const dropdownRef = useRef<HTMLDivElement>(null);
+
+  const handleLogout = async () => {
+    await logout();
+    setIsOpen(false);
+    setLocation("/");
+  };
 
   const navGroups: NavGroup[] = [
     {
@@ -125,6 +134,70 @@ export function Navigation() {
                   data-testid="dropdown-menu"
                   style={{ scrollBehavior: 'smooth' }}
                 >
+                  {/* User Section */}
+                  <div className="p-2 border-b border-border">
+                    {isAuthenticated ? (
+                      <div className="space-y-1">
+                        <div className="flex items-center gap-3 px-4 py-2.5 rounded-lg bg-secondary/50">
+                          <div className="w-8 h-8 rounded-full bg-primary/20 flex items-center justify-center">
+                            <User className="w-4 h-4 text-primary" />
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <p className="font-medium truncate" data-testid="text-user-name">
+                              {user?.displayName || "User"}
+                            </p>
+                            <p className="text-xs text-muted-foreground truncate" data-testid="text-user-email">
+                              {user?.email}
+                            </p>
+                          </div>
+                        </div>
+                        <Link href="/saved" onClick={() => setIsOpen(false)}>
+                          <div 
+                            className={getLinkClass("/saved")}
+                            data-testid="link-nav-saved"
+                            role="menuitem"
+                          >
+                            <Bookmark className="w-5 h-5" />
+                            <span className={`text-${textSize}`}>Saved Places</span>
+                          </div>
+                        </Link>
+                        <button
+                          onClick={handleLogout}
+                          disabled={isLoggingOut}
+                          className="flex items-center gap-3 px-4 py-2.5 rounded-lg font-medium transition-colors w-full text-destructive hover:bg-destructive/10"
+                          data-testid="button-logout"
+                          role="menuitem"
+                        >
+                          <LogOut className="w-5 h-5" />
+                          <span className={`text-${textSize}`}>{isLoggingOut ? "Signing out..." : "Sign Out"}</span>
+                        </button>
+                      </div>
+                    ) : (
+                      <div className="space-y-1">
+                        <Link href="/login" onClick={() => setIsOpen(false)}>
+                          <div 
+                            className={getLinkClass("/login")}
+                            data-testid="link-nav-login"
+                            role="menuitem"
+                          >
+                            <LogIn className="w-5 h-5" />
+                            <span className={`text-${textSize}`}>Sign In</span>
+                          </div>
+                        </Link>
+                        <Link href="/register" onClick={() => setIsOpen(false)}>
+                          <div 
+                            className="flex items-center gap-3 px-4 py-2.5 rounded-lg font-medium transition-colors w-full bg-primary text-primary-foreground hover:bg-primary/90"
+                            data-testid="link-nav-register"
+                            role="menuitem"
+                          >
+                            <User className="w-5 h-5" />
+                            <span className={`text-${textSize}`}>Create Account</span>
+                          </div>
+                        </Link>
+                      </div>
+                    )}
+                  </div>
+
                   {/* Home Link */}
                   <div className="p-2 border-b border-border">
                     <Link href="/" onClick={() => setIsOpen(false)}>

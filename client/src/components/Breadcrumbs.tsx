@@ -84,7 +84,6 @@ export function Breadcrumbs() {
               return (
                 <BreadcrumbItem key={`${segment.label}-${index}`}>
                   {index > 0 && <BreadcrumbSeparator />}
-                  
                   {isLast ? (
                     <BreadcrumbPage data-testid={`breadcrumb-current-${segment.label.toLowerCase().replace(/\s+/g, '-')}`}>
                       {index === 0 && <Home className="w-4 h-4 mr-1 inline" />}

@@ -4,6 +4,30 @@ import { z } from "zod";
 
 // === TABLE DEFINITIONS ===
 
+// Users table for authentication
+export const users = pgTable("users", {
+  id: serial("id").primaryKey(),
+  email: text("email").notNull().unique(),
+  passwordHash: text("password_hash").notNull(),
+  displayName: text("display_name"),
+  // 2FA fields
+  twoFactorEnabled: boolean("two_factor_enabled").default(false),
+  twoFactorSecret: text("two_factor_secret"),
+  backupCodes: text("backup_codes").array(),
+  // Account status
+  isActive: boolean("is_active").default(true),
+  lastLoginAt: timestamp("last_login_at"),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+// User saved places (favorites)
+export const savedPlaces = pgTable("saved_places", {
+  id: serial("id").primaryKey(),
+  userId: integer("user_id").references(() => users.id).notNull(),
+  placeId: integer("place_id").references(() => places.id).notNull(),
+  savedAt: timestamp("saved_at").defaultNow(),
+});
+
 // Categories for organizing places
 export const categories = pgTable("categories", {
   id: serial("id").primaryKey(),
@@ -72,6 +96,7 @@ export const placeTips = pgTable("place_tips", {
 export const reviews = pgTable("reviews", {
   id: serial("id").primaryKey(),
   placeId: integer("place_id").references(() => places.id).notNull(),
+  userId: integer("user_id").references(() => users.id),
   content: text("content").notNull(),
   rating: integer("rating"),
   authorName: text("author_name"),
@@ -194,6 +219,30 @@ export const partners = pgTable("partners", {
 
 // === INSERT SCHEMAS ===
 
+// User registration schema with password validation
+export const insertUserSchema = createInsertSchema(users).omit({ 
+  id: true, 
+  passwordHash: true, 
+  twoFactorEnabled: true, 
+  twoFactorSecret: true, 
+  backupCodes: true, 
+  isActive: true, 
+  lastLoginAt: true, 
+  createdAt: true 
+}).extend({
+  password: z.string()
+    .min(8, "Password must be at least 8 characters")
+    .regex(/[0-9!@#$%^&*(),.?":{}|<>]/, "Password must contain at least one number or symbol"),
+});
+
+export const loginSchema = z.object({
+  email: z.string().email("Invalid email address"),
+  password: z.string().min(1, "Password is required"),
+  twoFactorCode: z.string().optional(),
+});
+
+export const insertSavedPlaceSchema = createInsertSchema(savedPlaces).omit({ id: true, savedAt: true });
+
 export const insertCategorySchema = createInsertSchema(categories).omit({ id: true });
 export const insertPlaceSchema = createInsertSchema(places).omit({ id: true, updatedAt: true, createdAt: true, viewCount: true, reviewCount: true });
 export const insertAccessibilityFeatureSchema = createInsertSchema(accessibilityFeatures).omit({ id: true });
@@ -211,6 +260,16 @@ export const insertActivityLogSchema = createInsertSchema(activityLog).omit({ id
 export const insertPartnerSchema = createInsertSchema(partners).omit({ id: true });
 
 // === TYPES ===
+
+export type User = typeof users.$inferSelect;
+export type InsertUser = z.infer<typeof insertUserSchema>;
+export type LoginInput = z.infer<typeof loginSchema>;
+
+// Safe user type without sensitive fields
+export type SafeUser = Omit<User, 'passwordHash' | 'twoFactorSecret' | 'backupCodes'>;
+
+export type SavedPlace = typeof savedPlaces.$inferSelect;
+export type InsertSavedPlace = z.infer<typeof insertSavedPlaceSchema>;
 
 export type Category = typeof categories.$inferSelect;
 export type InsertCategory = z.infer<typeof insertCategorySchema>;
