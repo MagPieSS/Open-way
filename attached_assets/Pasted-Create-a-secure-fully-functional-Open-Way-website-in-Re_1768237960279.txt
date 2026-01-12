@@ -1,0 +1,77 @@
+Create a secure, fully functional "Open Way" website that includes:
+login, sessions, optional two-factor authentication (TOTP), secure storage, and proper data handling. 
+Do NOT remove features or change the existing UI.
+
+1️⃣ DATA STORAGE
+- Browser LocalStorage:
+  - Store only non-sensitive user preferences (UI settings, saved places)
+  - Do NOT store passwords, session IDs, or 2FA secrets
+- Backend JSON files (private Repl):
+  - Store places database, reviews, community posts, uploaded photo references
+  - Validate all input before saving
+- Environment Variables / Secrets:
+  - Store all sensitive values (session secrets, encryption keys, 2FA secrets)
+  - Access via process.env
+  - Do not expose in frontend code
+- Server memory:
+  - Active user sessions
+  - Temporary 2FA codes
+  - Rate-limit counters
+  - Data disappears on restart
+
+2️⃣ PASSWORD SECURITY
+- Hash all passwords using bcrypt
+- Enforce strong password rules:
+  - Minimum 8 characters
+  - At least one number or symbol
+- Reject common weak passwords
+
+3️⃣ SESSION MANAGEMENT
+- Use secure server-side sessions (not JWT)
+- Session cookies must be:
+  - HttpOnly
+  - Secure (HTTPS only)
+  - SameSite protected
+- Sessions expire after inactivity
+- Logout destroys session
+
+4️⃣ OPTIONAL TWO-FACTOR AUTHENTICATION (2FA)
+- Users can enable/disable 2FA in Settings
+- Use TOTP (app-based, e.g., Google Authenticator)
+- Each user gets a unique secret stored securely
+- Require a valid 6-digit code during login if enabled
+- Provide one-time-use backup codes
+- Allow regeneration of backup codes
+
+5️⃣ RATE LIMITING
+- Apply to login and 2FA verification endpoints
+- Limit failed attempts per IP
+- Return friendly error messages
+
+6️⃣ ACCESS CONTROL
+- Only authenticated users can:
+  - Post reviews
+  - Upload photos
+  - Save places
+  - Edit settings
+  - Participate in community discussions
+- Users can only modify their own data
+
+7️⃣ INPUT VALIDATION
+- Sanitize all user input on the server
+- Limit text length for reviews and posts
+- Prevent script injection
+
+8️⃣ ERROR HANDLING
+- Do not expose stack traces or internal errors to users
+- Return user-friendly messages
+
+9️⃣ CODE QUALITY
+- Comment code explaining authentication, session, and 2FA logic
+- Keep code readable and organized
+
+10️⃣ SCOPE LIMITS
+- No SMS-based 2FA
+- No paid APIs beyond the free tier
+- No OAuth/social logins
+- Keep UI intact
