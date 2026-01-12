@@ -44,7 +44,7 @@ export function PlaceCard({ place }: PlaceCardProps) {
 
   return (
     <div 
-      className="bg-card rounded-xl overflow-hidden shadow-md hover:shadow-lg transition-shadow duration-300 flex flex-col h-full border border-border"
+      className="bg-card rounded-xl overflow-hidden shadow-md hover:shadow-xl transition-all duration-300 flex flex-col h-full border border-border card-hover-lift"
       data-testid={`card-place-${place.id}`}
     >
       {/* Image */}
@@ -69,8 +69,8 @@ export function PlaceCard({ place }: PlaceCardProps) {
       
       {/* Content */}
       <div className="p-5 flex flex-col flex-grow">
-        {/* Category */}
-        <span className="text-xs font-bold uppercase tracking-wider text-muted-foreground bg-secondary px-2 py-1 rounded-md inline-block w-fit mb-3">
+        {/* Category - Colorful Badge */}
+        <span className={`text-xs font-bold uppercase tracking-wider px-2.5 py-1 rounded-md inline-block w-fit mb-3 badge-${place.category.toLowerCase()}`}>
           {place.category}
         </span>
         

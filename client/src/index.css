@@ -1,4 +1,5 @@
 @import url('https://fonts.googleapis.com/css2?family=Lexend:wght@300;400;500;600;700;800&family=Atkinson+Hyperlegible:ital,wght@0,400;0,700;1,400;1,700&display=swap');
+@import url('https://fonts.cdnfonts.com/css/opendyslexic');
 
 @tailwind base;
 @tailwind components;
@@ -140,4 +141,153 @@
 
 .animate-dropdown {
   animation: dropdown-in 0.2s ease-out;
+}
+
+/* Font Family Options */
+.font-atkinson body,
+.font-atkinson {
+  font-family: 'Atkinson Hyperlegible', sans-serif;
+}
+
+.font-opendyslexic body,
+.font-opendyslexic {
+  font-family: 'OpenDyslexic', sans-serif;
+}
+
+.font-system body,
+.font-system {
+  font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+}
+
+/* Line Spacing Options */
+.leading-compact body,
+.leading-compact {
+  line-height: 1.4;
+}
+
+.leading-normal body,
+.leading-normal {
+  line-height: 1.6;
+}
+
+.leading-relaxed body,
+.leading-relaxed {
+  line-height: 2;
+}
+
+/* Link Underlines Mode */
+.link-underlines a:not(.no-underline) {
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+/* Enhanced Focus Mode */
+.enhanced-focus *:focus-visible {
+  outline: 3px solid hsl(var(--primary)) !important;
+  outline-offset: 4px !important;
+  border-radius: 4px;
+  box-shadow: 0 0 0 6px hsl(var(--primary) / 0.25) !important;
+}
+
+/* Category Badge Colors */
+.badge-transit { background: linear-gradient(135deg, hsl(210 80% 50%), hsl(210 90% 60%)); color: white; }
+.badge-museums { background: linear-gradient(135deg, hsl(280 60% 50%), hsl(280 70% 60%)); color: white; }
+.badge-libraries { background: linear-gradient(135deg, hsl(35 80% 50%), hsl(35 90% 55%)); color: white; }
+.badge-parks { background: linear-gradient(135deg, hsl(142 70% 40%), hsl(142 80% 50%)); color: white; }
+.badge-restaurants { background: linear-gradient(135deg, hsl(0 70% 55%), hsl(15 80% 55%)); color: white; }
+.badge-healthcare { background: linear-gradient(135deg, hsl(200 80% 50%), hsl(200 90% 60%)); color: white; }
+.badge-government { background: linear-gradient(135deg, hsl(220 50% 45%), hsl(220 60% 55%)); color: white; }
+.badge-education { background: linear-gradient(135deg, hsl(45 90% 50%), hsl(45 95% 55%)); color: black; }
+
+/* Colorful Gradients for Headers */
+.gradient-rainbow {
+  background: linear-gradient(135deg, 
+    hsl(var(--primary)) 0%, 
+    hsl(var(--accent)) 50%, 
+    hsl(280 70% 60%) 100%
+  );
+}
+
+.gradient-warm {
+  background: linear-gradient(135deg, 
+    hsl(330 81% 60%) 0%, 
+    hsl(15 80% 55%) 50%, 
+    hsl(45 90% 55%) 100%
+  );
+}
+
+.gradient-cool {
+  background: linear-gradient(135deg, 
+    hsl(200 80% 50%) 0%, 
+    hsl(243 75% 59%) 50%, 
+    hsl(280 60% 55%) 100%
+  );
+}
+
+/* Decorative Patterns */
+.pattern-dots {
+  background-image: radial-gradient(hsl(var(--primary) / 0.15) 1px, transparent 1px);
+  background-size: 20px 20px;
+}
+
+.pattern-grid {
+  background-image: 
+    linear-gradient(hsl(var(--border)) 1px, transparent 1px),
+    linear-gradient(90deg, hsl(var(--border)) 1px, transparent 1px);
+  background-size: 40px 40px;
+}
+
+/* Card Hover Effects */
+.card-hover-glow:hover {
+  box-shadow: 
+    0 4px 20px -4px hsl(var(--primary) / 0.25),
+    0 0 0 1px hsl(var(--primary) / 0.1);
+  transform: translateY(-2px);
+  transition: all 0.3s ease;
+}
+
+.card-hover-lift:hover {
+  transform: translateY(-4px);
+  box-shadow: 0 12px 24px -8px hsl(var(--foreground) / 0.15);
+  transition: all 0.3s ease;
+}
+
+/* Colorful Icon Backgrounds */
+.icon-bg-primary {
+  background: linear-gradient(135deg, hsl(var(--primary) / 0.15), hsl(var(--primary) / 0.25));
+}
+
+.icon-bg-accent {
+  background: linear-gradient(135deg, hsl(var(--accent) / 0.15), hsl(var(--accent) / 0.25));
+}
+
+.icon-bg-success {
+  background: linear-gradient(135deg, hsl(142 70% 45% / 0.15), hsl(142 70% 45% / 0.25));
+}
+
+/* Animated Border */
+.animated-border {
+  background: linear-gradient(90deg, 
+    hsl(var(--primary)), 
+    hsl(var(--accent)), 
+    hsl(280 70% 60%), 
+    hsl(var(--primary))
+  );
+  background-size: 300% 100%;
+  animation: border-flow 3s linear infinite;
+}
+
+@keyframes border-flow {
+  0% { background-position: 0% 50%; }
+  100% { background-position: 300% 50%; }
+}
+
+/* Pulse Animation for CTAs */
+.pulse-glow {
+  animation: pulse-glow 2s ease-in-out infinite;
+}
+
+@keyframes pulse-glow {
+  0%, 100% { box-shadow: 0 0 0 0 hsl(var(--primary) / 0.4); }
+  50% { box-shadow: 0 0 0 10px hsl(var(--primary) / 0); }
 }
