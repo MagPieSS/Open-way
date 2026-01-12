@@ -1,38 +1,38 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { api } from "@shared/routes";
-import { z } from "zod";
-
-async function handleResponse<T>(res: Response, schema: z.ZodSchema<T>): Promise<T> {
-  if (!res.ok) {
-    const errorData = await res.json().catch(() => ({}));
-    throw new Error(errorData.message || 'API request failed');
-  }
-  const data = await res.json();
-  return schema.parse(data);
-}
+import { apiRequest } from "@/lib/queryClient";
+import type { Signature, PetitionUpdate, InsertSignature } from "@shared/schema";
 
 export function usePetitionCount() {
-  return useQuery({
+  return useQuery<{ total: number }>({
     queryKey: [api.petition.count.path],
-    queryFn: async () => {
-      const res = await fetch(api.petition.count.path);
-      return handleResponse(res, api.petition.count.responses[200]);
-    },
-    refetchInterval: 10000, // Update every 10s to see live count
+    refetchInterval: 10000,
   });
 }
 
 export function useSignPetition() {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: async () => {
-      const res = await fetch(api.petition.sign.path, {
-        method: api.petition.sign.method,
-      });
-      return handleResponse(res, api.petition.sign.responses[200]);
+    mutationFn: async (data: InsertSignature) => {
+      const res = await apiRequest(api.petition.sign.method, api.petition.sign.path, data);
+      return res.json();
     },
     onSuccess: (data) => {
       queryClient.setQueryData([api.petition.count.path], data);
+      queryClient.invalidateQueries({ queryKey: [api.petition.signatures.path] });
     },
+  });
+}
+
+export function usePetitionSignatures(limit?: number) {
+  return useQuery<Signature[]>({
+    queryKey: [api.petition.signatures.path, limit],
+    refetchInterval: 15000,
+  });
+}
+
+export function usePetitionUpdates() {
+  return useQuery<PetitionUpdate[]>({
+    queryKey: [api.petition.updates.path],
   });
 }

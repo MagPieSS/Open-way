@@ -5,6 +5,7 @@ import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { Navigation } from "@/components/Navigation";
 import { Footer } from "@/components/Footer";
+import { Breadcrumbs } from "@/components/Breadcrumbs";
 import { useSettings } from "@/hooks/use-settings";
 import { useEffect } from "react";
 
@@ -16,6 +17,11 @@ import Community from "@/pages/Community";
 import Petition from "@/pages/Petition";
 import About from "@/pages/About";
 import Settings from "@/pages/Settings";
+import Resources from "@/pages/Resources";
+import Events from "@/pages/Events";
+import Blog from "@/pages/Blog";
+import FAQ from "@/pages/FAQ";
+import Contact from "@/pages/Contact";
 import NotFound from "@/pages/not-found";
 
 function Router() {
@@ -29,6 +35,11 @@ function Router() {
       <Route path="/petition" component={Petition} />
       <Route path="/about" component={About} />
       <Route path="/settings" component={Settings} />
+      <Route path="/resources" component={Resources} />
+      <Route path="/events" component={Events} />
+      <Route path="/blog" component={Blog} />
+      <Route path="/faq" component={FAQ} />
+      <Route path="/contact" component={Contact} />
       <Route component={NotFound} />
     </Switch>
   );
@@ -52,9 +63,12 @@ function AppContent() {
   return (
     <div className="flex flex-col min-h-screen">
       <Navigation />
-      <main className="flex-grow pt-16">
-        <Router />
-      </main>
+      <div className="pt-16">
+        <Breadcrumbs />
+        <main className="flex-grow">
+          <Router />
+        </main>
+      </div>
       <Footer />
     </div>
   );
