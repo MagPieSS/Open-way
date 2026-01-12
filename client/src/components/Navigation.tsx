@@ -161,6 +161,16 @@ export function Navigation() {
                             <span className={`text-${textSize}`}>Saved Places</span>
                           </div>
                         </Link>
+                        <Link href="/profile" onClick={() => setIsOpen(false)}>
+                          <div 
+                            className={getLinkClass("/profile")}
+                            data-testid="link-nav-profile"
+                            role="menuitem"
+                          >
+                            <User className="w-5 h-5" />
+                            <span className={`text-${textSize}`}>Profile</span>
+                          </div>
+                        </Link>
                         <button
                           onClick={handleLogout}
                           disabled={isLoggingOut}

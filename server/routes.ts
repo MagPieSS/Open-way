@@ -204,11 +204,70 @@ export async function registerRoutes(
     res.json({ backupCodes: result.backupCodes });
   });
 
+  // ==================== PROFILE ROUTES ====================
+
+  // Update display name
+  app.patch("/api/profile/display-name", requireAuth, async (req, res) => {
+    const { displayName } = req.body;
+
+    if (!displayName || typeof displayName !== "string") {
+      return res.status(400).json({ message: "Display name is required" });
+    }
+
+    const sanitized = sanitizeString(displayName, 50);
+    if (sanitized.length < 2) {
+      return res.status(400).json({ message: "Display name must be at least 2 characters" });
+    }
+
+    const updated = await storage.updateUserDisplayName(req.session.userId!, sanitized);
+    if (!updated) {
+      return res.status(404).json({ message: "User not found" });
+    }
+
+    res.json({
+      id: updated.id,
+      email: updated.email,
+      displayName: updated.displayName,
+      twoFactorEnabled: updated.twoFactorEnabled,
+      createdAt: updated.createdAt,
+    });
+  });
+
+  // Change password
+  app.post("/api/profile/change-password", requireAuth, authRateLimiter, async (req, res) => {
+    const { currentPassword, newPassword } = req.body;
+
+    if (!currentPassword || !newPassword) {
+      return res.status(400).json({ message: "Current and new passwords are required" });
+    }
+
+    const user = await storage.getUserById(req.session.userId!);
+    if (!user) {
+      return res.status(404).json({ message: "User not found" });
+    }
+
+    const isValid = await bcrypt.compare(currentPassword, user.passwordHash);
+    if (!isValid) {
+      return res.status(400).json({ message: "Current password is incorrect" });
+    }
+
+    // Validate new password
+    const passwordValidation = validatePassword(newPassword);
+    if (!passwordValidation.valid) {
+      return res.status(400).json({ message: passwordValidation.error });
+    }
+
+    const newHash = await bcrypt.hash(newPassword, 12);
+    await storage.updateUserPassword(req.session.userId!, newHash);
+
+    res.json({ success: true, message: "Password changed successfully" });
+  });
+
   // ==================== SAVED PLACES ROUTES ====================
 
-  // Get user's saved places
+  // Get user's saved places with full place details
   app.get("/api/saved-places", requireAuth, async (req, res) => {
-    const savedPlaces = await storage.getSavedPlaces(req.session.userId!);
+    const savedPlaces = await storage.getSavedPlacesWithDetails(req.session.userId!);
     res.json(savedPlaces);
   });
 

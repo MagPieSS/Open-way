@@ -21,7 +21,7 @@ import {
   type Partner, type InsertPartner,
   type User, type SavedPlace, type InsertSavedPlace,
 } from "@shared/schema";
-import { eq, desc, sql, and } from "drizzle-orm";
+import { eq, desc, sql, and, inArray } from "drizzle-orm";
 
 export interface IStorage {
   // Categories
@@ -115,11 +115,14 @@ export interface IStorage {
   getUserById(id: number): Promise<User | undefined>;
   createUser(email: string, passwordHash: string, displayName?: string): Promise<User>;
   updateUserLastLogin(id: number): Promise<void>;
+  updateUserDisplayName(id: number, displayName: string): Promise<User | undefined>;
+  updateUserPassword(id: number, passwordHash: string): Promise<void>;
   updateUser2FA(id: number, enabled: boolean, secret?: string, backupCodes?: string[]): Promise<void>;
   verifyBackupCode(id: number, code: string): Promise<boolean>;
 
   // Saved Places
   getSavedPlaces(userId: number): Promise<SavedPlace[]>;
+  getSavedPlacesWithDetails(userId: number): Promise<Place[]>;
   savePlace(userId: number, placeId: number): Promise<SavedPlace>;
   unsavePlace(userId: number, placeId: number): Promise<void>;
   isPlaceSaved(userId: number, placeId: number): Promise<boolean>;
@@ -434,6 +437,15 @@ export class DatabaseStorage implements IStorage {
     await db.update(users).set({ lastLoginAt: new Date() }).where(eq(users.id, id));
   }
 
+  async updateUserDisplayName(id: number, displayName: string): Promise<User | undefined> {
+    const [updated] = await db.update(users).set({ displayName }).where(eq(users.id, id)).returning();
+    return updated;
+  }
+
+  async updateUserPassword(id: number, passwordHash: string): Promise<void> {
+    await db.update(users).set({ passwordHash }).where(eq(users.id, id));
+  }
+
   async updateUser2FA(id: number, enabled: boolean, secret?: string, backupCodes?: string[]): Promise<void> {
     await db.update(users).set({
       twoFactorEnabled: enabled,
@@ -458,6 +470,17 @@ export class DatabaseStorage implements IStorage {
   // Saved Places
   async getSavedPlaces(userId: number): Promise<SavedPlace[]> {
     return await db.select().from(savedPlaces).where(eq(savedPlaces.userId, userId)).orderBy(desc(savedPlaces.savedAt));
+  }
+
+  async getSavedPlacesWithDetails(userId: number): Promise<Place[]> {
+    const saved = await db.select().from(savedPlaces).where(eq(savedPlaces.userId, userId)).orderBy(desc(savedPlaces.savedAt));
+    if (saved.length === 0) return [];
+    
+    const placeIds = saved.map(s => s.placeId);
+    const placesData = await db.select().from(places).where(inArray(places.id, placeIds));
+    
+    // Maintain the order from saved places (most recently saved first)
+    return placeIds.map(id => placesData.find(p => p.id === id)).filter((p): p is Place => p !== undefined);
   }
 
   async savePlace(userId: number, placeId: number): Promise<SavedPlace> {

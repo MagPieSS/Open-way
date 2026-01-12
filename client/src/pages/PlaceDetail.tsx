@@ -1,11 +1,12 @@
 import { usePlace, usePlaces } from "@/hooks/use-places";
 import { useReviews } from "@/hooks/use-reviews";
+import { useAuth } from "@/hooks/use-auth";
 import { useParams, Link } from "wouter";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { 
   Loader2, ArrowLeft, MapPin, Calendar, CheckCircle, AlertTriangle, XCircle, 
   User, ThumbsUp, Share2, Copy, Navigation, Lightbulb,
-  Eye, Ear, Move, Sparkles, X
+  Eye, Ear, Move, Sparkles, X, Bookmark, BookmarkCheck
 } from "lucide-react";
 import { SiX, SiFacebook } from "react-icons/si";
 import { useSettings } from "@/hooks/use-settings";
@@ -15,6 +16,7 @@ import { AccessibilityMap } from "@/components/AccessibilityMap";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/hooks/use-toast";
 import { useState } from "react";
+import { apiRequest } from "@/lib/queryClient";
 
 const FEATURE_GROUPS: Record<string, { label: string; icon: typeof Move; features: string[] }> = {
   mobility: {
@@ -103,7 +105,76 @@ export default function PlaceDetail() {
   const { data: allPlaces } = usePlaces();
   const { textSize } = useSettings();
   const { toast } = useToast();
+  const { user } = useAuth();
+  const queryClient = useQueryClient();
   const [hoveredImage, setHoveredImage] = useState<number | null>(null);
+
+  const { data: savedStatus, isLoading: isLoadingSaved } = useQuery<{ isSaved: boolean }>({
+    queryKey: ["/api/saved-places", id, "check"],
+    queryFn: async () => {
+      const res = await fetch(`/api/saved-places/${id}/check`);
+      if (!res.ok) throw new Error("Failed to check saved status");
+      return res.json();
+    },
+    enabled: !!user && !!id,
+  });
+
+  const saveMutation = useMutation({
+    mutationFn: async () => {
+      await apiRequest("POST", `/api/saved-places/${id}`);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/saved-places", id, "check"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/saved-places"] });
+      toast({
+        title: "Place saved!",
+        description: "This place has been added to your saved list.",
+      });
+    },
+    onError: () => {
+      toast({
+        variant: "destructive",
+        title: "Error",
+        description: "Failed to save place. Please try again.",
+      });
+    },
+  });
+
+  const unsaveMutation = useMutation({
+    mutationFn: async () => {
+      await apiRequest("DELETE", `/api/saved-places/${id}`);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/saved-places", id, "check"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/saved-places"] });
+      toast({
+        title: "Place removed",
+        description: "This place has been removed from your saved list.",
+      });
+    },
+    onError: () => {
+      toast({
+        variant: "destructive",
+        title: "Error",
+        description: "Failed to remove place. Please try again.",
+      });
+    },
+  });
+
+  const handleSaveToggle = () => {
+    if (!user) {
+      toast({
+        title: "Sign in required",
+        description: "Please log in to save places.",
+      });
+      return;
+    }
+    if (savedStatus?.isSaved) {
+      unsaveMutation.mutate();
+    } else {
+      saveMutation.mutate();
+    }
+  };
 
   const relatedPlaces = allPlaces
     ?.filter((p) => p.category === place?.category && p.id !== id)
@@ -254,8 +325,25 @@ export default function PlaceDetail() {
               </div>
             </div>
 
-            {/* Share Buttons */}
-            <div className="flex items-center gap-2 flex-wrap" data-testid="share-buttons">
+            {/* Action Buttons */}
+            <div className="flex items-center gap-2 flex-wrap" data-testid="action-buttons">
+              <Button 
+                variant={savedStatus?.isSaved ? "default" : "outline"}
+                onClick={handleSaveToggle}
+                disabled={saveMutation.isPending || unsaveMutation.isPending || isLoadingSaved}
+                className="gap-2"
+                data-testid="button-save-place"
+              >
+                {savedStatus?.isSaved ? (
+                  <>
+                    <BookmarkCheck className="w-4 h-4" /> Saved
+                  </>
+                ) : (
+                  <>
+                    <Bookmark className="w-4 h-4" /> Save
+                  </>
+                )}
+              </Button>
               <Button 
                 size="icon" 
                 variant="outline" 
