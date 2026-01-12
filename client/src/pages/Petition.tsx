@@ -1,5 +1,7 @@
 import { useState, useEffect, useCallback } from "react";
-import { usePetitionCount, useSignPetition, usePetitionSignatures, usePetitionUpdates } from "@/hooks/use-petition";
+import { usePetitionCount, useSignPetition, usePetitionSignatures, usePetitionUpdates, usePetitionStatus } from "@/hooks/use-petition";
+import { useAuth } from "@/hooks/use-auth";
+import { Link } from "wouter";
 import { useSettings } from "@/hooks/use-settings";
 import { PenTool, Heart, Target, Users, TrendingUp, Share2, Trophy, Star, Clock, Copy, Check, Calendar, User, MapPin, Megaphone, ArrowRight, Sparkles, Quote, BarChart3 } from "lucide-react";
 import { SiX, SiFacebook } from "react-icons/si";
@@ -329,6 +331,8 @@ function SignPetitionForm({ onSuccess }: { onSuccess: () => void }) {
   const signPetition = useSignPetition();
   const { textSize, reducedMotion } = useSettings();
   const { toast } = useToast();
+  const { user, isLoading: authLoading } = useAuth();
+  const { data: statusData, isLoading: statusLoading } = usePetitionStatus();
   const [showSuccess, setShowSuccess] = useState(false);
   
   const [formData, setFormData] = useState({
@@ -354,7 +358,7 @@ function SignPetitionForm({ onSuccess }: { onSuccess: () => void }) {
           setFormData({ displayName: '', city: '', message: '', shareConsent: false });
         }, 3000);
       },
-      onError: (error) => {
+      onError: (error: any) => {
         toast({
           title: "Error",
           description: error.message || "Failed to sign petition. Please try again.",
@@ -363,6 +367,46 @@ function SignPetitionForm({ onSuccess }: { onSuccess: () => void }) {
       },
     });
   };
+
+  // Show login prompt if not authenticated
+  if (!authLoading && !user) {
+    return (
+      <div className="text-center py-6" data-testid="sign-login-prompt">
+        <User className="w-12 h-12 mx-auto mb-4 text-muted-foreground" />
+        <h3 className="font-bold text-lg mb-2">Sign In to Add Your Signature</h3>
+        <p className="text-muted-foreground mb-4">
+          Create an account or sign in to add your voice to this petition.
+        </p>
+        <div className="flex flex-col gap-2">
+          <Link href="/login">
+            <Button className="w-full" data-testid="button-login-to-sign">
+              Sign In
+            </Button>
+          </Link>
+          <Link href="/register">
+            <Button variant="outline" className="w-full" data-testid="button-register-to-sign">
+              Create Account
+            </Button>
+          </Link>
+        </div>
+      </div>
+    );
+  }
+
+  // Show "already signed" if user has already signed
+  if (!statusLoading && statusData?.hasSigned) {
+    return (
+      <div className="text-center py-6" data-testid="already-signed">
+        <div className="w-16 h-16 rounded-full bg-green-500 mx-auto mb-4 flex items-center justify-center">
+          <Check className="w-8 h-8 text-white" />
+        </div>
+        <h3 className="font-bold text-xl mb-2">You've Already Signed!</h3>
+        <p className="text-muted-foreground">
+          Thank you for supporting accessible Philadelphia. Share the petition to help us reach our goal!
+        </p>
+      </div>
+    );
+  }
 
   if (showSuccess) {
     return (

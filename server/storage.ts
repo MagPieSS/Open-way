@@ -61,8 +61,10 @@ export interface IStorage {
   // Signatures
   getSignatures(): Promise<Signature[]>;
   getPublicSignatures(): Promise<Signature[]>;
-  createSignature(signature: InsertSignature): Promise<Signature>;
+  createSignature(signature: InsertSignature & { userId: number }): Promise<Signature>;
   getPetitionCount(): Promise<number>;
+  hasUserSigned(userId: number): Promise<boolean>;
+  getUserSignature(userId: number): Promise<Signature | undefined>;
 
   // Petition Updates
   getPetitionUpdates(): Promise<PetitionUpdate[]>;
@@ -252,7 +254,7 @@ export class DatabaseStorage implements IStorage {
     return await db.select().from(signatures).where(eq(signatures.shareConsent, true)).orderBy(desc(signatures.signedAt));
   }
 
-  async createSignature(signature: InsertSignature): Promise<Signature> {
+  async createSignature(signature: InsertSignature & { userId: number }): Promise<Signature> {
     const [newSignature] = await db.insert(signatures).values(signature).returning();
     return newSignature;
   }
@@ -260,6 +262,16 @@ export class DatabaseStorage implements IStorage {
   async getPetitionCount(): Promise<number> {
     const [result] = await db.select({ count: sql<number>`count(*)` }).from(signatures);
     return Number(result.count);
+  }
+
+  async hasUserSigned(userId: number): Promise<boolean> {
+    const [signature] = await db.select().from(signatures).where(eq(signatures.userId, userId)).limit(1);
+    return !!signature;
+  }
+
+  async getUserSignature(userId: number): Promise<Signature | undefined> {
+    const [signature] = await db.select().from(signatures).where(eq(signatures.userId, userId)).limit(1);
+    return signature;
   }
 
   // Petition Updates

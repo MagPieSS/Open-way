@@ -1,4 +1,4 @@
-import { pgTable, text, serial, integer, boolean, timestamp, real, json } from "drizzle-orm/pg-core";
+import { pgTable, text, serial, integer, boolean, timestamp, real, json, uniqueIndex } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
 
@@ -110,12 +110,15 @@ export const reviews = pgTable("reviews", {
 // Petition signatures with optional display info
 export const signatures = pgTable("signatures", {
   id: serial("id").primaryKey(),
+  userId: integer("user_id").references(() => users.id).notNull(),
   displayName: text("display_name"),
   city: text("city"),
   message: text("message"),
   shareConsent: boolean("share_consent").default(false),
   signedAt: timestamp("signed_at").defaultNow(),
-});
+}, (table) => [
+  uniqueIndex("signatures_user_unique").on(table.userId),
+]);
 
 // Petition updates/news from organizers
 export const petitionUpdates = pgTable("petition_updates", {
@@ -249,7 +252,7 @@ export const insertAccessibilityFeatureSchema = createInsertSchema(accessibility
 export const insertPlaceMediaSchema = createInsertSchema(placeMedia).omit({ id: true, createdAt: true });
 export const insertPlaceTipSchema = createInsertSchema(placeTips).omit({ id: true, createdAt: true, helpfulCount: true });
 export const insertReviewSchema = createInsertSchema(reviews).omit({ id: true, createdAt: true, helpfulCount: true });
-export const insertSignatureSchema = createInsertSchema(signatures).omit({ id: true, signedAt: true });
+export const insertSignatureSchema = createInsertSchema(signatures).omit({ id: true, signedAt: true, userId: true });
 export const insertPetitionUpdateSchema = createInsertSchema(petitionUpdates).omit({ id: true, createdAt: true });
 export const insertEventSchema = createInsertSchema(events).omit({ id: true, createdAt: true });
 export const insertResourceSchema = createInsertSchema(resources).omit({ id: true, createdAt: true });

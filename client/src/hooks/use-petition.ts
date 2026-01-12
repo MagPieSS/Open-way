@@ -10,6 +10,13 @@ export function usePetitionCount() {
   });
 }
 
+export function usePetitionStatus() {
+  return useQuery<{ hasSigned: boolean }>({
+    queryKey: ["/api/petition/status"],
+    retry: false,
+  });
+}
+
 export function useSignPetition() {
   const queryClient = useQueryClient();
   return useMutation({
@@ -20,6 +27,7 @@ export function useSignPetition() {
     onSuccess: (data) => {
       queryClient.setQueryData([api.petition.count.path], data);
       queryClient.invalidateQueries({ queryKey: [api.petition.signatures.path] });
+      queryClient.invalidateQueries({ queryKey: ["/api/petition/status"] });
     },
   });
 }

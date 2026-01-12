@@ -431,12 +431,33 @@ export async function registerRoutes(
     res.json({ total });
   });
 
-  app.post(api.petition.sign.path, async (req, res) => {
+  // Check if current user has signed the petition
+  app.get("/api/petition/status", requireAuth, async (req, res) => {
+    const hasSigned = await storage.hasUserSigned(req.session.userId!);
+    res.json({ hasSigned });
+  });
+
+  // Sign petition (requires authentication, one signature per user)
+  app.post(api.petition.sign.path, requireAuth, authRateLimiter, async (req, res) => {
     try {
+      // Check if user has already signed
+      const hasSigned = await storage.hasUserSigned(req.session.userId!);
+      if (hasSigned) {
+        return res.status(400).json({ message: "You have already signed this petition" });
+      }
+
       const input = api.petition.sign.input.parse(req.body);
-      await storage.createSignature(input);
+      // Sanitize input and link to user
+      const sanitizedInput = {
+        displayName: input.displayName ? sanitizeString(input.displayName, 100) : undefined,
+        city: input.city ? sanitizeString(input.city, 100) : undefined,
+        message: input.message ? sanitizeString(input.message, 500) : undefined,
+        shareConsent: input.shareConsent,
+        userId: req.session.userId!, // Link signature to user account (guaranteed by requireAuth)
+      };
+      await storage.createSignature(sanitizedInput);
       const total = await storage.getPetitionCount();
-      res.json({ total });
+      res.json({ total, hasSigned: true });
     } catch (err) {
       if (err instanceof z.ZodError) {
         return res.status(400).json({ message: err.errors[0].message });
@@ -1032,24 +1053,6 @@ async function seedDatabase() {
 
     for (const tip of tipsData) {
       await storage.createPlaceTip(tip);
-    }
-
-    // === PETITION SIGNATURES ===
-    const signaturesData = [
-      { displayName: "Alex Johnson", city: "Philadelphia", message: "Every person deserves equal access!", shareConsent: true },
-      { displayName: "Maria Santos", city: "Camden", message: "My daughter uses a wheelchair and we need better accessibility.", shareConsent: true },
-      { displayName: "James Williams", city: "Philadelphia", message: "Supporting a more inclusive city for all.", shareConsent: true },
-      { displayName: "Sarah Chen", city: "Conshohocken", message: "Accessibility benefits everyone, not just people with disabilities.", shareConsent: true },
-      { displayName: "Michael Brown", city: "Philadelphia", message: "As a veteran with mobility challenges, I support this cause.", shareConsent: true },
-      { displayName: "Emily Davis", city: "Bala Cynwyd", message: "Let's make Philly a model accessible city!", shareConsent: true },
-      { displayName: null, city: null, message: null, shareConsent: false },
-      { displayName: "Robert Taylor", city: "Philadelphia", message: "Equal access is a civil right.", shareConsent: true },
-      { displayName: null, city: null, message: null, shareConsent: false },
-      { displayName: "Linda Martinez", city: "King of Prussia", message: "Supporting my community!", shareConsent: true },
-    ];
-
-    for (const sig of signaturesData) {
-      await storage.createSignature(sig);
     }
 
     // === PETITION UPDATES ===
