@@ -47,7 +47,7 @@ export const authRateLimiter = rateLimit({
 });
 
 // General API rate limiter
-const apiRateLimiter = rateLimit({
+export const apiRateLimiter = rateLimit({
   windowMs: 60 * 1000, // 1 minute
   max: 100, // 100 requests per minute
   message: { message: "Too many requests. Please slow down." },

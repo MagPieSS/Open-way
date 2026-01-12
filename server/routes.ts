@@ -14,7 +14,7 @@ import {
   disable2FA,
   regenerateBackupCodes
 } from "./auth";
-import { authRateLimiter } from "./index";
+import { authRateLimiter, apiRateLimiter } from "./index";
 
 // Middleware to check if user is authenticated
 function requireAuth(req: Request, res: Response, next: NextFunction) {
@@ -22,6 +22,24 @@ function requireAuth(req: Request, res: Response, next: NextFunction) {
     return res.status(401).json({ message: "Please log in to continue" });
   }
   next();
+}
+
+// Middleware to check if user is an admin
+async function requireAdmin(req: Request, res: Response, next: NextFunction) {
+  if (!req.session.userId) {
+    return res.status(401).json({ message: "Please log in to continue" });
+  }
+  
+  try {
+    const user = await storage.getUserById(req.session.userId);
+    if (!user || !user.isAdmin) {
+      return res.status(403).json({ message: "Admin access required" });
+    }
+    next();
+  } catch (error) {
+    console.error("Error checking admin status:", error);
+    return res.status(500).json({ message: "Unable to verify admin status" });
+  }
 }
 
 // Input sanitization helper - removes potential XSS and limits length
@@ -321,7 +339,7 @@ export async function registerRoutes(
     res.json(category);
   });
 
-  app.post(api.categories.create.path, async (req, res) => {
+  app.post(api.categories.create.path, requireAdmin, async (req, res) => {
     try {
       const input = api.categories.create.input.parse(req.body);
       const category = await storage.createCategory(input);
@@ -362,7 +380,7 @@ export async function registerRoutes(
     res.json(place);
   });
 
-  app.post(api.places.create.path, async (req, res) => {
+  app.post(api.places.create.path, requireAdmin, async (req, res) => {
     try {
       const input = api.places.create.input.parse(req.body);
       const place = await storage.createPlace(input);
@@ -390,8 +408,8 @@ export async function registerRoutes(
     res.json(tips);
   });
 
-  // Accessibility Features
-  app.post(api.accessibilityFeatures.create.path, async (req, res) => {
+  // Accessibility Features (admin only)
+  app.post(api.accessibilityFeatures.create.path, requireAdmin, async (req, res) => {
     try {
       const input = api.accessibilityFeatures.create.input.parse(req.body);
       const feature = await storage.createAccessibilityFeature(input);
@@ -404,8 +422,8 @@ export async function registerRoutes(
     }
   });
 
-  // Place Media
-  app.post(api.placeMedia.create.path, async (req, res) => {
+  // Place Media (admin only)
+  app.post(api.placeMedia.create.path, requireAdmin, async (req, res) => {
     try {
       const input = api.placeMedia.create.input.parse(req.body);
       const media = await storage.createPlaceMedia(input);
@@ -474,7 +492,7 @@ export async function registerRoutes(
     }
   });
 
-  // Vote review as helpful (no auth required - but could add to prevent spam)
+  // Vote review as helpful (rate limited via global apiRateLimiter on all /api routes)
   app.post('/api/reviews/:id/helpful', async (req, res) => {
     const id = Number(req.params.id);
     const review = await storage.incrementReviewHelpfulCount(id);
@@ -535,8 +553,8 @@ export async function registerRoutes(
     res.json(updates);
   });
 
-  // Petition Updates
-  app.post(api.petitionUpdates.create.path, async (req, res) => {
+  // Petition Updates (admin only)
+  app.post(api.petitionUpdates.create.path, requireAdmin, async (req, res) => {
     try {
       const input = api.petitionUpdates.create.input.parse(req.body);
       const update = await storage.createPetitionUpdate(input);
@@ -572,7 +590,7 @@ export async function registerRoutes(
     res.json(event);
   });
 
-  app.post(api.events.create.path, async (req, res) => {
+  app.post(api.events.create.path, requireAdmin, async (req, res) => {
     try {
       const input = api.events.create.input.parse(req.body);
       const event = await storage.createEvent(input);
@@ -602,7 +620,7 @@ export async function registerRoutes(
     }
   });
 
-  app.post(api.resources.create.path, async (req, res) => {
+  app.post(api.resources.create.path, requireAdmin, async (req, res) => {
     try {
       const input = api.resources.create.input.parse(req.body);
       const resource = await storage.createResource(input);
@@ -640,7 +658,7 @@ export async function registerRoutes(
     res.json(post);
   });
 
-  app.post(api.blogPosts.create.path, async (req, res) => {
+  app.post(api.blogPosts.create.path, requireAdmin, async (req, res) => {
     try {
       const input = api.blogPosts.create.input.parse(req.body);
       const post = await storage.createBlogPost(input);
@@ -666,7 +684,7 @@ export async function registerRoutes(
     }
   });
 
-  app.post(api.faq.create.path, async (req, res) => {
+  app.post(api.faq.create.path, requireAdmin, async (req, res) => {
     try {
       const input = api.faq.create.input.parse(req.body);
       const entry = await storage.createFaqEntry(input);
@@ -713,7 +731,7 @@ export async function registerRoutes(
     res.json(results);
   });
 
-  app.post(api.activity.create.path, async (req, res) => {
+  app.post(api.activity.create.path, requireAdmin, async (req, res) => {
     try {
       const input = api.activity.create.input.parse(req.body);
       const log = await storage.createActivityLog(input);
@@ -739,7 +757,7 @@ export async function registerRoutes(
     }
   });
 
-  app.post(api.partners.create.path, async (req, res) => {
+  app.post(api.partners.create.path, requireAdmin, async (req, res) => {
     try {
       const input = api.partners.create.input.parse(req.body);
       const partner = await storage.createPartner(input);

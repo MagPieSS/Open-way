@@ -16,6 +16,7 @@ export const users = pgTable("users", {
   backupCodes: text("backup_codes").array(),
   // Account status
   isActive: boolean("is_active").default(true),
+  isAdmin: boolean("is_admin").default(false),
   lastLoginAt: timestamp("last_login_at"),
   createdAt: timestamp("created_at").defaultNow(),
 });
