@@ -12,7 +12,10 @@ import {
   enable2FA,
   confirm2FA,
   disable2FA,
-  regenerateBackupCodes
+  regenerateBackupCodes,
+  verifyPassword,
+  hashPassword,
+  isWeakPassword
 } from "./auth";
 import { authRateLimiter, apiRateLimiter } from "./index";
 
@@ -264,18 +267,20 @@ export async function registerRoutes(
       return res.status(404).json({ message: "User not found" });
     }
 
-    const isValid = await bcrypt.compare(currentPassword, user.passwordHash);
+    const isValid = await verifyPassword(currentPassword, user.passwordHash);
     if (!isValid) {
       return res.status(400).json({ message: "Current password is incorrect" });
     }
 
     // Validate new password
-    const passwordValidation = validatePassword(newPassword);
-    if (!passwordValidation.valid) {
-      return res.status(400).json({ message: passwordValidation.error });
+    if (newPassword.length < 8) {
+      return res.status(400).json({ message: "Password must be at least 8 characters" });
+    }
+    if (isWeakPassword(newPassword)) {
+      return res.status(400).json({ message: "This password is too common. Please choose a stronger password." });
     }
 
-    const newHash = await bcrypt.hash(newPassword, 12);
+    const newHash = await hashPassword(newPassword);
     await storage.updateUserPassword(req.session.userId!, newHash);
 
     res.json({ success: true, message: "Password changed successfully" });
@@ -445,6 +450,7 @@ export async function registerRoutes(
         ...input,
         content: sanitizeString(input.content, 500),
         author: input.author ? sanitizeString(input.author, 100) : undefined,
+        userId: req.session.userId, // Link tip to authenticated user
       };
       const tip = await storage.createPlaceTip(sanitizedInput);
       res.status(201).json(tip);
@@ -500,6 +506,62 @@ export async function registerRoutes(
       return res.status(404).json({ message: "Review not found" });
     }
     res.json({ helpfulCount: review.helpfulCount });
+  });
+
+  // Update review (requires authentication, ownership check)
+  app.patch('/api/reviews/:id', requireAuth, async (req, res) => {
+    const id = Number(req.params.id);
+    const { content, rating } = req.body;
+    
+    if (!content && rating === undefined) {
+      return res.status(400).json({ message: "Content or rating required" });
+    }
+    
+    const updates: { content?: string; rating?: number } = {};
+    if (content) updates.content = sanitizeString(content, 2000);
+    if (rating !== undefined) updates.rating = rating;
+    
+    const review = await storage.updateReview(id, req.session.userId!, updates);
+    if (!review) {
+      return res.status(404).json({ message: "Review not found or you don't have permission to edit it" });
+    }
+    res.json(review);
+  });
+
+  // Delete review (requires authentication, ownership check)
+  app.delete('/api/reviews/:id', requireAuth, async (req, res) => {
+    const id = Number(req.params.id);
+    const deleted = await storage.deleteReview(id, req.session.userId!);
+    if (!deleted) {
+      return res.status(404).json({ message: "Review not found or you don't have permission to delete it" });
+    }
+    res.json({ success: true });
+  });
+
+  // Update tip (requires authentication, ownership check)
+  app.patch('/api/tips/:id', requireAuth, async (req, res) => {
+    const id = Number(req.params.id);
+    const { content } = req.body;
+    
+    if (!content) {
+      return res.status(400).json({ message: "Content is required" });
+    }
+    
+    const tip = await storage.updatePlaceTip(id, req.session.userId!, sanitizeString(content, 500));
+    if (!tip) {
+      return res.status(404).json({ message: "Tip not found or you don't have permission to edit it" });
+    }
+    res.json(tip);
+  });
+
+  // Delete tip (requires authentication, ownership check)
+  app.delete('/api/tips/:id', requireAuth, async (req, res) => {
+    const id = Number(req.params.id);
+    const deleted = await storage.deletePlaceTip(id, req.session.userId!);
+    if (!deleted) {
+      return res.status(404).json({ message: "Tip not found or you don't have permission to delete it" });
+    }
+    res.json({ success: true });
   });
 
   // Petition

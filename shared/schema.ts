@@ -87,6 +87,7 @@ export const placeMedia = pgTable("place_media", {
 export const placeTips = pgTable("place_tips", {
   id: serial("id").primaryKey(),
   placeId: integer("place_id").references(() => places.id).notNull(),
+  userId: integer("user_id").references(() => users.id),
   content: text("content").notNull(),
   author: text("author"),
   helpfulCount: integer("helpful_count").default(0),
@@ -251,7 +252,7 @@ export const insertCategorySchema = createInsertSchema(categories).omit({ id: tr
 export const insertPlaceSchema = createInsertSchema(places).omit({ id: true, updatedAt: true, createdAt: true, viewCount: true, reviewCount: true });
 export const insertAccessibilityFeatureSchema = createInsertSchema(accessibilityFeatures).omit({ id: true });
 export const insertPlaceMediaSchema = createInsertSchema(placeMedia).omit({ id: true, createdAt: true });
-export const insertPlaceTipSchema = createInsertSchema(placeTips).omit({ id: true, createdAt: true, helpfulCount: true });
+export const insertPlaceTipSchema = createInsertSchema(placeTips).omit({ id: true, createdAt: true, helpfulCount: true, userId: true });
 export const insertReviewSchema = createInsertSchema(reviews).omit({ id: true, createdAt: true, helpfulCount: true });
 export const insertSignatureSchema = createInsertSchema(signatures).omit({ id: true, signedAt: true, userId: true });
 export const insertPetitionUpdateSchema = createInsertSchema(petitionUpdates).omit({ id: true, createdAt: true });

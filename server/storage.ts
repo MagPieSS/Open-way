@@ -50,12 +50,18 @@ export interface IStorage {
 
   // Place Tips
   getPlaceTips(placeId: number): Promise<PlaceTip[]>;
+  getPlaceTip(id: number): Promise<PlaceTip | undefined>;
   createPlaceTip(tip: InsertPlaceTip): Promise<PlaceTip>;
+  updatePlaceTip(id: number, userId: number, content: string): Promise<PlaceTip | undefined>;
+  deletePlaceTip(id: number, userId: number): Promise<boolean>;
 
   // Reviews
   getReviews(placeId?: number): Promise<Review[]>;
+  getReview(id: number): Promise<Review | undefined>;
   getFeaturedReviews(): Promise<Review[]>;
   createReview(review: InsertReview): Promise<Review>;
+  updateReview(id: number, userId: number, updates: { content?: string; rating?: number }): Promise<Review | undefined>;
+  deleteReview(id: number, userId: number): Promise<boolean>;
   incrementReviewHelpfulCount(id: number): Promise<Review | undefined>;
 
   // Signatures
@@ -213,9 +219,28 @@ export class DatabaseStorage implements IStorage {
     return await db.select().from(placeTips).where(eq(placeTips.placeId, placeId)).orderBy(desc(placeTips.helpfulCount));
   }
 
+  async getPlaceTip(id: number): Promise<PlaceTip | undefined> {
+    const [tip] = await db.select().from(placeTips).where(eq(placeTips.id, id));
+    return tip;
+  }
+
   async createPlaceTip(tip: InsertPlaceTip): Promise<PlaceTip> {
     const [newTip] = await db.insert(placeTips).values(tip).returning();
     return newTip;
+  }
+
+  async updatePlaceTip(id: number, userId: number, content: string): Promise<PlaceTip | undefined> {
+    const [updated] = await db.update(placeTips)
+      .set({ content })
+      .where(and(eq(placeTips.id, id), eq(placeTips.userId, userId)))
+      .returning();
+    return updated;
+  }
+
+  async deletePlaceTip(id: number, userId: number): Promise<boolean> {
+    const result = await db.delete(placeTips)
+      .where(and(eq(placeTips.id, id), eq(placeTips.userId, userId)));
+    return (result.rowCount ?? 0) > 0;
   }
 
   // Reviews
@@ -224,6 +249,11 @@ export class DatabaseStorage implements IStorage {
       return await db.select().from(reviews).where(eq(reviews.placeId, placeId)).orderBy(desc(reviews.createdAt));
     }
     return await db.select().from(reviews).orderBy(desc(reviews.createdAt));
+  }
+
+  async getReview(id: number): Promise<Review | undefined> {
+    const [review] = await db.select().from(reviews).where(eq(reviews.id, id));
+    return review;
   }
 
   async getFeaturedReviews(): Promise<Review[]> {
@@ -239,6 +269,30 @@ export class DatabaseStorage implements IStorage {
       }).where(eq(places.id, review.placeId));
     }
     return newReview;
+  }
+
+  async updateReview(id: number, userId: number, updates: { content?: string; rating?: number }): Promise<Review | undefined> {
+    const [updated] = await db.update(reviews)
+      .set(updates)
+      .where(and(eq(reviews.id, id), eq(reviews.userId, userId)))
+      .returning();
+    return updated;
+  }
+
+  async deleteReview(id: number, userId: number): Promise<boolean> {
+    const review = await this.getReview(id);
+    if (!review || review.userId !== userId) return false;
+    
+    const result = await db.delete(reviews)
+      .where(and(eq(reviews.id, id), eq(reviews.userId, userId)));
+    
+    if ((result.rowCount ?? 0) > 0 && review.placeId) {
+      await db.update(places).set({ 
+        reviewCount: sql`GREATEST(${places.reviewCount} - 1, 0)`,
+        updatedAt: new Date()
+      }).where(eq(places.id, review.placeId));
+    }
+    return (result.rowCount ?? 0) > 0;
   }
 
   async incrementReviewHelpfulCount(id: number): Promise<Review | undefined> {

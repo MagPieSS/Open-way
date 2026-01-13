@@ -17,6 +17,7 @@ import { Button } from "@/components/ui/button";
 import { useToast } from "@/hooks/use-toast";
 import { useState } from "react";
 import { apiRequest } from "@/lib/queryClient";
+import { Pencil, Trash2 } from "lucide-react";
 
 const FEATURE_GROUPS: Record<string, { label: string; icon: typeof Move; features: string[] }> = {
   mobility: {
@@ -108,6 +109,10 @@ export default function PlaceDetail() {
   const { user } = useAuth();
   const queryClient = useQueryClient();
   const [hoveredImage, setHoveredImage] = useState<number | null>(null);
+  const [editingReviewId, setEditingReviewId] = useState<number | null>(null);
+  const [editingTipId, setEditingTipId] = useState<number | null>(null);
+  const [editContent, setEditContent] = useState("");
+  const [editRating, setEditRating] = useState<number | undefined>(undefined);
 
   const { data: savedStatus, isLoading: isLoadingSaved } = useQuery<{ isSaved: boolean }>({
     queryKey: ["/api/saved-places", id, "check"],
@@ -158,6 +163,65 @@ export default function PlaceDetail() {
         title: "Error",
         description: "Failed to remove place. Please try again.",
       });
+    },
+  });
+
+  // Review mutations
+  const updateReviewMutation = useMutation({
+    mutationFn: async ({ reviewId, content, rating }: { reviewId: number; content: string; rating?: number }) => {
+      await apiRequest("PATCH", `/api/reviews/${reviewId}`, { content, rating });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/reviews", id] });
+      setEditingReviewId(null);
+      setEditContent("");
+      setEditRating(undefined);
+      toast({ title: "Review updated" });
+    },
+    onError: () => {
+      toast({ variant: "destructive", title: "Error", description: "Failed to update review." });
+    },
+  });
+
+  const deleteReviewMutation = useMutation({
+    mutationFn: async (reviewId: number) => {
+      await apiRequest("DELETE", `/api/reviews/${reviewId}`);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/reviews", id] });
+      toast({ title: "Review deleted" });
+    },
+    onError: () => {
+      toast({ variant: "destructive", title: "Error", description: "Failed to delete review." });
+    },
+  });
+
+  // Tip mutations
+  const updateTipMutation = useMutation({
+    mutationFn: async ({ tipId, content }: { tipId: number; content: string }) => {
+      await apiRequest("PATCH", `/api/tips/${tipId}`, { content });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/places", id, "tips"] });
+      setEditingTipId(null);
+      setEditContent("");
+      toast({ title: "Tip updated" });
+    },
+    onError: () => {
+      toast({ variant: "destructive", title: "Error", description: "Failed to update tip." });
+    },
+  });
+
+  const deleteTipMutation = useMutation({
+    mutationFn: async (tipId: number) => {
+      await apiRequest("DELETE", `/api/tips/${tipId}`);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/places", id, "tips"] });
+      toast({ title: "Tip deleted" });
+    },
+    onError: () => {
+      toast({ variant: "destructive", title: "Error", description: "Failed to delete tip." });
     },
   });
 
@@ -503,12 +567,69 @@ export default function PlaceDetail() {
                     className="bg-secondary/30 p-4 rounded-xl border border-border/50"
                     data-testid={`tip-card-${tip.id}`}
                   >
-                    <p className={`text-foreground/80 mb-3 text-${textSize}`}>{tip.content}</p>
+                    {editingTipId === tip.id ? (
+                      <div className="space-y-3">
+                        <textarea
+                          value={editContent}
+                          onChange={(e) => setEditContent(e.target.value)}
+                          className="w-full p-3 rounded-lg border border-border bg-background text-foreground resize-none"
+                          rows={2}
+                          data-testid={`textarea-edit-tip-${tip.id}`}
+                        />
+                        <div className="flex gap-2">
+                          <Button
+                            size="sm"
+                            onClick={() => updateTipMutation.mutate({ tipId: tip.id, content: editContent })}
+                            disabled={updateTipMutation.isPending}
+                            data-testid={`button-save-tip-${tip.id}`}
+                          >
+                            {updateTipMutation.isPending ? "Saving..." : "Save"}
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={() => { setEditingTipId(null); setEditContent(""); }}
+                            data-testid={`button-cancel-edit-tip-${tip.id}`}
+                          >
+                            Cancel
+                          </Button>
+                        </div>
+                      </div>
+                    ) : (
+                      <p className={`text-foreground/80 mb-3 text-${textSize}`}>{tip.content}</p>
+                    )}
                     <div className="flex items-center justify-between gap-4 flex-wrap text-sm text-muted-foreground">
                       <span>{tip.author || "Anonymous"}</span>
-                      <div className="flex items-center gap-1">
-                        <ThumbsUp className="w-4 h-4" />
-                        <span data-testid={`tip-helpful-count-${tip.id}`}>{tip.helpfulCount || 0} found helpful</span>
+                      <div className="flex items-center gap-2">
+                        <div className="flex items-center gap-1">
+                          <ThumbsUp className="w-4 h-4" />
+                          <span data-testid={`tip-helpful-count-${tip.id}`}>{tip.helpfulCount || 0} found helpful</span>
+                        </div>
+                        {user && tip.userId === user.id && editingTipId !== tip.id && (
+                          <div className="flex gap-1">
+                            <Button
+                              size="icon"
+                              variant="ghost"
+                              className="h-6 w-6"
+                              onClick={() => {
+                                setEditingTipId(tip.id);
+                                setEditContent(tip.content);
+                              }}
+                              data-testid={`button-edit-tip-${tip.id}`}
+                            >
+                              <Pencil className="w-3 h-3" />
+                            </Button>
+                            <Button
+                              size="icon"
+                              variant="ghost"
+                              className="h-6 w-6 text-destructive hover:text-destructive"
+                              onClick={() => deleteTipMutation.mutate(tip.id)}
+                              data-testid={`button-delete-tip-${tip.id}`}
+                            >
+                              <Trash2 className="w-3 h-3" />
+                            </Button>
+                          </div>
+                        )}
                       </div>
                     </div>
                   </div>
@@ -582,12 +703,70 @@ export default function PlaceDetail() {
                       <div className="flex-grow">
                         <div className="flex justify-between items-start gap-4 flex-wrap mb-2">
                           <span className="font-bold text-foreground">{review.authorName || "Community Member"}</span>
-                          <span className="text-sm text-muted-foreground flex items-center gap-1">
-                            <Calendar className="w-3 h-3" />
-                            {format(new Date(review.createdAt || new Date()), "MMM d, yyyy")}
-                          </span>
+                          <div className="flex items-center gap-2">
+                            <span className="text-sm text-muted-foreground flex items-center gap-1">
+                              <Calendar className="w-3 h-3" />
+                              {format(new Date(review.createdAt || new Date()), "MMM d, yyyy")}
+                            </span>
+                            {user && review.userId === user.id && (
+                              <div className="flex gap-1">
+                                <Button
+                                  size="icon"
+                                  variant="ghost"
+                                  className="h-7 w-7"
+                                  onClick={() => {
+                                    setEditingReviewId(review.id);
+                                    setEditContent(review.content);
+                                    setEditRating(review.rating ?? undefined);
+                                  }}
+                                  data-testid={`button-edit-review-${review.id}`}
+                                >
+                                  <Pencil className="w-3 h-3" />
+                                </Button>
+                                <Button
+                                  size="icon"
+                                  variant="ghost"
+                                  className="h-7 w-7 text-destructive hover:text-destructive"
+                                  onClick={() => deleteReviewMutation.mutate(review.id)}
+                                  data-testid={`button-delete-review-${review.id}`}
+                                >
+                                  <Trash2 className="w-3 h-3" />
+                                </Button>
+                              </div>
+                            )}
+                          </div>
                         </div>
-                        <p className={`text-foreground/80 text-${textSize}`}>{review.content}</p>
+                        {editingReviewId === review.id ? (
+                          <div className="space-y-3">
+                            <textarea
+                              value={editContent}
+                              onChange={(e) => setEditContent(e.target.value)}
+                              className="w-full p-3 rounded-lg border border-border bg-background text-foreground resize-none"
+                              rows={3}
+                              data-testid={`textarea-edit-review-${review.id}`}
+                            />
+                            <div className="flex gap-2">
+                              <Button
+                                size="sm"
+                                onClick={() => updateReviewMutation.mutate({ reviewId: review.id, content: editContent, rating: editRating })}
+                                disabled={updateReviewMutation.isPending}
+                                data-testid={`button-save-review-${review.id}`}
+                              >
+                                {updateReviewMutation.isPending ? "Saving..." : "Save"}
+                              </Button>
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                onClick={() => { setEditingReviewId(null); setEditContent(""); }}
+                                data-testid={`button-cancel-edit-review-${review.id}`}
+                              >
+                                Cancel
+                              </Button>
+                            </div>
+                          </div>
+                        ) : (
+                          <p className={`text-foreground/80 text-${textSize}`}>{review.content}</p>
+                        )}
                       </div>
                     </div>
                   </div>
