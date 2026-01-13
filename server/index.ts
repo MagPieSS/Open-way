@@ -12,6 +12,24 @@ import path from "path";
 const app = express();
 const httpServer = createServer(app);
 
+// ==================== SECURITY VALIDATION ====================
+// Validate critical security secrets on startup
+const isProduction = process.env.NODE_ENV === "production";
+const sessionSecret = process.env.SESSION_SECRET;
+
+if (isProduction && !sessionSecret) {
+  console.error("FATAL: SESSION_SECRET environment variable is required in production");
+  process.exit(1);
+}
+
+if (sessionSecret && sessionSecret.length < 32) {
+  console.error("FATAL: SESSION_SECRET must be at least 32 characters for security");
+  process.exit(1);
+}
+
+// Use provided secret or secure development fallback
+const effectiveSessionSecret = sessionSecret || "dev-only-secret-not-for-production-use-32chars";
+
 // Trust first proxy (required for rate limiting behind reverse proxy)
 app.set("trust proxy", 1);
 
@@ -21,6 +39,7 @@ declare module "express-session" {
     userId: number;
     email: string;
     pending2FAUserId?: number;
+    csrfToken?: string;
   }
 }
 
@@ -30,11 +49,29 @@ declare module "http" {
   }
 }
 
-// Security headers with helmet (configured for development flexibility)
+// Security headers with helmet (configured for production)
 app.use(
   helmet({
-    contentSecurityPolicy: process.env.NODE_ENV === "production" ? undefined : false,
+    contentSecurityPolicy: isProduction ? {
+      directives: {
+        defaultSrc: ["'self'"],
+        scriptSrc: ["'self'", "'unsafe-inline'"],
+        styleSrc: ["'self'", "'unsafe-inline'", "https://fonts.googleapis.com"],
+        fontSrc: ["'self'", "https://fonts.gstatic.com"],
+        imgSrc: ["'self'", "data:", "https:", "blob:"],
+        connectSrc: ["'self'"],
+        frameSrc: ["'none'"],
+        objectSrc: ["'none'"],
+        baseUri: ["'self'"],
+        formAction: ["'self'"],
+        upgradeInsecureRequests: [],
+      },
+    } : false,
     crossOriginEmbedderPolicy: false,
+    hsts: isProduction ? { maxAge: 31536000, includeSubDomains: true } : false,
+    referrerPolicy: { policy: "strict-origin-when-cross-origin" },
+    noSniff: true,
+    xssFilter: true,
   })
 );
 
@@ -68,14 +105,14 @@ app.use(
       tableName: "user_sessions",
       createTableIfMissing: true,
     }),
-    secret: process.env.SESSION_SECRET || "dev-secret-change-in-production",
+    secret: effectiveSessionSecret,
     resave: false,
     saveUninitialized: false,
     name: "openway.sid",
     cookie: {
-      secure: process.env.NODE_ENV === "production",
+      secure: isProduction,
       httpOnly: true,
-      sameSite: "lax",
+      sameSite: "strict", // Upgraded from 'lax' to 'strict' for CSRF protection
       maxAge: 24 * 60 * 60 * 1000, // 24 hours
     },
   })
@@ -94,6 +131,51 @@ app.use(express.urlencoded({ extended: false }));
 // Serve stock images from attached_assets folder
 const assetsPath = path.resolve(process.cwd(), "attached_assets");
 app.use("/assets", express.static(assetsPath));
+
+// ==================== CSRF PROTECTION ====================
+import crypto from "crypto";
+
+// Generate CSRF token for session
+export function generateCsrfToken(): string {
+  return crypto.randomBytes(32).toString("hex");
+}
+
+// Middleware to ensure CSRF token exists in session
+export function ensureCsrfToken(req: Request, _res: Response, next: NextFunction) {
+  if (!req.session.csrfToken) {
+    req.session.csrfToken = generateCsrfToken();
+  }
+  next();
+}
+
+// CSRF validation middleware for state-changing requests
+export function validateCsrf(req: Request, res: Response, next: NextFunction) {
+  // Skip CSRF for GET, HEAD, OPTIONS (safe methods)
+  if (["GET", "HEAD", "OPTIONS"].includes(req.method)) {
+    return next();
+  }
+
+  // Skip CSRF for unauthenticated users (register/login handle their own protection via rate limiting)
+  if (!req.session.userId) {
+    return next();
+  }
+
+  const csrfToken = req.headers["x-csrf-token"] as string;
+  
+  if (!csrfToken || csrfToken !== req.session.csrfToken) {
+    return res.status(403).json({ message: "Invalid security token. Please refresh and try again." });
+  }
+
+  next();
+}
+
+// Apply CSRF token generation to all requests (after session middleware)
+app.use(ensureCsrfToken);
+
+// Endpoint to get CSRF token (needed by frontend)
+app.get("/api/csrf-token", (req, res) => {
+  res.json({ token: req.session.csrfToken });
+});
 
 export function log(message: string, source = "express") {
   const formattedTime = new Date().toLocaleTimeString("en-US", {

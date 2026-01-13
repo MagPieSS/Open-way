@@ -17,7 +17,7 @@ import {
   hashPassword,
   isWeakPassword
 } from "./auth";
-import { authRateLimiter, apiRateLimiter } from "./index";
+import { authRateLimiter, apiRateLimiter, validateCsrf } from "./index";
 
 // Middleware to check if user is authenticated
 function requireAuth(req: Request, res: Response, next: NextFunction) {
@@ -45,13 +45,35 @@ async function requireAdmin(req: Request, res: Response, next: NextFunction) {
   }
 }
 
-// Input sanitization helper - removes potential XSS and limits length
+// Comprehensive input sanitization helper - prevents XSS attacks
 function sanitizeString(input: string, maxLength: number = 1000): string {
   return input
-    .replace(/<[^>]*>/g, "") // Remove HTML tags
-    .replace(/[<>]/g, "") // Remove angle brackets
+    // Remove HTML tags including malformed ones
+    .replace(/<[^>]*>?/g, "")
+    // Remove script-related patterns (even without tags)
+    .replace(/javascript:/gi, "")
+    .replace(/on\w+\s*=/gi, "")
+    .replace(/data:/gi, "data-blocked:")
+    // Remove angle brackets and other dangerous characters
+    .replace(/[<>]/g, "")
+    // Encode remaining HTML entities for safety
+    .replace(/&/g, "&amp;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#x27;")
+    // Remove null bytes and control characters
+    .replace(/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/g, "")
     .trim()
     .slice(0, maxLength);
+}
+
+// HTML-encode for display (used when data will be rendered as HTML)
+function encodeHtml(input: string): string {
+  return input
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#x27;");
 }
 
 export async function registerRoutes(
@@ -177,7 +199,7 @@ export async function registerRoutes(
   // ==================== 2FA MANAGEMENT ROUTES ====================
 
   // Start 2FA setup
-  app.post("/api/auth/2fa/setup", requireAuth, async (req, res) => {
+  app.post("/api/auth/2fa/setup", requireAuth, validateCsrf, async (req, res) => {
     const result = await enable2FA(req.session.userId!, req.session.email!);
 
     if (!result.success) {
@@ -192,7 +214,7 @@ export async function registerRoutes(
   });
 
   // Confirm 2FA setup
-  app.post("/api/auth/2fa/confirm", requireAuth, authRateLimiter, async (req, res) => {
+  app.post("/api/auth/2fa/confirm", requireAuth, validateCsrf, authRateLimiter, async (req, res) => {
     const { code } = req.body;
 
     if (!code || typeof code !== "string") {
@@ -209,13 +231,13 @@ export async function registerRoutes(
   });
 
   // Disable 2FA
-  app.post("/api/auth/2fa/disable", requireAuth, async (req, res) => {
+  app.post("/api/auth/2fa/disable", requireAuth, validateCsrf, async (req, res) => {
     await disable2FA(req.session.userId!);
     res.json({ success: true });
   });
 
   // Regenerate backup codes
-  app.post("/api/auth/2fa/regenerate-backup", requireAuth, async (req, res) => {
+  app.post("/api/auth/2fa/regenerate-backup", requireAuth, validateCsrf, async (req, res) => {
     const result = await regenerateBackupCodes(req.session.userId!);
 
     if (!result.success) {
@@ -228,7 +250,7 @@ export async function registerRoutes(
   // ==================== PROFILE ROUTES ====================
 
   // Update display name
-  app.patch("/api/profile/display-name", requireAuth, async (req, res) => {
+  app.patch("/api/profile/display-name", requireAuth, validateCsrf, async (req, res) => {
     const { displayName } = req.body;
 
     if (!displayName || typeof displayName !== "string") {
@@ -255,7 +277,7 @@ export async function registerRoutes(
   });
 
   // Change password
-  app.post("/api/profile/change-password", requireAuth, authRateLimiter, async (req, res) => {
+  app.post("/api/profile/change-password", requireAuth, validateCsrf, authRateLimiter, async (req, res) => {
     const { currentPassword, newPassword } = req.body;
 
     if (!currentPassword || !newPassword) {
@@ -295,7 +317,7 @@ export async function registerRoutes(
   });
 
   // Save a place
-  app.post("/api/saved-places/:placeId", requireAuth, async (req, res) => {
+  app.post("/api/saved-places/:placeId", requireAuth, validateCsrf, async (req, res) => {
     const placeId = Number(req.params.placeId);
     
     const place = await storage.getPlace(placeId);
@@ -313,7 +335,7 @@ export async function registerRoutes(
   });
 
   // Unsave a place
-  app.delete("/api/saved-places/:placeId", requireAuth, async (req, res) => {
+  app.delete("/api/saved-places/:placeId", requireAuth, validateCsrf, async (req, res) => {
     const placeId = Number(req.params.placeId);
     await storage.unsavePlace(req.session.userId!, placeId);
     res.json({ success: true });
@@ -344,7 +366,7 @@ export async function registerRoutes(
     res.json(category);
   });
 
-  app.post(api.categories.create.path, requireAdmin, async (req, res) => {
+  app.post(api.categories.create.path, requireAdmin, validateCsrf, async (req, res) => {
     try {
       const input = api.categories.create.input.parse(req.body);
       const category = await storage.createCategory(input);
@@ -385,7 +407,7 @@ export async function registerRoutes(
     res.json(place);
   });
 
-  app.post(api.places.create.path, requireAdmin, async (req, res) => {
+  app.post(api.places.create.path, requireAdmin, validateCsrf, async (req, res) => {
     try {
       const input = api.places.create.input.parse(req.body);
       const place = await storage.createPlace(input);
@@ -414,7 +436,7 @@ export async function registerRoutes(
   });
 
   // Accessibility Features (admin only)
-  app.post(api.accessibilityFeatures.create.path, requireAdmin, async (req, res) => {
+  app.post(api.accessibilityFeatures.create.path, requireAdmin, validateCsrf, async (req, res) => {
     try {
       const input = api.accessibilityFeatures.create.input.parse(req.body);
       const feature = await storage.createAccessibilityFeature(input);
@@ -428,7 +450,7 @@ export async function registerRoutes(
   });
 
   // Place Media (admin only)
-  app.post(api.placeMedia.create.path, requireAdmin, async (req, res) => {
+  app.post(api.placeMedia.create.path, requireAdmin, validateCsrf, async (req, res) => {
     try {
       const input = api.placeMedia.create.input.parse(req.body);
       const media = await storage.createPlaceMedia(input);
@@ -442,7 +464,7 @@ export async function registerRoutes(
   });
 
   // Place Tips (requires authentication)
-  app.post(api.placeTips.create.path, requireAuth, async (req, res) => {
+  app.post(api.placeTips.create.path, requireAuth, validateCsrf, async (req, res) => {
     try {
       const input = api.placeTips.create.input.parse(req.body);
       // Sanitize input content
@@ -477,7 +499,7 @@ export async function registerRoutes(
   });
 
   // Create review (requires authentication)
-  app.post(api.reviews.create.path, requireAuth, async (req, res) => {
+  app.post(api.reviews.create.path, requireAuth, validateCsrf, async (req, res) => {
     try {
       const input = api.reviews.create.input.parse(req.body);
       // Sanitize input content
@@ -509,7 +531,7 @@ export async function registerRoutes(
   });
 
   // Update review (requires authentication, ownership check)
-  app.patch('/api/reviews/:id', requireAuth, async (req, res) => {
+  app.patch('/api/reviews/:id', requireAuth, validateCsrf, async (req, res) => {
     const id = Number(req.params.id);
     const { content, rating } = req.body;
     
@@ -529,7 +551,7 @@ export async function registerRoutes(
   });
 
   // Delete review (requires authentication, ownership check)
-  app.delete('/api/reviews/:id', requireAuth, async (req, res) => {
+  app.delete('/api/reviews/:id', requireAuth, validateCsrf, async (req, res) => {
     const id = Number(req.params.id);
     const deleted = await storage.deleteReview(id, req.session.userId!);
     if (!deleted) {
@@ -539,7 +561,7 @@ export async function registerRoutes(
   });
 
   // Update tip (requires authentication, ownership check)
-  app.patch('/api/tips/:id', requireAuth, async (req, res) => {
+  app.patch('/api/tips/:id', requireAuth, validateCsrf, async (req, res) => {
     const id = Number(req.params.id);
     const { content } = req.body;
     
@@ -555,7 +577,7 @@ export async function registerRoutes(
   });
 
   // Delete tip (requires authentication, ownership check)
-  app.delete('/api/tips/:id', requireAuth, async (req, res) => {
+  app.delete('/api/tips/:id', requireAuth, validateCsrf, async (req, res) => {
     const id = Number(req.params.id);
     const deleted = await storage.deletePlaceTip(id, req.session.userId!);
     if (!deleted) {
@@ -577,7 +599,7 @@ export async function registerRoutes(
   });
 
   // Sign petition (requires authentication, one signature per user)
-  app.post(api.petition.sign.path, requireAuth, authRateLimiter, async (req, res) => {
+  app.post(api.petition.sign.path, requireAuth, validateCsrf, authRateLimiter, async (req, res) => {
     try {
       // Check if user has already signed
       const hasSigned = await storage.hasUserSigned(req.session.userId!);
@@ -616,7 +638,7 @@ export async function registerRoutes(
   });
 
   // Petition Updates (admin only)
-  app.post(api.petitionUpdates.create.path, requireAdmin, async (req, res) => {
+  app.post(api.petitionUpdates.create.path, requireAdmin, validateCsrf, async (req, res) => {
     try {
       const input = api.petitionUpdates.create.input.parse(req.body);
       const update = await storage.createPetitionUpdate(input);
@@ -652,7 +674,7 @@ export async function registerRoutes(
     res.json(event);
   });
 
-  app.post(api.events.create.path, requireAdmin, async (req, res) => {
+  app.post(api.events.create.path, requireAdmin, validateCsrf, async (req, res) => {
     try {
       const input = api.events.create.input.parse(req.body);
       const event = await storage.createEvent(input);
@@ -682,7 +704,7 @@ export async function registerRoutes(
     }
   });
 
-  app.post(api.resources.create.path, requireAdmin, async (req, res) => {
+  app.post(api.resources.create.path, requireAdmin, validateCsrf, async (req, res) => {
     try {
       const input = api.resources.create.input.parse(req.body);
       const resource = await storage.createResource(input);
@@ -720,7 +742,7 @@ export async function registerRoutes(
     res.json(post);
   });
 
-  app.post(api.blogPosts.create.path, requireAdmin, async (req, res) => {
+  app.post(api.blogPosts.create.path, requireAdmin, validateCsrf, async (req, res) => {
     try {
       const input = api.blogPosts.create.input.parse(req.body);
       const post = await storage.createBlogPost(input);
@@ -746,7 +768,7 @@ export async function registerRoutes(
     }
   });
 
-  app.post(api.faq.create.path, requireAdmin, async (req, res) => {
+  app.post(api.faq.create.path, requireAdmin, validateCsrf, async (req, res) => {
     try {
       const input = api.faq.create.input.parse(req.body);
       const entry = await storage.createFaqEntry(input);
@@ -793,7 +815,7 @@ export async function registerRoutes(
     res.json(results);
   });
 
-  app.post(api.activity.create.path, requireAdmin, async (req, res) => {
+  app.post(api.activity.create.path, requireAdmin, validateCsrf, async (req, res) => {
     try {
       const input = api.activity.create.input.parse(req.body);
       const log = await storage.createActivityLog(input);
@@ -819,7 +841,7 @@ export async function registerRoutes(
     }
   });
 
-  app.post(api.partners.create.path, requireAdmin, async (req, res) => {
+  app.post(api.partners.create.path, requireAdmin, validateCsrf, async (req, res) => {
     try {
       const input = api.partners.create.input.parse(req.body);
       const partner = await storage.createPartner(input);
