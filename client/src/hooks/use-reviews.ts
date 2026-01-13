@@ -1,5 +1,6 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { api, type ReviewInput } from "@shared/routes";
+import { apiRequest } from "@/lib/queryClient";
 import { z } from "zod";
 
 async function handleResponse<T>(res: Response, schema: z.ZodSchema<T>): Promise<T> {
@@ -34,11 +35,7 @@ export function useCreateReview() {
       const payload = { ...data, placeId: Number(data.placeId) };
       const validated = api.reviews.create.input.parse(payload);
       
-      const res = await fetch(api.reviews.create.path, {
-        method: api.reviews.create.method,
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(validated),
-      });
+      const res = await apiRequest(api.reviews.create.method, api.reviews.create.path, validated);
       return handleResponse(res, api.reviews.create.responses[201]);
     },
     onSuccess: (_, variables) => {
