@@ -7,6 +7,7 @@ import { serveStatic } from "./static";
 import { createServer } from "http";
 import connectPgSimple from "connect-pg-simple";
 import { pool } from "./db";
+import path from "path";
 
 const app = express();
 const httpServer = createServer(app);
@@ -89,6 +90,10 @@ app.use(
 );
 
 app.use(express.urlencoded({ extended: false }));
+
+// Serve stock images from attached_assets folder
+const assetsPath = path.resolve(process.cwd(), "attached_assets");
+app.use("/assets", express.static(assetsPath));
 
 export function log(message: string, source = "express") {
   const formattedTime = new Date().toLocaleTimeString("en-US", {

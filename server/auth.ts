@@ -7,6 +7,68 @@ import type { User, SafeUser } from "@shared/schema";
 
 const SALT_ROUNDS = 12;
 const BACKUP_CODE_COUNT = 10;
+const ENCRYPTION_ALGORITHM = "aes-256-gcm";
+
+// Derive encryption key from SESSION_SECRET
+function getEncryptionKey(): Buffer {
+  const secret = process.env.SESSION_SECRET || "dev-secret-change-in-production";
+  return crypto.scryptSync(secret, "2fa-encryption-salt", 32);
+}
+
+// Encrypt data using AES-256-GCM
+export function encryptSecret(plaintext: string): string {
+  const key = getEncryptionKey();
+  const iv = crypto.randomBytes(16);
+  const cipher = crypto.createCipheriv(ENCRYPTION_ALGORITHM, key, iv);
+  
+  let encrypted = cipher.update(plaintext, "utf8", "hex");
+  encrypted += cipher.final("hex");
+  
+  const authTag = cipher.getAuthTag();
+  
+  // Format: iv:authTag:encryptedData
+  return `${iv.toString("hex")}:${authTag.toString("hex")}:${encrypted}`;
+}
+
+// Decrypt data using AES-256-GCM
+export function decryptSecret(ciphertext: string): string {
+  try {
+    const key = getEncryptionKey();
+    const [ivHex, authTagHex, encrypted] = ciphertext.split(":");
+    
+    if (!ivHex || !authTagHex || !encrypted) {
+      throw new Error("Invalid encrypted format");
+    }
+    
+    const iv = Buffer.from(ivHex, "hex");
+    const authTag = Buffer.from(authTagHex, "hex");
+    
+    const decipher = crypto.createDecipheriv(ENCRYPTION_ALGORITHM, key, iv);
+    decipher.setAuthTag(authTag);
+    
+    let decrypted = decipher.update(encrypted, "hex", "utf8");
+    decrypted += decipher.final("utf8");
+    
+    return decrypted;
+  } catch (error) {
+    // If decryption fails, it might be an old unencrypted secret (for migration)
+    // Return as-is for backwards compatibility
+    if (!ciphertext.includes(":")) {
+      return ciphertext;
+    }
+    throw error;
+  }
+}
+
+// Encrypt backup codes array
+export function encryptBackupCodes(codes: string[]): string[] {
+  return codes.map(code => encryptSecret(code));
+}
+
+// Decrypt backup codes array
+export function decryptBackupCodes(encryptedCodes: string[]): string[] {
+  return encryptedCodes.map(code => decryptSecret(code));
+}
 
 // Common weak passwords to reject
 const COMMON_PASSWORDS = new Set([
@@ -147,20 +209,46 @@ export async function verifyTwoFactor(
     return { success: false, error: "2FA is not configured for this account" };
   }
 
+  // Decrypt secret for verification
+  const decryptedSecret = decryptSecret(user.twoFactorSecret);
+
   // Try TOTP code first
-  if (verifyTwoFactorCode(user.twoFactorSecret, code)) {
+  if (verifyTwoFactorCode(decryptedSecret, code)) {
     await storage.updateUserLastLogin(user.id);
     return { success: true };
   }
 
-  // Try backup code
-  const backupValid = await storage.verifyBackupCode(userId, code.toUpperCase());
+  // Try backup code (backup codes are also encrypted)
+  const backupValid = await verifyEncryptedBackupCode(userId, code.toUpperCase(), user.backupCodes || []);
   if (backupValid) {
     await storage.updateUserLastLogin(user.id);
     return { success: true };
   }
 
   return { success: false, error: "Invalid verification code" };
+}
+
+// Verify backup code against encrypted codes
+async function verifyEncryptedBackupCode(userId: number, code: string, encryptedCodes: string[]): Promise<boolean> {
+  for (let i = 0; i < encryptedCodes.length; i++) {
+    try {
+      const decryptedCode = decryptSecret(encryptedCodes[i]);
+      if (decryptedCode === code) {
+        // Remove used code (update with remaining encrypted codes)
+        const remainingCodes = [...encryptedCodes];
+        remainingCodes.splice(i, 1);
+        const user = await storage.getUserById(userId);
+        if (user) {
+          await storage.updateUser2FA(userId, user.twoFactorEnabled || false, user.twoFactorSecret || undefined, remainingCodes);
+        }
+        return true;
+      }
+    } catch {
+      // Skip invalid encrypted codes
+      continue;
+    }
+  }
+  return false;
 }
 
 // Enable 2FA for a user
@@ -184,9 +272,14 @@ export async function enable2FA(
   const qrCode = await generateQRCode(otpauthUrl);
   const backupCodes = generateBackupCodes();
 
-  // Store secret (will be enabled after verification)
-  await storage.updateUser2FA(userId, false, secret, backupCodes);
+  // Encrypt secret and backup codes before storing
+  const encryptedSecret = encryptSecret(secret);
+  const encryptedBackupCodes = encryptBackupCodes(backupCodes);
 
+  // Store encrypted secret (will be enabled after verification)
+  await storage.updateUser2FA(userId, false, encryptedSecret, encryptedBackupCodes);
+
+  // Return plaintext codes to user (one-time display)
   return { 
     success: true, 
     qrCode, 
@@ -205,12 +298,15 @@ export async function confirm2FA(
     return { success: false, error: "2FA setup not started" };
   }
 
+  // Decrypt secret for verification
+  const decryptedSecret = decryptSecret(user.twoFactorSecret);
+
   // Verify the code works
-  if (!verifyTwoFactorCode(user.twoFactorSecret, code)) {
+  if (!verifyTwoFactorCode(decryptedSecret, code)) {
     return { success: false, error: "Invalid verification code" };
   }
 
-  // Enable 2FA
+  // Enable 2FA (keep encrypted secret)
   await storage.updateUser2FA(userId, true, user.twoFactorSecret, user.backupCodes || []);
 
   return { success: true };
@@ -234,12 +330,15 @@ export async function regenerateBackupCodes(userId: number): Promise<{
   }
 
   const backupCodes = generateBackupCodes();
+  const encryptedBackupCodes = encryptBackupCodes(backupCodes);
+  
   await storage.updateUser2FA(
     userId, 
     user.twoFactorEnabled || false, 
     user.twoFactorSecret || undefined, 
-    backupCodes
+    encryptedBackupCodes
   );
 
+  // Return plaintext codes to user (one-time display)
   return { success: true, backupCodes };
 }
