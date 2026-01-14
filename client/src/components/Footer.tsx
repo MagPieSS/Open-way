@@ -1,55 +1,9 @@
 import { Link } from "wouter";
-import { Heart, MapPin, Mail, ArrowRight } from "lucide-react";
-import { useState } from "react";
-import { useToast } from "@/hooks/use-toast";
+import { Heart, MapPin } from "lucide-react";
 
 export function Footer() {
-  const [email, setEmail] = useState("");
-  const { toast } = useToast();
-
-  const handleSubscribe = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (email) {
-      toast({
-        title: "Subscribed!",
-        description: "Thank you for joining our newsletter.",
-      });
-      setEmail("");
-    }
-  };
-
   return (
     <footer className="bg-card border-t border-border">
-      {/* Newsletter Banner */}
-      <div className="bg-gradient-to-r from-primary to-accent text-white py-10 px-4">
-        <div className="max-w-4xl mx-auto flex flex-col md:flex-row items-center justify-between gap-6">
-          <div className="text-center md:text-left">
-            <h3 className="font-display font-bold text-xl mb-1">Stay Connected</h3>
-            <p className="text-white/80">Get updates on accessibility wins and advocacy news</p>
-          </div>
-          <form onSubmit={handleSubscribe} className="flex w-full md:w-auto gap-2">
-            <div className="relative flex-1 md:w-64">
-              <Mail className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-primary" />
-              <input
-                type="email"
-                placeholder="Enter your email"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                className="w-full pl-10 pr-4 py-3 rounded-full bg-white text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-white/50"
-                data-testid="input-newsletter-email"
-              />
-            </div>
-            <button
-              type="submit"
-              className="px-6 py-3 rounded-full bg-white text-primary font-bold hover:bg-gray-100 transition-colors flex items-center gap-2"
-              data-testid="button-newsletter-subscribe"
-            >
-              Subscribe <ArrowRight className="w-4 h-4" />
-            </button>
-          </form>
-        </div>
-      </div>
-
       {/* Main Footer */}
       <div className="py-12 px-4">
         <div className="max-w-7xl mx-auto">
