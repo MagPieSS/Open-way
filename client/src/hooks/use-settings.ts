@@ -23,6 +23,13 @@ interface SettingsState {
   toggleEnhancedFocus: () => void;
 }
 
+const applyTextSize = (size: 'sm' | 'base' | 'lg' | 'xl') => {
+  document.documentElement.classList.remove('text-size-sm', 'text-size-md', 'text-size-lg', 'text-size-xl');
+  // Map 'base' to 'md' for CSS class naming
+  const sizeClass = size === 'base' ? 'text-size-md' : `text-size-${size}`;
+  document.documentElement.classList.add(sizeClass);
+};
+
 const applyFontFamily = (font: FontFamily) => {
   document.documentElement.classList.remove('font-atkinson', 'font-opendyslexic', 'font-system');
   document.documentElement.classList.add(`font-${font}`);
@@ -68,7 +75,10 @@ export const useSettings = create<SettingsState>()(
         return { highContrast: newValue };
       }),
       
-      setTextSize: (textSize) => set({ textSize }),
+      setTextSize: (textSize) => {
+        applyTextSize(textSize);
+        set({ textSize });
+      },
       
       toggleReducedMotion: () => set((state) => ({ reducedMotion: !state.reducedMotion })),
       
@@ -100,6 +110,7 @@ export const useSettings = create<SettingsState>()(
         if (state) {
           if (state.theme === 'dark') document.documentElement.classList.add('dark');
           if (state.highContrast) document.documentElement.classList.add('high-contrast');
+          applyTextSize(state.textSize || 'base');
           applyFontFamily(state.fontFamily || 'atkinson');
           applyLineSpacing(state.lineSpacing || 'normal');
           applyLinkUnderlines(state.linkUnderlines || false);

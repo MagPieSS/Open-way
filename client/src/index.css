@@ -112,11 +112,15 @@
   }
 }
 
-/* Custom Accessibility Utils */
-.text-size-sm { font-size: 1rem; }
-.text-size-md { font-size: 1.125rem; }
-.text-size-lg { font-size: 1.375rem; }
-.text-size-xl { font-size: 1.5rem; }
+/* Custom Accessibility Utils - Text Size applied to html element */
+.text-size-sm,
+.text-size-sm body { font-size: 1rem; }
+.text-size-md,
+.text-size-md body { font-size: 1.125rem; }
+.text-size-lg,
+.text-size-lg body { font-size: 1.375rem; }
+.text-size-xl,
+.text-size-xl body { font-size: 1.5rem; }
 
 /* Status Indicators */
 .bg-accessible { background-color: hsl(var(--status-accessible)); color: white; }
