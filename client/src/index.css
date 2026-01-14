@@ -112,15 +112,27 @@
   }
 }
 
-/* Custom Accessibility Utils - Text Size applied to html element */
-.text-size-sm,
-.text-size-sm body { font-size: 1rem; }
-.text-size-md,
-.text-size-md body { font-size: 1.125rem; }
-.text-size-lg,
-.text-size-lg body { font-size: 1.375rem; }
-.text-size-xl,
-.text-size-xl body { font-size: 1.5rem; }
+/* Custom Accessibility Utils - Text Size scales the root font size */
+/* This affects all rem-based measurements throughout the app */
+html.text-size-sm { font-size: 14px; }
+html.text-size-md { font-size: 16px; }
+html.text-size-lg { font-size: 18px; }
+html.text-size-xl { font-size: 20px; }
+
+/* Ensure buttons and form controls maintain their sizing with min-height */
+.text-size-lg button,
+.text-size-xl button,
+.text-size-lg [role="button"],
+.text-size-xl [role="button"] {
+  min-height: 2.5rem;
+  line-height: 1.25;
+}
+
+/* Cards and containers should use min-height to accommodate larger text */
+.text-size-lg [class*="card"],
+.text-size-xl [class*="card"] {
+  min-height: auto;
+}
 
 /* Status Indicators */
 .bg-accessible { background-color: hsl(var(--status-accessible)); color: white; }
@@ -163,20 +175,41 @@
   font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
 }
 
-/* Line Spacing Options */
+/* Line Spacing Options - apply to all text elements with !important to override Tailwind */
+.leading-compact,
 .leading-compact body,
-.leading-compact {
-  line-height: 1.4;
+.leading-compact p,
+.leading-compact span,
+.leading-compact div,
+.leading-compact li,
+.leading-compact td,
+.leading-compact th,
+.leading-compact label {
+  line-height: 1.4 !important;
 }
 
+.leading-normal,
 .leading-normal body,
-.leading-normal {
-  line-height: 1.6;
+.leading-normal p,
+.leading-normal span,
+.leading-normal div,
+.leading-normal li,
+.leading-normal td,
+.leading-normal th,
+.leading-normal label {
+  line-height: 1.6 !important;
 }
 
+.leading-relaxed,
 .leading-relaxed body,
-.leading-relaxed {
-  line-height: 2;
+.leading-relaxed p,
+.leading-relaxed span,
+.leading-relaxed div,
+.leading-relaxed li,
+.leading-relaxed td,
+.leading-relaxed th,
+.leading-relaxed label {
+  line-height: 2 !important;
 }
 
 /* Link Underlines Mode */
