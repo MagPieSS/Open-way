@@ -5,8 +5,7 @@ import rateLimit from "express-rate-limit";
 import { registerRoutes } from "./routes";
 import { serveStatic } from "./static";
 import { createServer } from "http";
-import connectPgSimple from "connect-pg-simple";
-import { pool } from "./db";
+import MemoryStore from "memorystore";
 import path from "path";
 
 const app = express();
@@ -95,16 +94,14 @@ export const apiRateLimiter = rateLimit({
 
 app.use("/api", apiRateLimiter);
 
-// Session setup with PostgreSQL store
-const PgSession = connectPgSimple(session);
+// Session setup with Memory store (SQLite compatible)
+const sessionStore = new (MemoryStore(session))({
+  checkPeriod: 86400000, // prune expired entries every 24h
+});
 
 app.use(
   session({
-    store: new PgSession({
-      pool,
-      tableName: "user_sessions",
-      createTableIfMissing: true,
-    }),
+    store: sessionStore,
     secret: effectiveSessionSecret,
     resave: false,
     saveUninitialized: false,
@@ -112,7 +109,7 @@ app.use(
     cookie: {
       secure: isProduction,
       httpOnly: true,
-      sameSite: "strict", // Upgraded from 'lax' to 'strict' for CSRF protection
+      sameSite: "strict",
       maxAge: 24 * 60 * 60 * 1000, // 24 hours
     },
   })
@@ -249,8 +246,7 @@ app.use((req, res, next) => {
   httpServer.listen(
     {
       port,
-      host: "0.0.0.0",
-      reusePort: true,
+      host: "localhost",
     },
     () => {
       log(`serving on port ${port}`);

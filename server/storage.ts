@@ -347,7 +347,7 @@ export class DatabaseStorage implements IStorage {
   }
 
   async getUpcomingEvents(): Promise<Event[]> {
-    return await db.select().from(events).where(sql`${events.date} >= NOW()`).orderBy(events.date);
+    return await db.select().from(events).where(sql`${events.date} >= datetime('now')`).orderBy(events.date);
   }
 
   async getFeaturedEvents(): Promise<Event[]> {
