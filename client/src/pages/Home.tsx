@@ -288,7 +288,7 @@ export default function Home() {
               <h2 className="font-display font-bold text-3xl mt-4 mb-8">Philadelphia Map</h2>
               
               <div className="bg-card rounded-2xl border border-border overflow-hidden shadow-lg" data-testid="mini-map-container">
-                <div className="h-[350px]">
+                <div className="h-[300px]">
                   {places && places.length > 0 ? (
                     <AccessibilityMap places={places} className="rounded-none border-0" />
                   ) : (

@@ -939,6 +939,295 @@ export async function registerRoutes(
 }
 
 async function seedDatabase() {
-  // Seeding disabled for SQLite compatibility
-  console.log("⏭️  Skipping database seeding (SQLite mode)");
+  try {
+    // Check if database already has data
+    const existingPlaces = await storage.getPlaces();
+    if (existingPlaces.length > 0) {
+      console.log("✅ Database already seeded");
+      return;
+    }
+
+    console.log("🌱 Seeding database with real places and accessibility data...");
+
+    // Create categories
+    const categoryData = [
+      { name: 'Transit', slug: 'transit', icon: 'Train', description: 'Public transportation options' },
+      { name: 'Museums', slug: 'museums', icon: 'Landmark', description: 'Cultural and historical museums' },
+      { name: 'Libraries', slug: 'libraries', icon: 'BookOpen', description: 'Public libraries with resources' },
+      { name: 'Parks', slug: 'parks', icon: 'Trees', description: 'Parks and outdoor spaces' },
+      { name: 'Restaurants', slug: 'restaurants', icon: 'UtensilsCrossed', description: 'Dining establishments' },
+      { name: 'Healthcare', slug: 'healthcare', icon: 'Heart', description: 'Medical facilities' },
+    ];
+
+    for (const cat of categoryData) {
+      await storage.createCategory(cat);
+    }
+
+    // Real places with accessibility information (Philadelphia)
+    const places = [
+      {
+        name: 'Philadelphia Museum of Art',
+        category: 'museums',
+        accessibilityStatus: 'Accessible',
+        description: 'World-class art museum with extensive accessibility features. Wheelchair accessible galleries, elevators, accessible parking, and accessible restrooms available.',
+        imageUrl: 'https://images.unsplash.com/photo-1578962996442-48f60103fc96?w=500',
+        address: '2600 Benjamin Franklin Parkway, Philadelphia, PA 19130',
+        latitude: 39.9657,
+        longitude: -75.1811,
+        phone: '(215) 763-8100',
+        website: 'https://philart.org',
+        hours: 'Tue-Sun 10am-5pm, Wed 10am-8:45pm',
+        isFeatured: true,
+      },
+      {
+        name: 'Free Library of Philadelphia - Main Branch',
+        category: 'libraries',
+        accessibilityStatus: 'Accessible',
+        description: 'Historic research library with full accessibility. Elevator access to all floors, accessible seating areas, and trained staff to assist.',
+        imageUrl: 'https://images.unsplash.com/photo-1507842217343-583f20270319?w=500',
+        address: '1901 Vine Street, Philadelphia, PA 19103',
+        latitude: 39.9543,
+        longitude: -75.1658,
+        phone: '(215) 686-5322',
+        website: 'https://libwww.freelibrary.org',
+        hours: 'Mon-Fri 9am-6pm, Sat 10am-5pm, Sun 1pm-5pm',
+        isFeatured: true,
+      },
+      {
+        name: 'Rittenhouse Square Park',
+        category: 'parks',
+        accessibilityStatus: 'Partially Accessible',
+        description: 'Beautiful urban park with accessible pathways, accessible restrooms, and seating areas. Some areas may be challenging for wheelchairs.',
+        imageUrl: 'https://images.unsplash.com/photo-1511632765486-a01980e01a18?w=500',
+        address: 'Rittenhouse Square, Philadelphia, PA 19103',
+        latitude: 39.9485,
+        longitude: -75.1733,
+        phone: '(215) 686-0752',
+        website: 'https://www.phila.gov',
+        hours: 'Open 6am-sunset daily',
+        isFeatured: true,
+      },
+      {
+        name: 'Wawa - Center City',
+        category: 'restaurants',
+        accessibilityStatus: 'Accessible',
+        description: 'Accessible convenience store with wheelchair ramp, accessible restroom, and clear aisles. Service animals welcome.',
+        imageUrl: 'https://images.unsplash.com/photo-1495521821757-a1efb6729352?w=500',
+        address: '1500 Market Street, Philadelphia, PA 19102',
+        latitude: 39.9526,
+        longitude: -75.1678,
+        phone: '(215) 985-1900',
+        website: 'https://www.wawa.com',
+        hours: 'Open 24/7',
+        isFeatured: false,
+      },
+      {
+        name: 'SEPTA - Market-Frankford Station',
+        category: 'transit',
+        accessibilityStatus: 'Accessible',
+        description: 'Major transit hub with elevators, accessible entry points, and tactile guidance for visually impaired riders.',
+        imageUrl: 'https://images.unsplash.com/photo-1587395853207-0ca2b7a37bd6?w=500',
+        address: '11th & Market Street, Philadelphia, PA 19107',
+        latitude: 39.9520,
+        longitude: -75.1595,
+        phone: '(215) 580-7800',
+        website: 'https://www.septa.org',
+        hours: '24/7',
+        isFeatured: false,
+      },
+      {
+        name: 'Pennsylvania Hospital',
+        category: 'healthcare',
+        accessibilityStatus: 'Accessible',
+        description: 'Historic medical center with full accessibility including accessible parking, elevators, wheelchair accessible treatment areas, and interpreter services.',
+        imageUrl: 'https://images.unsplash.com/photo-1587280591945-a883f79c0f5e?w=500',
+        address: '800 Spruce Street, Philadelphia, PA 19107',
+        latitude: 39.9402,
+        longitude: -75.1444,
+        phone: '(215) 829-3000',
+        website: 'https://www.pennmedicine.org',
+        hours: '24/7 Emergency, Other hours vary',
+        isFeatured: false,
+      },
+      {
+        name: 'Reading Terminal Market',
+        category: 'restaurants',
+        accessibilityStatus: 'Partially Accessible',
+        description: 'Historic public market with level entry, multiple food vendors, and seating areas. Some vendor stalls may be challenging for wheelchair access during busy times.',
+        imageUrl: 'https://images.unsplash.com/photo-1568901346375-23c9450c58cd?w=500',
+        address: '12th & Arch Street, Philadelphia, PA 19107',
+        latitude: 39.9550,
+        longitude: -75.1580,
+        phone: '(215) 922-2317',
+        website: 'https://readingterminalmarket.org',
+        hours: 'Mon-Sat 8am-6pm, Sun 9am-5pm',
+        isFeatured: false,
+      },
+      {
+        name: 'Franklin Institute',
+        category: 'museums',
+        accessibilityStatus: 'Accessible',
+        description: 'Science museum with comprehensive accessibility. All floors accessible via elevators, accessible parking, accessible restrooms, and interactive exhibits designed for all abilities.',
+        imageUrl: 'https://images.unsplash.com/photo-1578962996442-48f60103fc96?w=500',
+        address: '222 North 20th Street, Philadelphia, PA 19103',
+        latitude: 39.9569,
+        longitude: -75.1728,
+        phone: '(215) 448-1200',
+        website: 'https://www.fi.edu',
+        hours: 'Mon-Sun 9:30am-5pm',
+        isFeatured: true,
+      },
+    ];
+
+    for (const place of places) {
+      await storage.createPlace(place);
+    }
+
+    // Add accessibility features for places
+    const placeIds = (await storage.getPlaces()).map(p => p.id);
+    
+    if (placeIds.length > 0) {
+      // Add features for Metropolitan Museum (index 0)
+      await storage.createAccessibilityFeature({
+        placeId: placeIds[0],
+        featureType: 'wheelchair_accessible',
+        available: true,
+        description: 'Full wheelchair accessibility throughout museum',
+      });
+      await storage.createAccessibilityFeature({
+        placeId: placeIds[0],
+        featureType: 'accessible_restroom',
+        available: true,
+        description: 'Multiple accessible restrooms on each floor',
+      });
+      await storage.createAccessibilityFeature({
+        placeId: placeIds[0],
+        featureType: 'elevator',
+        available: true,
+        description: 'Elevators to all gallery floors',
+      });
+    }
+
+    // Add sample reviews
+    const sampleReviews = [
+      {
+        placeId: placeIds[0] || 1,
+        content: 'Excellent accessibility! Staff was very helpful. Elevators work well, and wheelchair paths are clear.',
+        rating: 5,
+        authorName: 'Sarah M.',
+        authorRole: 'Visitor with wheelchair',
+        isFeatured: true,
+      },
+      {
+        placeId: placeIds[2] || 3,
+        content: 'Beautiful park with accessible pathways. Restrooms are clean and accessible.',
+        rating: 4,
+        authorName: 'James T.',
+        authorRole: 'Regular visitor',
+      },
+      {
+        placeId: placeIds[1] || 2,
+        content: 'Great library with amazing resources. Very accessible and welcoming.',
+        rating: 5,
+        authorName: 'Emma L.',
+        authorRole: 'Researcher',
+        isFeatured: true,
+      },
+    ];
+
+    for (const review of sampleReviews) {
+      await storage.createReview(review);
+    }
+
+    // Add blog posts
+    const blogPosts = [
+      {
+        title: 'Top 5 Accessible Museums in NYC',
+        slug: 'top-5-accessible-museums-nyc',
+        excerpt: 'Discover the best museums with full accessibility features...',
+        content: 'New York City has many world-class museums that are fully accessible. From the Met to the American Museum of Natural History, these institutions are committed to making art accessible to everyone.',
+        author: 'Open Way Team',
+        category: 'Museums',
+        isFeatured: true,
+        isPublished: true,
+      },
+      {
+        title: 'Navigating Public Transportation Accessibly',
+        slug: 'navigating-public-transportation-accessibly',
+        excerpt: 'Tips for using NYC transit as a person with disabilities...',
+        content: 'NYC Transit provides various accessibility features. Learn how to navigate the subway system, use accessible station elevators, and communicate with transit staff about your accessibility needs.',
+        author: 'Open Way Team',
+        category: 'Transit',
+        isFeatured: true,
+        isPublished: true,
+      },
+      {
+        title: 'Accessibility Standards and What They Mean',
+        slug: 'accessibility-standards-what-they-mean',
+        excerpt: 'Understanding ADA compliance and accessibility ratings...',
+        content: 'Learn about ADA compliance standards, what "Accessible," "Partially Accessible," and other ratings mean, and how to advocate for better accessibility in your community.',
+        author: 'Accessibility Advocate',
+        category: 'Guides',
+        isPublished: true,
+      },
+    ];
+
+    for (const post of blogPosts) {
+      await storage.createBlogPost(post);
+    }
+
+    // Add FAQ entries
+    const faqs = [
+      {
+        question: 'What does "Accessible" mean on this site?',
+        answer: 'A place marked as "Accessible" meets ADA standards and has full wheelchair accessibility, accessible restrooms, parking, and other features for people with disabilities.',
+        category: 'General',
+        sortOrder: 1,
+      },
+      {
+        question: 'How can I submit information about a new place?',
+        answer: 'You can submit a new place using our "Submit a Place" form. Please provide details about accessibility features, hours, location, and contact information.',
+        category: 'Submission',
+        sortOrder: 2,
+      },
+      {
+        question: 'Can I request accessibility improvements?',
+        answer: 'Yes! You can sign our petition for better accessibility standards. Your voice matters in advocating for more accessible public spaces.',
+        category: 'Petition',
+        sortOrder: 3,
+      },
+    ];
+
+    for (const faq of faqs) {
+      await storage.createFaqEntry(faq);
+    }
+
+    // Add events
+    const events = [
+      {
+        title: 'Accessibility Awareness Week',
+        description: 'Join us for a week-long celebration of accessibility in NYC. Featuring workshops, panel discussions, and community events.',
+        date: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000), // 30 days from now
+        endDate: new Date(Date.now() + 37 * 24 * 60 * 60 * 1000), // 37 days from now
+        location: 'Various venues across NYC',
+        category: 'Awareness',
+        isFeatured: true,
+      },
+      {
+        title: 'Accessible Dining Guide Workshop',
+        description: 'Learn about accessible restaurants and dining options in NYC. Get tips on communication and what to expect.',
+        date: new Date(Date.now() + 14 * 24 * 60 * 60 * 1000), // 14 days from now
+        location: 'NYC Public Library - Main Branch',
+        category: 'Workshop',
+      },
+    ];
+
+    for (const event of events) {
+      await storage.createEvent(event);
+    }
+
+    console.log('✅ Database seeded successfully with real places and data!');
+  } catch (error) {
+    console.error('❌ Seeding error:', error);
+  }
 }
