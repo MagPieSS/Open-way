@@ -2,10 +2,11 @@ import express, { type Request, Response, NextFunction } from "express";
 import session from "express-session";
 import helmet from "helmet";
 import rateLimit from "express-rate-limit";
+import connectPgSimple from "connect-pg-simple";
 import { registerRoutes } from "./routes";
 import { serveStatic } from "./static";
 import { createServer } from "http";
-import MemoryStore from "memorystore";
+import { pool } from "./db";
 import path from "path";
 
 const app = express();
@@ -94,9 +95,12 @@ export const apiRateLimiter = rateLimit({
 
 app.use("/api", apiRateLimiter);
 
-// Session setup with Memory store (SQLite compatible)
-const sessionStore = new (MemoryStore(session))({
-  checkPeriod: 86400000, // prune expired entries every 24h
+// Session setup with PostgreSQL store
+const PgSession = connectPgSimple(session);
+const sessionStore = new PgSession({
+  pool: pool,
+  tableName: "session",
+  createTableIfMissing: true,
 });
 
 app.use(

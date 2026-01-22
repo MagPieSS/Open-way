@@ -1,16 +1,13 @@
-import { drizzle } from "drizzle-orm/better-sqlite3";
-import Database from "better-sqlite3";
+import { drizzle } from "drizzle-orm/node-postgres";
+import { Pool } from "pg";
 import * as schema from "@shared/schema";
 
-// Use SQLite for local development
-const sqlite = new Database("sqlite.db");
-sqlite.pragma("journal_mode = WAL");
-sqlite.pragma("foreign_keys = ON");
+// PostgreSQL connection pool for Supabase
+export const pool = new Pool({
+  connectionString: process.env.DATABASE_URL,
+});
 
-export const db = drizzle(sqlite, { schema });
-export const pool = null; // Not needed for SQLite
-
-// Initialize database tables
+export const db = drizzle(pool, { schema });
 function initializeDatabase() {
   try {
     // Create all tables if they don't exist
@@ -228,4 +225,6 @@ function initializeDatabase() {
 
 // Initialize database on import
 initializeDatabase();
+
+
 

@@ -1,37 +1,37 @@
-import { sqliteTable, text, integer, real, uniqueIndex } from "drizzle-orm/sqlite-core";
+import { pgTable, text, serial, integer, boolean, timestamp, real, json, uniqueIndex } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
 
 // === TABLE DEFINITIONS ===
 
 // Users table for authentication
-export const users = sqliteTable("users", {
-  id: integer("id").primaryKey({ autoIncrement: true }),
+export const users = pgTable("users", {
+  id: serial("id").primaryKey(),
   email: text("email").notNull().unique(),
   passwordHash: text("password_hash").notNull(),
   displayName: text("display_name"),
   // 2FA fields
-  twoFactorEnabled: integer("two_factor_enabled", { mode: "boolean" }).default(false),
+  twoFactorEnabled: boolean("two_factor_enabled").default(false),
   twoFactorSecret: text("two_factor_secret"),
   backupCodes: text("backup_codes"),
   // Account status
-  isActive: integer("is_active", { mode: "boolean" }).default(true),
-  isAdmin: integer("is_admin", { mode: "boolean" }).default(false),
-  lastLoginAt: integer("last_login_at", { mode: "timestamp" }),
-  createdAt: integer("created_at", { mode: "timestamp" }).default(new Date()),
+  isActive: boolean("is_active").default(true),
+  isAdmin: boolean("is_admin").default(false),
+  lastLoginAt: timestamp("last_login_at"),
+  createdAt: timestamp("created_at").defaultNow(),
 });
 
 // User saved places (favorites)
-export const savedPlaces = sqliteTable("saved_places", {
-  id: integer("id").primaryKey({ autoIncrement: true }),
+export const savedPlaces = pgTable("saved_places", {
+  id: serial("id").primaryKey(),
   userId: integer("user_id").references(() => users.id).notNull(),
   placeId: integer("place_id").references(() => places.id).notNull(),
-  savedAt: integer("saved_at", { mode: "timestamp" }).default(new Date()),
+  savedAt: timestamp("saved_at").defaultNow(),
 });
 
 // Categories for organizing places
-export const categories = sqliteTable("categories", {
-  id: integer("id").primaryKey({ autoIncrement: true }),
+export const categories = pgTable("categories", {
+  id: serial("id").primaryKey(),
   name: text("name").notNull(),
   slug: text("slug").notNull().unique(),
   icon: text("icon").notNull(),
@@ -40,8 +40,8 @@ export const categories = sqliteTable("categories", {
 });
 
 // Main places table - enhanced with location data
-export const places = sqliteTable("places", {
-  id: integer("id").primaryKey({ autoIncrement: true }),
+export const places = pgTable("places", {
+  id: serial("id").primaryKey(),
   name: text("name").notNull(),
   category: text("category").notNull(),
   accessibilityStatus: text("accessibility_status").notNull(),
@@ -55,48 +55,48 @@ export const places = sqliteTable("places", {
   website: text("website"),
   hours: text("hours"),
   // Engagement
-  isFeatured: integer("is_featured", { mode: "boolean" }).default(false),
+  isFeatured: boolean("is_featured").default(false),
   viewCount: integer("view_count").default(0),
   reviewCount: integer("review_count").default(0),
   averageRating: real("average_rating"),
-  updatedAt: integer("updated_at", { mode: "timestamp" }).default(new Date()),
-  createdAt: integer("created_at", { mode: "timestamp" }).default(new Date()),
+  updatedAt: timestamp("updated_at").defaultNow(),
+  createdAt: timestamp("created_at").defaultNow(),
 });
 
 // Accessibility features for detailed checklists
-export const accessibilityFeatures = sqliteTable("accessibility_features", {
-  id: integer("id").primaryKey({ autoIncrement: true }),
+export const accessibilityFeatures = pgTable("accessibility_features", {
+  id: serial("id").primaryKey(),
   placeId: integer("place_id").references(() => places.id).notNull(),
   featureType: text("feature_type").notNull(),
-  available: integer("available", { mode: "boolean" }).default(true),
+  available: boolean("available").default(true),
   description: text("description"),
-  verifiedAt: integer("verified_at", { mode: "timestamp" }),
+  verifiedAt: timestamp("verified_at"),
 });
 
 // Place media/photos
-export const placeMedia = sqliteTable("place_media", {
-  id: integer("id").primaryKey({ autoIncrement: true }),
+export const placeMedia = pgTable("place_media", {
+  id: serial("id").primaryKey(),
   placeId: integer("place_id").references(() => places.id).notNull(),
   url: text("url").notNull(),
   caption: text("caption"),
   uploadedBy: text("uploaded_by"),
-  createdAt: integer("created_at", { mode: "timestamp" }).default(new Date()),
+  createdAt: timestamp("created_at").defaultNow(),
 });
 
 // Tips for places
-export const placeTips = sqliteTable("place_tips", {
-  id: integer("id").primaryKey({ autoIncrement: true }),
+export const placeTips = pgTable("place_tips", {
+  id: serial("id").primaryKey(),
   placeId: integer("place_id").references(() => places.id).notNull(),
   userId: integer("user_id").references(() => users.id),
   content: text("content").notNull(),
   author: text("author"),
   helpfulCount: integer("helpful_count").default(0),
-  createdAt: integer("created_at", { mode: "timestamp" }).default(new Date()),
+  createdAt: timestamp("created_at").defaultNow(),
 });
 
-// Reviews - enhanced with ratings and author info
-export const reviews = sqliteTable("reviews", {
-  id: integer("id").primaryKey({ autoIncrement: true }),
+// Reviews
+export const reviews = pgTable("reviews", {
+  id: serial("id").primaryKey(),
   placeId: integer("place_id").references(() => places.id).notNull(),
   userId: integer("user_id").references(() => users.id),
   content: text("content").notNull(),
@@ -105,51 +105,51 @@ export const reviews = sqliteTable("reviews", {
   authorRole: text("author_role"),
   imageUrl: text("image_url"),
   helpfulCount: integer("helpful_count").default(0),
-  isFeatured: integer("is_featured", { mode: "boolean" }).default(false),
-  createdAt: integer("created_at", { mode: "timestamp" }).default(new Date()),
+  isFeatured: boolean("is_featured").default(false),
+  createdAt: timestamp("created_at").defaultNow(),
 });
 
-// Petition signatures with optional display info
-export const signatures = sqliteTable("signatures", {
-  id: integer("id").primaryKey({ autoIncrement: true }),
+// Petition signatures
+export const signatures = pgTable("signatures", {
+  id: serial("id").primaryKey(),
   userId: integer("user_id").references(() => users.id).notNull(),
   displayName: text("display_name"),
   city: text("city"),
   message: text("message"),
-  shareConsent: integer("share_consent", { mode: "boolean" }).default(false),
-  signedAt: integer("signed_at", { mode: "timestamp" }).default(new Date()),
+  shareConsent: boolean("share_consent").default(false),
+  signedAt: timestamp("signed_at").defaultNow(),
 }, (table) => [
   uniqueIndex("signatures_user_unique").on(table.userId),
 ]);
 
-// Petition updates/news from organizers
-export const petitionUpdates = sqliteTable("petition_updates", {
-  id: integer("id").primaryKey({ autoIncrement: true }),
+// Petition updates
+export const petitionUpdates = pgTable("petition_updates", {
+  id: serial("id").primaryKey(),
   title: text("title").notNull(),
   content: text("content").notNull(),
   author: text("author"),
-  createdAt: integer("created_at", { mode: "timestamp" }).default(new Date()),
+  createdAt: timestamp("created_at").defaultNow(),
 });
 
 // Events calendar
-export const events = sqliteTable("events", {
-  id: integer("id").primaryKey({ autoIncrement: true }),
+export const events = pgTable("events", {
+  id: serial("id").primaryKey(),
   title: text("title").notNull(),
   description: text("description").notNull(),
-  date: integer("date", { mode: "timestamp" }).notNull(),
-  endDate: integer("end_date", { mode: "timestamp" }),
+  date: timestamp("date").notNull(),
+  endDate: timestamp("end_date"),
   location: text("location"),
   address: text("address"),
   category: text("category"),
   imageUrl: text("image_url"),
   registrationUrl: text("registration_url"),
-  isFeatured: integer("is_featured", { mode: "boolean" }).default(false),
-  createdAt: integer("created_at", { mode: "timestamp" }).default(new Date()),
+  isFeatured: boolean("is_featured").default(false),
+  createdAt: timestamp("created_at").defaultNow(),
 });
 
-// Resources page content
-export const resources = sqliteTable("resources", {
-  id: integer("id").primaryKey({ autoIncrement: true }),
+// Resources
+export const resources = pgTable("resources", {
+  id: serial("id").primaryKey(),
   title: text("title").notNull(),
   description: text("description").notNull(),
   category: text("category").notNull(),
@@ -158,14 +158,14 @@ export const resources = sqliteTable("resources", {
   email: text("email"),
   address: text("address"),
   icon: text("icon"),
-  isFeatured: integer("is_featured", { mode: "boolean" }).default(false),
+  isFeatured: boolean("is_featured").default(false),
   sortOrder: integer("sort_order").default(0),
-  createdAt: integer("created_at", { mode: "timestamp" }).default(new Date()),
+  createdAt: timestamp("created_at").defaultNow(),
 });
 
-// Blog/News posts
-export const blogPosts = sqliteTable("blog_posts", {
-  id: integer("id").primaryKey({ autoIncrement: true }),
+// Blog posts
+export const blogPosts = pgTable("blog_posts", {
+  id: serial("id").primaryKey(),
   title: text("title").notNull(),
   slug: text("slug").notNull().unique(),
   excerpt: text("excerpt"),
@@ -173,52 +173,52 @@ export const blogPosts = sqliteTable("blog_posts", {
   author: text("author"),
   category: text("category"),
   imageUrl: text("image_url"),
-  isFeatured: integer("is_featured", { mode: "boolean" }).default(false),
-  isPublished: integer("is_published", { mode: "boolean" }).default(true),
-  publishedAt: integer("published_at", { mode: "timestamp" }).default(new Date()),
-  createdAt: integer("created_at", { mode: "timestamp" }).default(new Date()),
+  isFeatured: boolean("is_featured").default(false),
+  isPublished: boolean("is_published").default(true),
+  publishedAt: timestamp("published_at").defaultNow(),
+  createdAt: timestamp("created_at").defaultNow(),
 });
 
 // FAQ entries
-export const faqEntries = sqliteTable("faq_entries", {
-  id: integer("id").primaryKey({ autoIncrement: true }),
+export const faqEntries = pgTable("faq_entries", {
+  id: serial("id").primaryKey(),
   question: text("question").notNull(),
   answer: text("answer").notNull(),
   category: text("category"),
   sortOrder: integer("sort_order").default(0),
-  createdAt: integer("created_at", { mode: "timestamp" }).default(new Date()),
+  createdAt: timestamp("created_at").defaultNow(),
 });
 
-// Contact form submissions
-export const contactSubmissions = sqliteTable("contact_submissions", {
-  id: integer("id").primaryKey({ autoIncrement: true }),
+// Contact submissions
+export const contactSubmissions = pgTable("contact_submissions", {
+  id: serial("id").primaryKey(),
   name: text("name").notNull(),
   email: text("email").notNull(),
   subject: text("subject"),
   message: text("message").notNull(),
   status: text("status").default("new"),
-  createdAt: integer("created_at", { mode: "timestamp" }).default(new Date()),
+  createdAt: timestamp("created_at").defaultNow(),
 });
 
-// Activity log for the feed
-export const activityLog = sqliteTable("activity_log", {
-  id: integer("id").primaryKey({ autoIncrement: true }),
+// Activity log
+export const activityLog = pgTable("activity_log", {
+  id: serial("id").primaryKey(),
   activityType: text("activity_type").notNull(),
   description: text("description").notNull(),
   relatedId: integer("related_id"),
   relatedType: text("related_type"),
   actorName: text("actor_name"),
-  createdAt: integer("created_at", { mode: "timestamp" }).default(new Date()),
+  createdAt: timestamp("created_at").defaultNow(),
 });
 
-// Partner organizations
-export const partners = sqliteTable("partners", {
-  id: integer("id").primaryKey({ autoIncrement: true }),
+// Partners
+export const partners = pgTable("partners", {
+  id: serial("id").primaryKey(),
   name: text("name").notNull(),
   logoUrl: text("logo_url"),
   website: text("website"),
   description: text("description"),
-  isFeatured: integer("is_featured", { mode: "boolean" }).default(true),
+  isFeatured: boolean("is_featured").default(true),
   sortOrder: integer("sort_order").default(0),
 });
 
@@ -267,8 +267,6 @@ export const insertPartnerSchema = createInsertSchema(partners).omit({ id: true 
 export type User = typeof users.$inferSelect;
 export type InsertUser = z.infer<typeof insertUserSchema>;
 export type LoginInput = z.infer<typeof loginSchema>;
-
-// Safe user type without sensitive fields
 export type SafeUser = Omit<User, 'passwordHash' | 'twoFactorSecret' | 'backupCodes'>;
 
 export type SavedPlace = typeof savedPlaces.$inferSelect;
@@ -331,7 +329,7 @@ export const ACCESSIBILITY_STATUS = {
   NOT_ACCESSIBLE: 'Not Accessible',
 } as const;
 
-// Feature types for accessibility checklist
+// Feature types
 export const ACCESSIBILITY_FEATURE_TYPES = {
   RAMP: 'ramp',
   ELEVATOR: 'elevator',
