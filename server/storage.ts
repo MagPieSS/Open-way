@@ -3,7 +3,7 @@ import {
   places, reviews, signatures, categories, accessibilityFeatures,
   placeMedia, placeTips, petitionUpdates, events, resources,
   blogPosts, faqEntries, contactSubmissions, activityLog, partners,
-  users, savedPlaces,
+  users, savedPlaces, communityPosts,
   type Place, type InsertPlace,
   type Review, type InsertReview,
   type Signature, type InsertSignature,
@@ -20,6 +20,7 @@ import {
   type ActivityLog, type InsertActivityLog,
   type Partner, type InsertPartner,
   type User, type SavedPlace, type InsertSavedPlace,
+  type CommunityPost, type InsertCommunityPost,
 } from "@shared/schema";
 import { eq, desc, sql, and, inArray } from "drizzle-orm";
 
@@ -132,6 +133,10 @@ export interface IStorage {
   savePlace(userId: number, placeId: number): Promise<SavedPlace>;
   unsavePlace(userId: number, placeId: number): Promise<void>;
   isPlaceSaved(userId: number, placeId: number): Promise<boolean>;
+
+  // Community Posts
+  getCommunityPosts(): Promise<CommunityPost[]>;
+  createCommunityPost(post: InsertCommunityPost): Promise<CommunityPost>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -504,7 +509,7 @@ export class DatabaseStorage implements IStorage {
     await db.update(users).set({
       twoFactorEnabled: enabled,
       twoFactorSecret: secret,
-      backupCodes: backupCodes,
+      backupCodes: backupCodes ? JSON.stringify(backupCodes) : null,
     }).where(eq(users.id, id));
   }
 
@@ -512,12 +517,19 @@ export class DatabaseStorage implements IStorage {
     const user = await this.getUserById(id);
     if (!user || !user.backupCodes) return false;
     
-    const codeIndex = user.backupCodes.indexOf(code);
+    let codes: string[];
+    try {
+      codes = JSON.parse(user.backupCodes);
+    } catch (e) {
+      return false;
+    }
+    
+    const codeIndex = codes.indexOf(code);
     if (codeIndex === -1) return false;
     
     // Remove used backup code
-    const updatedCodes = user.backupCodes.filter((_, i) => i !== codeIndex);
-    await db.update(users).set({ backupCodes: updatedCodes }).where(eq(users.id, id));
+    const updatedCodes = codes.filter((_, i) => i !== codeIndex);
+    await db.update(users).set({ backupCodes: JSON.stringify(updatedCodes) }).where(eq(users.id, id));
     return true;
   }
 
@@ -549,6 +561,16 @@ export class DatabaseStorage implements IStorage {
   async isPlaceSaved(userId: number, placeId: number): Promise<boolean> {
     const [saved] = await db.select().from(savedPlaces).where(and(eq(savedPlaces.userId, userId), eq(savedPlaces.placeId, placeId)));
     return !!saved;
+  }
+
+  // Community Posts
+  async getCommunityPosts(): Promise<CommunityPost[]> {
+    return await db.select().from(communityPosts).orderBy(desc(communityPosts.createdAt));
+  }
+
+  async createCommunityPost(post: InsertCommunityPost): Promise<CommunityPost> {
+    const [newPost] = await db.insert(communityPosts).values(post).returning();
+    return newPost;
   }
 }
 

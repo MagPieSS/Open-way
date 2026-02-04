@@ -129,6 +129,9 @@ app.use(
 
 app.use(express.urlencoded({ extended: false }));
 
+// Serve static uploads
+app.use("/uploads", express.static(path.resolve(process.cwd(), "uploads")));
+
 // Serve stock images from attached_assets folder
 const assetsPath = path.resolve(process.cwd(), "attached_assets");
 app.use("/assets", express.static(assetsPath));

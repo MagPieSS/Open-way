@@ -6,7 +6,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { 
   Loader2, ArrowLeft, MapPin, Calendar, CheckCircle, AlertTriangle, XCircle, 
   User, ThumbsUp, Share2, Copy, Navigation, Lightbulb,
-  Eye, Ear, Move, Sparkles, X, Bookmark, BookmarkCheck
+  Eye, Ear, Move, Sparkles, X, Bookmark, BookmarkCheck, Upload, Plus
 } from "lucide-react";
 import { SiX, SiFacebook } from "react-icons/si";
 import { useSettings } from "@/hooks/use-settings";
@@ -113,6 +113,53 @@ export default function PlaceDetail() {
   const [editingTipId, setEditingTipId] = useState<number | null>(null);
   const [editContent, setEditContent] = useState("");
   const [editRating, setEditRating] = useState<number | undefined>(undefined);
+  const [uploading, setUploading] = useState(false);
+
+  const uploadMutation = useMutation({
+    mutationFn: async (formData: FormData) => {
+      const csrfRes = await fetch("/api/csrf-token");
+      const { token } = await csrfRes.json();
+      
+      const res = await fetch("/api/place-media/upload", {
+        method: "POST",
+        body: formData,
+        headers: {
+          "x-csrf-token": token,
+        },
+      });
+      if (!res.ok) {
+        const error = await res.json();
+        throw new Error(error.message || "Upload failed");
+      }
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/places", id, "media"] });
+      setUploading(false);
+      toast({ title: "Photo uploaded successfully!" });
+    },
+    onError: (err: Error) => {
+      setUploading(false);
+      toast({ variant: "destructive", title: "Upload failed", description: err.message });
+    },
+  });
+
+  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    
+    if (file.size > 5 * 1024 * 1024) {
+      toast({ variant: "destructive", title: "File too large", description: "Max size is 5MB" });
+      return;
+    }
+
+    const formData = new FormData();
+    formData.append("image", file);
+    formData.append("placeId", String(id));
+    
+    setUploading(true);
+    uploadMutation.mutate(formData);
+  };
 
   const { data: savedStatus, isLoading: isLoadingSaved } = useQuery<{ isSaved: boolean }>({
     queryKey: ["/api/saved-places", id, "check"],
@@ -445,7 +492,32 @@ export default function PlaceDetail() {
 
           {/* Photo Gallery */}
           <div className="mb-10" data-testid="photo-gallery-section">
-            <h3 className="text-foreground font-bold text-xl mb-4">Photos</h3>
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-foreground font-bold text-xl">Photos</h3>
+              {user && (
+                <div className="relative">
+                  <input 
+                    type="file" 
+                    id="photo-upload" 
+                    className="hidden" 
+                    accept="image/*"
+                    onChange={handleFileUpload}
+                    disabled={uploading}
+                  />
+                  <Button 
+                    variant="outline" 
+                    size="sm" 
+                    asChild
+                    disabled={uploading}
+                  >
+                    <label htmlFor="photo-upload" className="cursor-pointer gap-2">
+                      {uploading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Upload className="w-4 h-4" />}
+                      Upload Photo
+                    </label>
+                  </Button>
+                </div>
+              )}
+            </div>
             {isLoadingMedia ? (
               <div className="flex items-center justify-center py-8">
                 <Loader2 className="animate-spin text-primary" />
@@ -587,244 +659,125 @@ export default function PlaceDetail() {
                           </Button>
                           <Button
                             size="sm"
-                            variant="outline"
-                            onClick={() => { setEditingTipId(null); setEditContent(""); }}
-                            data-testid={`button-cancel-edit-tip-${tip.id}`}
+                            variant="ghost"
+                            onClick={() => setEditingTipId(null)}
+                            data-testid={`button-cancel-tip-${tip.id}`}
                           >
                             Cancel
                           </Button>
                         </div>
                       </div>
                     ) : (
-                      <p className={`text-foreground/80 mb-3 text-${textSize}`}>{tip.content}</p>
-                    )}
-                    <div className="flex items-center justify-between gap-4 flex-wrap text-sm text-muted-foreground">
-                      <span>{tip.author || "Anonymous"}</span>
-                      <div className="flex items-center gap-2">
-                        <div className="flex items-center gap-1">
-                          <ThumbsUp className="w-4 h-4" />
-                          <span data-testid={`tip-helpful-count-${tip.id}`}>{tip.helpfulCount || 0} found helpful</span>
-                        </div>
-                        {user && tip.userId === user.id && editingTipId !== tip.id && (
-                          <div className="flex gap-1">
-                            <Button
-                              size="icon"
-                              variant="ghost"
-                              className="h-6 w-6"
-                              onClick={() => {
-                                setEditingTipId(tip.id);
-                                setEditContent(tip.content);
-                              }}
-                              data-testid={`button-edit-tip-${tip.id}`}
-                            >
-                              <Pencil className="w-3 h-3" />
-                            </Button>
-                            <Button
-                              size="icon"
-                              variant="ghost"
-                              className="h-6 w-6 text-destructive hover:text-destructive"
-                              onClick={() => deleteTipMutation.mutate(tip.id)}
-                              data-testid={`button-delete-tip-${tip.id}`}
-                            >
-                              <Trash2 className="w-3 h-3" />
-                            </Button>
+                      <>
+                        <div className="flex items-center justify-between mb-2">
+                          <div className="flex items-center gap-2">
+                            <User className="w-4 h-4 text-muted-foreground" />
+                            <span className="text-sm font-bold">{tip.uploadedBy || "Anonymous"}</span>
+                            <span className="text-xs text-muted-foreground">
+                              {format(new Date(tip.uploadedAt || new Date()), "MMM d, yyyy")}
+                            </span>
                           </div>
-                        )}
-                      </div>
-                    </div>
+                          {user && (user.displayName === tip.uploadedBy || user.email === tip.uploadedBy || user.isAdmin) && (
+                            <div className="flex items-center gap-1">
+                              <Button
+                                size="icon"
+                                variant="ghost"
+                                className="h-7 w-7"
+                                onClick={() => {
+                                  setEditingTipId(tip.id);
+                                  setEditContent(tip.content);
+                                }}
+                                data-testid={`button-edit-tip-${tip.id}`}
+                              >
+                                <Pencil className="w-3 h-3" />
+                              </Button>
+                              <Button
+                                size="icon"
+                                variant="ghost"
+                                className="h-7 w-7 text-destructive hover:text-destructive"
+                                onClick={() => {
+                                  if (confirm("Delete this tip?")) {
+                                    deleteTipMutation.mutate(tip.id);
+                                  }
+                                }}
+                                data-testid={`button-delete-tip-${tip.id}`}
+                              >
+                                <Trash2 className="w-3 h-3" />
+                              </Button>
+                            </div>
+                          )}
+                        </div>
+                        <p className="text-foreground">{tip.content}</p>
+                      </>
+                    )}
                   </div>
                 ))}
               </div>
             ) : (
               <div className="bg-secondary/30 rounded-xl p-6 text-center text-muted-foreground" data-testid="no-tips-message">
-                No tips yet. Be the first to share a helpful tip!
+                No tips shared for this location yet. Be the first to share one!
               </div>
             )}
           </div>
 
           {/* Location Map */}
-          {(place.latitude && place.longitude) && (
-            <div className="mb-10" data-testid="location-section">
-              <h3 className="text-foreground font-bold text-xl mb-4">Location</h3>
-              <div className="h-[300px] rounded-xl overflow-hidden mb-4">
-                <AccessibilityMap places={[place]} />
-              </div>
-              <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-                {place.address && (
-                  <div className="flex items-start gap-2 text-muted-foreground">
-                    <MapPin className="w-5 h-5 flex-shrink-0 mt-0.5" />
-                    <span data-testid="text-place-address">{place.address}</span>
-                  </div>
-                )}
-                {getDirectionsUrl() && (
-                  <a 
-                    href={getDirectionsUrl()!}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                  >
-                    <Button variant="outline" className="gap-2" data-testid="button-get-directions">
-                      <Navigation className="w-4 h-4" />
-                      Get Directions
-                    </Button>
-                  </a>
-                )}
+          <div className="mb-10" data-testid="location-map-section">
+            <div className="flex items-center justify-between gap-4 flex-wrap mb-4">
+              <h3 className="text-foreground font-bold text-xl">Location</h3>
+              {getDirectionsUrl() && (
+                <a 
+                  href={getDirectionsUrl()!} 
+                  target="_blank" 
+                  rel="noopener noreferrer"
+                  className="inline-block"
+                >
+                  <Button variant="outline" size="sm" className="gap-2" data-testid="button-get-directions">
+                    <Navigation className="w-4 h-4" /> Get Directions
+                  </Button>
+                </a>
+              )}
+            </div>
+            <div className="h-[300px] rounded-2xl overflow-hidden border border-border">
+              <AccessibilityMap 
+                places={[place]} 
+                center={[place.latitude ? Number(place.latitude) : 39.9526, place.longitude ? Number(place.longitude) : -75.1652]} 
+                zoom={15}
+              />
+            </div>
+            {place.address && (
+              <p className="mt-4 text-muted-foreground flex items-start gap-2" data-testid="text-place-address">
+                <MapPin className="w-5 h-5 shrink-0 text-primary" />
+                {place.address}
+              </p>
+            )}
+          </div>
+
+          {/* Related Places */}
+          {relatedPlaces.length > 0 && (
+            <div data-testid="related-places-section">
+              <h3 className="text-foreground font-bold text-xl mb-4">Other {place.category} nearby</h3>
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                {relatedPlaces.map((p) => (
+                  <Link key={p.id} href={`/places/${p.id}`}>
+                    <div className="group cursor-pointer" data-testid={`related-place-card-${p.id}`}>
+                      <div className="aspect-video rounded-xl overflow-hidden bg-muted mb-2 relative">
+                        {p.imageUrl ? (
+                          <img src={p.imageUrl} alt={p.name} className="w-full h-full object-cover group-hover:scale-105 transition-transform" />
+                        ) : (
+                          <div className="w-full h-full flex items-center justify-center bg-secondary">
+                            <MapPin className="w-8 h-8 text-muted-foreground/20" />
+                          </div>
+                        )}
+                        <div className={`absolute top-2 right-2 w-3 h-3 rounded-full shadow-sm ${getStatusColor(p.accessibilityStatus).split(' ')[1]}`} />
+                      </div>
+                      <h4 className="font-bold text-sm truncate group-hover:text-primary transition-colors">{p.name}</h4>
+                    </div>
+                  </Link>
+                ))}
               </div>
             </div>
           )}
-
-          {/* Reviews Section */}
-          <div className="border-t border-border pt-10">
-            <div className="flex items-center justify-between gap-4 flex-wrap mb-8">
-              <h2 className="font-display font-bold text-2xl">Community Reviews</h2>
-              <Link href={`/submit?placeId=${place.id}`}>
-                <button 
-                  className="px-6 py-2 rounded-full bg-primary text-primary-foreground font-bold hover:bg-primary/90 transition-colors shadow-lg shadow-primary/20"
-                  data-testid="button-write-review"
-                >
-                  Write a Review
-                </button>
-              </Link>
-            </div>
-
-            {isLoadingReviews ? (
-              <div className="flex justify-center py-8"><Loader2 className="animate-spin text-primary" /></div>
-            ) : reviews?.length === 0 ? (
-              <div className="text-center py-10 bg-secondary/30 rounded-xl" data-testid="no-reviews-message">
-                <p className="text-muted-foreground font-medium">No reviews yet. Be the first!</p>
-              </div>
-            ) : (
-              <div className="space-y-6" data-testid="reviews-list">
-                {reviews?.map((review) => (
-                  <div key={review.id} className="bg-secondary/30 p-6 rounded-2xl border border-border/50" data-testid={`review-card-${review.id}`}>
-                    <div className="flex items-start gap-4">
-                      <div className="w-10 h-10 rounded-full bg-accent/20 flex items-center justify-center flex-shrink-0">
-                        <User className="w-5 h-5 text-accent-foreground" />
-                      </div>
-                      <div className="flex-grow">
-                        <div className="flex justify-between items-start gap-4 flex-wrap mb-2">
-                          <span className="font-bold text-foreground">{review.authorName || "Community Member"}</span>
-                          <div className="flex items-center gap-2">
-                            <span className="text-sm text-muted-foreground flex items-center gap-1">
-                              <Calendar className="w-3 h-3" />
-                              {format(new Date(review.createdAt || new Date()), "MMM d, yyyy")}
-                            </span>
-                            {user && review.userId === user.id && (
-                              <div className="flex gap-1">
-                                <Button
-                                  size="icon"
-                                  variant="ghost"
-                                  className="h-7 w-7"
-                                  onClick={() => {
-                                    setEditingReviewId(review.id);
-                                    setEditContent(review.content);
-                                    setEditRating(review.rating ?? undefined);
-                                  }}
-                                  data-testid={`button-edit-review-${review.id}`}
-                                >
-                                  <Pencil className="w-3 h-3" />
-                                </Button>
-                                <Button
-                                  size="icon"
-                                  variant="ghost"
-                                  className="h-7 w-7 text-destructive hover:text-destructive"
-                                  onClick={() => deleteReviewMutation.mutate(review.id)}
-                                  data-testid={`button-delete-review-${review.id}`}
-                                >
-                                  <Trash2 className="w-3 h-3" />
-                                </Button>
-                              </div>
-                            )}
-                          </div>
-                        </div>
-                        {editingReviewId === review.id ? (
-                          <div className="space-y-3">
-                            <textarea
-                              value={editContent}
-                              onChange={(e) => setEditContent(e.target.value)}
-                              className="w-full p-3 rounded-lg border border-border bg-background text-foreground resize-none"
-                              rows={3}
-                              data-testid={`textarea-edit-review-${review.id}`}
-                            />
-                            <div className="flex gap-2">
-                              <Button
-                                size="sm"
-                                onClick={() => updateReviewMutation.mutate({ reviewId: review.id, content: editContent, rating: editRating })}
-                                disabled={updateReviewMutation.isPending}
-                                data-testid={`button-save-review-${review.id}`}
-                              >
-                                {updateReviewMutation.isPending ? "Saving..." : "Save"}
-                              </Button>
-                              <Button
-                                size="sm"
-                                variant="outline"
-                                onClick={() => { setEditingReviewId(null); setEditContent(""); }}
-                                data-testid={`button-cancel-edit-review-${review.id}`}
-                              >
-                                Cancel
-                              </Button>
-                            </div>
-                          </div>
-                        ) : (
-                          <p className={`text-foreground/80 text-${textSize}`}>{review.content}</p>
-                        )}
-                      </div>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
         </div>
-
-        {/* Related Places */}
-        {relatedPlaces.length > 0 && (
-          <div className="mt-12" data-testid="related-places-section">
-            <h2 className="font-display font-bold text-2xl mb-6">More in {place.category}</h2>
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-              {relatedPlaces.map((relatedPlace) => (
-                <Link key={relatedPlace.id} href={`/places/${relatedPlace.id}`}>
-                  <div 
-                    className="bg-card rounded-xl overflow-hidden border border-border hover-elevate cursor-pointer"
-                    data-testid={`related-place-card-${relatedPlace.id}`}
-                  >
-                    <div className="h-32 bg-muted relative">
-                      {relatedPlace.imageUrl ? (
-                        <img 
-                          src={relatedPlace.imageUrl} 
-                          alt={relatedPlace.name}
-                          className="w-full h-full object-cover"
-                        />
-                      ) : (
-                        <div className="w-full h-full flex items-center justify-center bg-secondary">
-                          <MapPin className="w-8 h-8 text-muted-foreground/30" />
-                        </div>
-                      )}
-                      <div className={`absolute top-2 right-2 w-6 h-6 rounded-full flex items-center justify-center ${
-                        relatedPlace.accessibilityStatus === ACCESSIBILITY_STATUS.ACCESSIBLE
-                          ? "bg-green-500"
-                          : relatedPlace.accessibilityStatus === ACCESSIBILITY_STATUS.PARTIALLY_ACCESSIBLE
-                          ? "bg-yellow-500"
-                          : "bg-red-500"
-                      }`}>
-                        {relatedPlace.accessibilityStatus === ACCESSIBILITY_STATUS.ACCESSIBLE ? (
-                          <CheckCircle className="w-4 h-4 text-white" />
-                        ) : relatedPlace.accessibilityStatus === ACCESSIBILITY_STATUS.PARTIALLY_ACCESSIBLE ? (
-                          <AlertTriangle className="w-4 h-4 text-black" />
-                        ) : (
-                          <XCircle className="w-4 h-4 text-white" />
-                        )}
-                      </div>
-                    </div>
-                    <div className="p-4">
-                      <h3 className="font-bold text-foreground truncate">{relatedPlace.name}</h3>
-                      <p className="text-sm text-muted-foreground truncate">{relatedPlace.description}</p>
-                    </div>
-                  </div>
-                </Link>
-              ))}
-            </div>
-          </div>
-        )}
       </div>
     </div>
   );

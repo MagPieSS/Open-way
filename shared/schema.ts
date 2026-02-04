@@ -223,6 +223,16 @@ export const partners = pgTable("partners", {
   sortOrder: integer("sort_order").default(0),
 });
 
+// Community posts
+export const communityPosts = pgTable("community_posts", {
+  id: serial("id").primaryKey(),
+  userId: integer("user_id").references(() => users.id).notNull(),
+  content: text("content").notNull(),
+  authorName: text("author_name"),
+  parentId: integer("parent_id"), // For replies
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
 // === INSERT SCHEMAS ===
 
 export const insertUserSchema = createInsertSchema(users).omit({ 
@@ -262,6 +272,8 @@ export const insertFaqEntrySchema = createInsertSchema(faqEntries).omit({ id: tr
 export const insertContactSubmissionSchema = createInsertSchema(contactSubmissions).omit({ id: true, createdAt: true, status: true });
 export const insertActivityLogSchema = createInsertSchema(activityLog).omit({ id: true, createdAt: true });
 export const insertPartnerSchema = createInsertSchema(partners).omit({ id: true });
+
+export const insertCommunityPostSchema = createInsertSchema(communityPosts).omit({ id: true, createdAt: true });
 
 // === TYPES ===
 
@@ -317,6 +329,9 @@ export type InsertActivityLog = z.infer<typeof insertActivityLogSchema>;
 
 export type Partner = typeof partners.$inferSelect;
 export type InsertPartner = z.infer<typeof insertPartnerSchema>;
+
+export type CommunityPost = typeof communityPosts.$inferSelect;
+export type InsertCommunityPost = z.infer<typeof insertCommunityPostSchema>;
 
 // Response Types
 export type PlaceResponse = Place;

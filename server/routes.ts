@@ -76,6 +76,37 @@ function encodeHtml(input: string): string {
     .replace(/'/g, "&#x27;");
 }
 
+import multer from "multer";
+import path from "path";
+import fs from "fs";
+
+// Configure multer for image uploads
+const storage_multer = multer.diskStorage({
+  destination: function (req, file, cb) {
+    const uploadPath = path.resolve(process.cwd(), "uploads");
+    if (!fs.existsSync(uploadPath)) {
+      fs.mkdirSync(uploadPath, { recursive: true });
+    }
+    cb(null, uploadPath);
+  },
+  filename: function (req, file, cb) {
+    const uniqueSuffix = Date.now() + "-" + Math.round(Math.random() * 1e9);
+    cb(null, file.fieldname + "-" + uniqueSuffix + path.extname(file.originalname));
+  }
+});
+
+const upload = multer({ 
+  storage: storage_multer,
+  limits: { fileSize: 5 * 1024 * 1024 }, // 5MB limit
+  fileFilter: (req, file, cb) => {
+    if (file.mimetype.startsWith("image/")) {
+      cb(null, true);
+    } else {
+      cb(new Error("Only images are allowed"));
+    }
+  }
+});
+
 export async function registerRoutes(
   httpServer: Server,
   app: Express
@@ -450,6 +481,28 @@ export async function registerRoutes(
   });
 
   // Place Media (users can upload)
+  app.post("/api/place-media/upload", requireAuth, validateCsrf, upload.single("image"), async (req, res) => {
+    try {
+      if (!req.file) return res.status(400).json({ message: "No file uploaded" });
+      const { placeId, caption } = req.body;
+      if (!placeId) return res.status(400).json({ message: "Place ID is required" });
+
+      const user = await storage.getUserById(req.session.userId!);
+      const url = `/uploads/${req.file.filename}`;
+      
+      const media = await storage.createPlaceMedia({
+        placeId: Number(placeId),
+        url,
+        caption: caption ? sanitizeString(caption, 200) : undefined,
+        uploadedBy: user?.displayName || user?.email,
+      });
+      
+      res.status(201).json(media);
+    } catch (err: any) {
+      res.status(400).json({ message: err.message || "Failed to upload image" });
+    }
+  });
+
   app.post(api.placeMedia.create.path, requireAuth, validateCsrf, async (req, res) => {
     try {
       const input = api.placeMedia.create.input.parse(req.body);
@@ -501,25 +554,25 @@ export async function registerRoutes(
     }
   });
 
-  // Community posts (alias for reviews for general discussion)
+  // Community posts
   app.get("/api/community/posts", async (req, res) => {
-    const results = await storage.getReviews();
+    const results = await storage.getCommunityPosts();
     res.json(results);
   });
 
   app.post("/api/community/posts", requireAuth, validateCsrf, async (req, res) => {
     try {
-      const { content } = req.body;
+      const { content, parentId } = req.body;
       if (!content) return res.status(400).json({ message: "Content is required" });
       
       const user = await storage.getUserById(req.session.userId!);
-      const review = await storage.createReview({
-        placeId: 1, // Default or generic place ID for community posts
+      const post = await storage.createCommunityPost({
         content: sanitizeString(content, 2000),
-        userId: req.session.userId,
+        userId: req.session.userId!,
         authorName: user?.displayName || user?.email,
+        parentId: parentId ? Number(parentId) : null,
       });
-      res.status(201).json(review);
+      res.status(201).json(post);
     } catch (err) {
       res.status(500).json({ message: "Failed to create post" });
     }

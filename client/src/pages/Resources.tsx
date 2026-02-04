@@ -49,9 +49,11 @@ const CATEGORIES = [
   "Government",
   "Education",
   "Community",
+  "Advocacy",
 ];
 
 export default function Resources() {
+// ... existing code ...
   const [searchTerm, setSearchTerm] = useState("");
   const [categoryFilter, setCategoryFilter] = useState("All");
 

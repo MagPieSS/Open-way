@@ -25,6 +25,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { useAuth } from "@/hooks/use-auth";
 
 const CATEGORIES = ["All", "Transit", "Museums", "Libraries", "Parks", "Restaurants", "Healthcare", "Government", "Education"];
 const RATING_FILTERS = [
@@ -56,8 +57,9 @@ function markVoted(reviewId: number) {
 export default function Community() {
   const queryClient = useQueryClient();
   const { toast } = useToast();
+  const { user } = useAuth();
   const { data: reviews, isLoading: isReviewsLoading } = useReviews();
-  const { data: communityPosts, isLoading: isPostsLoading } = useQuery({
+  const { data: communityPosts, isLoading: isPostsLoading } = useQuery<any[]>({
     queryKey: ["/api/community/posts"],
   });
   const { data: places } = usePlaces();
@@ -141,10 +143,10 @@ export default function Community() {
   const reviewerLeaderboard = useMemo(() => {
     if (!allPosts) return [];
     const counts: Record<string, { name: string; role: string | null; count: number }> = {};
-    allPosts.forEach((r) => {
+    allPosts.forEach((r: any) => {
       const name = r.authorName || "Anonymous";
       if (!counts[name]) {
-        counts[name] = { name, role: r.authorRole, count: 0 };
+        counts[name] = { name, role: r.authorRole || null, count: 0 };
       }
       counts[name].count++;
     });
