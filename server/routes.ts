@@ -407,7 +407,7 @@ export async function registerRoutes(
     res.json(place);
   });
 
-  app.post(api.places.create.path, requireAdmin, validateCsrf, async (req, res) => {
+  app.post(api.places.create.path, requireAuth, validateCsrf, async (req, res) => {
     try {
       const input = api.places.create.input.parse(req.body);
       const place = await storage.createPlace(input);
@@ -449,11 +449,15 @@ export async function registerRoutes(
     }
   });
 
-  // Place Media (admin only)
-  app.post(api.placeMedia.create.path, requireAdmin, validateCsrf, async (req, res) => {
+  // Place Media (users can upload)
+  app.post(api.placeMedia.create.path, requireAuth, validateCsrf, async (req, res) => {
     try {
       const input = api.placeMedia.create.input.parse(req.body);
-      const media = await storage.createPlaceMedia(input);
+      const user = await storage.getUserById(req.session.userId!);
+      const media = await storage.createPlaceMedia({
+        ...input,
+        uploadedBy: user?.displayName || user?.email,
+      });
       res.status(201).json(media);
     } catch (err) {
       if (err instanceof z.ZodError) {
@@ -485,6 +489,29 @@ export async function registerRoutes(
   });
 
   // Reviews
+  app.get("/api/community/posts", async (req, res) => {
+    const results = await storage.getReviews();
+    res.json(results);
+  });
+
+  app.post("/api/community/posts", requireAuth, validateCsrf, async (req, res) => {
+    try {
+      const { content } = req.body;
+      if (!content) return res.status(400).json({ message: "Content is required" });
+      
+      const user = await storage.getUserById(req.session.userId!);
+      const review = await storage.createReview({
+        placeId: 1, // Default or generic place ID for community posts if not specified
+        content: sanitizeString(content, 2000),
+        userId: req.session.userId,
+        authorName: user?.displayName || user?.email,
+      });
+      res.status(201).json(review);
+    } catch (err) {
+      res.status(500).json({ message: "Failed to create post" });
+    }
+  });
+
   app.get(api.reviews.list.path, async (req, res) => {
     const placeId = req.query.placeId ? Number(req.query.placeId) : undefined;
     const featured = req.query.featured as string | undefined;

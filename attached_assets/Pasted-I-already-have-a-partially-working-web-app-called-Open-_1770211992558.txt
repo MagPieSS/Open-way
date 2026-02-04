@@ -1,0 +1,158 @@
+I already have a partially working web app called "Open Way" with the slogan "Move your way!" It is an accessibility-focused platform that helps disabled individuals find, review, and discuss how accessible places are.
+
+An older backup version loaded and several features are missing or broken. DO NOT rebuild from scratch. Instead, improve and restore the existing structure.
+
+========================
+🌈 DESIGN & ACCESSIBILITY
+========================
+Make the interface colorful, welcoming, and highly accessible:
+- Large readable fonts
+- High color contrast
+- Fully keyboard navigable
+- ARIA labels where appropriate
+- Mobile responsive layout
+
+========================
+🏠 HOME PAGE
+========================
+- Display the Open Way logo
+- Show the slogan: "Move your way!"
+- Short welcome paragraph explaining the mission
+- Navigation bar with:
+  Home | Places | Community | Petitions | Resources | About Us
+- Settings icon in the TOP RIGHT that links to Settings page
+- Responsive dropdown menu for small screens
+
+========================
+📍 PLACES PAGE (MAJOR FIX)
+========================
+Currently missing photos and full accessibility info.
+
+Each place must show:
+- Name
+- Address (if available)
+- Accessibility status badge:
+  ✅ Accessible
+  ⚠️ Partially Accessible
+  ❌ Not Accessible
+- Photo gallery (multiple images allowed)
+- Reviews section
+- "Save Place" heart button
+
+Users must be able to:
+- Upload photos
+- Write reviews
+- Rate accessibility
+
+Image rules:
+- Store images in a server folder like /uploads
+- Save file paths in place/review data
+- Validate file type and size
+
+Add these starter places:
+
+SEPTA Train Stations — Partially Accessible  
+Philadelphia Museum of Art — Not Accessible  
+Free Library of Philadelphia — Partially Accessible  
+Parkway Central Library — Not Accessible  
+
+Use placeholder images if no uploads exist.
+
+========================
+👥 COMMUNITY PAGE (FIX BROKEN)
+========================
+Allow logged-in users to:
+- Create posts
+- Reply to posts
+- Discuss accessibility problems
+
+Each post must show:
+- Username
+- Timestamp
+- Content
+
+Store posts in backend storage.
+
+========================
+✍️ PETITIONS PAGE
+========================
+Users can:
+- Start a petition
+- View petitions
+- Sign petitions
+
+Each petition includes:
+- Title
+- Description
+- Creator name
+- Signature counter
+
+========================
+📚 RESOURCES PAGE (EMPTY — ADD CONTENT)
+========================
+Add resource cards for:
+- How to report ADA violations
+- Your rights under the ADA
+- How to request accommodations
+- How to advocate for accessibility
+
+Each card = title + short description (placeholder links allowed)
+
+========================
+⚙️ SETTINGS PAGE
+========================
+Accessible from top-right settings icon.
+
+Include:
+- Dark mode toggle
+- Text size control
+- High contrast mode
+- Notification preferences (UI only)
+- Account settings (change username/password)
+
+Store visual preferences in LocalStorage.
+
+========================
+👤 USER PERMISSIONS FIX
+========================
+Currently only admin can upload. Fix this.
+
+Regular logged-in users must be able to:
+✔ Upload place photos  
+✔ Write reviews  
+✔ Create community posts  
+✔ Start petitions  
+✔ Sign petitions  
+✔ Save favorite places  
+
+Admins can:
+✔ Remove inappropriate content  
+✔ Manage places
+
+========================
+🔐 SECURITY
+========================
+- Use server-side sessions (not frontend login storage)
+- Hash passwords (bcrypt or similar)
+- Use environment secrets for session secret and sensitive keys
+- Validate uploads (images only)
+- Add rate limiting to login attempts
+- Never expose backend data files
+
+========================
+🧠 DATA STORAGE
+========================
+Backend storage (JSON or simple DB) for:
+- users
+- places
+- reviews
+- posts
+- petitions
+
+Images in /uploads folder with paths saved in data.
+
+========================
+🎯 GOAL
+========================
+Do NOT remove the existing app structure unless necessary.
+Fix broken features, add missing ones, improve UI, and make the app feel like a complete accessibility community platform.

@@ -47,6 +47,7 @@ export const places = pgTable("places", {
   accessibilityStatus: text("accessibility_status").notNull(),
   description: text("description").notNull(),
   imageUrl: text("image_url"),
+  imageUrls: text("image_urls").array(),
   // Location data
   address: text("address"),
   latitude: real("latitude"),
