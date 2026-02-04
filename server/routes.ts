@@ -488,7 +488,20 @@ export async function registerRoutes(
     }
   });
 
-  // Reviews
+  app.get(api.reviews.list.path, async (req, res) => {
+    const placeId = req.query.placeId ? Number(req.query.placeId) : undefined;
+    const featured = req.query.featured as string | undefined;
+    
+    if (featured === 'true') {
+      const results = await storage.getFeaturedReviews();
+      res.json(results);
+    } else {
+      const results = await storage.getReviews(placeId);
+      res.json(results);
+    }
+  });
+
+  // Community posts (alias for reviews for general discussion)
   app.get("/api/community/posts", async (req, res) => {
     const results = await storage.getReviews();
     res.json(results);
@@ -501,7 +514,7 @@ export async function registerRoutes(
       
       const user = await storage.getUserById(req.session.userId!);
       const review = await storage.createReview({
-        placeId: 1, // Default or generic place ID for community posts if not specified
+        placeId: 1, // Default or generic place ID for community posts
         content: sanitizeString(content, 2000),
         userId: req.session.userId,
         authorName: user?.displayName || user?.email,
@@ -509,19 +522,6 @@ export async function registerRoutes(
       res.status(201).json(review);
     } catch (err) {
       res.status(500).json({ message: "Failed to create post" });
-    }
-  });
-
-  app.get(api.reviews.list.path, async (req, res) => {
-    const placeId = req.query.placeId ? Number(req.query.placeId) : undefined;
-    const featured = req.query.featured as string | undefined;
-    
-    if (featured === 'true') {
-      const results = await storage.getFeaturedReviews();
-      res.json(results);
-    } else {
-      const results = await storage.getReviews(placeId);
-      res.json(results);
     }
   });
 
