@@ -128,7 +128,7 @@ export function Navigation() {
               {/* Dropdown Panel */}
               {isOpen && (
                 <div 
-                  className="absolute right-0 mt-2 w-72 max-h-[70vh] overflow-y-auto bg-white dark:bg-card rounded-xl shadow-xl border border-border animate-dropdown z-50 scrollbar-thin"
+                  className="absolute right-0 mt-2 w-72 max-h-[70vh] overflow-y-auto bg-white dark:bg-card rounded-xl shadow-xl border border-border animate-dropdown z-[9999] scrollbar-thin"
                   role="menu"
                   aria-orientation="vertical"
                   data-testid="dropdown-menu"
