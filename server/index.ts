@@ -136,6 +136,12 @@ app.use("/uploads", express.static(path.resolve(process.cwd(), "uploads")));
 const assetsPath = path.resolve(process.cwd(), "attached_assets");
 app.use("/assets", express.static(assetsPath));
 
+// Serve place images - in production from dist/public/images, in development Vite handles it
+if (process.env.NODE_ENV === "production") {
+  const imagesPath = path.resolve(process.cwd(), "dist/public/images");
+  app.use("/images", express.static(imagesPath));
+}
+
 // ==================== CSRF PROTECTION ====================
 import crypto from "crypto";
 
