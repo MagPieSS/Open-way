@@ -1048,8 +1048,8 @@ async function seedDatabase() {
       {
         name: 'Philadelphia Museum of Art',
         category: 'museums',
-        accessibilityStatus: 'Not Accessible',
-        description: 'World-class art museum with limited accessibility. Historic building has stairs at main entrance, some galleries lack elevator access, and accessible restrooms are limited.',
+        accessibilityStatus: 'Accessible',
+        description: 'World-class art museum with extensive accessibility features. Wheelchair accessible galleries, elevators, accessible parking, and accessible restrooms available.',
         imageUrl: 'https://images.unsplash.com/photo-1564399579883-451a5b44a221?w=800&h=600&fit=crop',
         address: '2600 Benjamin Franklin Parkway, Philadelphia, PA 19130',
         latitude: 39.9657,
@@ -1062,8 +1062,8 @@ async function seedDatabase() {
       {
         name: 'Free Library of Philadelphia - Main Branch',
         category: 'libraries',
-        accessibilityStatus: 'Partially Accessible',
-        description: 'Historic research library with some accessibility features. Elevator access to most floors but some older sections have limited access. Staff available to assist.',
+        accessibilityStatus: 'Accessible',
+        description: 'Historic research library with full accessibility. Elevator access to all floors, accessible seating areas, and trained staff to assist.',
         imageUrl: 'https://images.unsplash.com/photo-1507842217343-583f20270319?w=800&h=600&fit=crop',
         address: '1901 Vine Street, Philadelphia, PA 19103',
         latitude: 39.9543,
@@ -1071,20 +1071,6 @@ async function seedDatabase() {
         phone: '(215) 686-5322',
         website: 'https://libwww.freelibrary.org',
         hours: 'Mon-Fri 9am-6pm, Sat 10am-5pm, Sun 1pm-5pm',
-        isFeatured: true,
-      },
-      {
-        name: 'Parkway Central Library',
-        category: 'libraries',
-        accessibilityStatus: 'Not Accessible',
-        description: 'Historic library building with significant accessibility barriers. Limited elevator access, narrow aisles between stacks, and no accessible restrooms on upper floors.',
-        imageUrl: 'https://images.unsplash.com/photo-1521587760476-6c12a4b040da?w=800&h=600&fit=crop',
-        address: '1901 Vine Street, Philadelphia, PA 19103',
-        latitude: 39.9545,
-        longitude: -75.1660,
-        phone: '(215) 686-5322',
-        website: 'https://libwww.freelibrary.org',
-        hours: 'Mon-Fri 9am-6pm, Sat 10am-5pm',
         isFeatured: true,
       },
       {
@@ -1116,18 +1102,18 @@ async function seedDatabase() {
         isFeatured: false,
       },
       {
-        name: 'SEPTA Train Stations',
+        name: 'SEPTA - Market-Frankford Station',
         category: 'transit',
-        accessibilityStatus: 'Partially Accessible',
-        description: 'Regional rail network with varying accessibility. Some stations have elevators and ramps while older stations may have stairs only. Call ahead to confirm accessibility at specific stations.',
+        accessibilityStatus: 'Accessible',
+        description: 'Major transit hub with elevators, accessible entry points, and tactile guidance for visually impaired riders.',
         imageUrl: 'https://images.unsplash.com/photo-1587395853207-0ca2b7a37bd6?w=800&h=600&fit=crop',
-        address: '1234 Market Street, Philadelphia, PA 19107',
+        address: '11th & Market Street, Philadelphia, PA 19107',
         latitude: 39.9520,
         longitude: -75.1595,
         phone: '(215) 580-7800',
         website: 'https://www.septa.org',
         hours: '24/7',
-        isFeatured: true,
+        isFeatured: false,
       },
       {
         name: 'Pennsylvania Hospital',
@@ -1321,56 +1307,6 @@ async function seedDatabase() {
 
     for (const event of events) {
       await storage.createEvent(event);
-    }
-
-    // Add ADA resources
-    const resources = [
-      {
-        title: 'Reporting ADA Violations',
-        description: 'Learn how to file a formal complaint with the Department of Justice regarding accessibility violations.',
-        category: 'ADA Services',
-        website: 'https://www.ada.gov/file-a-complaint/',
-        isFeatured: true,
-      },
-      {
-        title: 'Know Your ADA Rights',
-        description: 'Comprehensive guide to your rights under the Americans with Disabilities Act, including public accommodations and employment.',
-        category: 'ADA Services',
-        website: 'https://www.ada.gov/resources/disability-rights-guide/',
-        isFeatured: true,
-      },
-      {
-        title: 'Requesting Accommodations',
-        description: 'Steps and templates for requesting reasonable accommodations in the workplace or public spaces.',
-        category: 'ADA Services',
-        website: 'https://askjan.org/topics/Requesting-Accommodation.cfm',
-        isFeatured: true,
-      },
-      {
-        title: 'Accessibility Advocacy',
-        description: 'Join local groups and learn techniques to advocate for better accessibility in your neighborhood.',
-        category: 'Advocacy',
-        website: 'https://www.disabilityrightsphl.org/',
-        isFeatured: true,
-      },
-      {
-        title: 'Philadelphia Center for Independent Living',
-        description: 'Local organization providing advocacy, peer support, and independent living services for people with disabilities.',
-        category: 'Local Services',
-        website: 'https://www.libertyresources.org/',
-        isFeatured: false,
-      },
-      {
-        title: 'SEPTA Accessibility Services',
-        description: 'Information about accessible transit options, reduced fare programs, and paratransit services in Philadelphia.',
-        category: 'Transit',
-        website: 'https://www.septa.org/accessibility/',
-        isFeatured: false,
-      },
-    ];
-
-    for (const resource of resources) {
-      await storage.createResource(resource);
     }
 
     console.log('✅ Database seeded successfully with real places and data!');
