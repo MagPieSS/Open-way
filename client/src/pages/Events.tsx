@@ -487,9 +487,15 @@ export default function Events() {
           <p className="text-muted-foreground mb-6">
             Organizing an accessibility-focused event? Let us help spread the word.
           </p>
-          <Button size="lg" data-testid="button-submit-event">
-            Submit an Event
-          </Button>
+          {user ? (
+            <Button size="lg" onClick={() => setShowCreateDialog(true)} data-testid="button-submit-event">
+              Submit an Event
+            </Button>
+          ) : (
+            <Button size="lg" asChild data-testid="button-submit-event">
+              <a href="/login">Sign In to Submit</a>
+            </Button>
+          )}
         </div>
       </section>
     </div>

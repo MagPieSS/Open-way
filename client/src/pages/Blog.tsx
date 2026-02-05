@@ -399,9 +399,15 @@ export default function Blog() {
           <p className="text-muted-foreground mb-6">
             Have a story about accessibility in Philadelphia? We'd love to hear from you.
           </p>
-          <Button size="lg" data-testid="button-submit-story">
-            Submit a Story
-          </Button>
+          {user ? (
+            <Button size="lg" onClick={() => setShowCreateDialog(true)} data-testid="button-submit-story">
+              Submit a Story
+            </Button>
+          ) : (
+            <Button size="lg" asChild data-testid="button-submit-story">
+              <a href="/login">Sign In to Submit</a>
+            </Button>
+          )}
         </div>
       </section>
 
