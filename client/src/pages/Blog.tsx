@@ -128,23 +128,15 @@ export default function Blog() {
       onClick={() => setSelectedPost(post)}
       data-testid={`card-post-${post.id}`}
     >
-      {post.imageUrl && (
-        <div className="relative h-48 overflow-hidden rounded-t-xl">
-          <img
-            src={post.imageUrl}
-            alt={post.title}
-            className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
-            data-testid={`img-post-${post.id}`}
-          />
-          {featured && (
-            <Badge className="absolute top-3 right-3 bg-primary text-primary-foreground">
-              <Star className="w-3 h-3 mr-1 fill-current" />
-              Featured
-            </Badge>
-          )}
+      {featured && (
+        <div className="px-4 pt-4">
+          <Badge className="bg-primary text-primary-foreground">
+            <Star className="w-3 h-3 mr-1 fill-current" />
+            Featured
+          </Badge>
         </div>
       )}
-      <CardHeader className={post.imageUrl ? "pt-4" : ""}>
+      <CardHeader>
         <div className="space-y-2">
           <div className="flex items-center gap-2 flex-wrap">
             {post.category && (
@@ -416,15 +408,6 @@ export default function Blog() {
           {selectedPost && (
             <>
               <DialogHeader>
-                {selectedPost.imageUrl && (
-                  <div className="relative h-64 -mx-6 -mt-6 mb-4 overflow-hidden rounded-t-lg">
-                    <img
-                      src={selectedPost.imageUrl}
-                      alt={selectedPost.title}
-                      className="w-full h-full object-cover"
-                    />
-                  </div>
-                )}
                 <div className="flex items-center gap-2 flex-wrap mb-2">
                   {selectedPost.category && (
                     <Badge variant="secondary">{selectedPost.category}</Badge>
