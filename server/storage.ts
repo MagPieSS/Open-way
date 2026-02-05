@@ -3,7 +3,7 @@ import {
   places, reviews, signatures, categories, accessibilityFeatures,
   placeMedia, placeTips, petitionUpdates, events, resources,
   blogPosts, faqEntries, contactSubmissions, activityLog, partners,
-  users, savedPlaces, communityPosts,
+  users, savedPlaces, communityPosts, passwordResetTokens,
   type Place, type InsertPlace,
   type Review, type InsertReview,
   type Signature, type InsertSignature,
@@ -21,6 +21,7 @@ import {
   type Partner, type InsertPartner,
   type User, type SavedPlace, type InsertSavedPlace,
   type CommunityPost, type InsertCommunityPost,
+  type PasswordResetToken, type InsertPasswordResetToken,
 } from "@shared/schema";
 import { eq, desc, sql, and, inArray } from "drizzle-orm";
 
@@ -137,6 +138,12 @@ export interface IStorage {
   // Community Posts
   getCommunityPosts(): Promise<CommunityPost[]>;
   createCommunityPost(post: InsertCommunityPost): Promise<CommunityPost>;
+
+  // Password Reset Tokens
+  createPasswordResetToken(token: InsertPasswordResetToken): Promise<PasswordResetToken>;
+  getPasswordResetToken(token: string): Promise<PasswordResetToken | undefined>;
+  markTokenUsed(tokenId: number): Promise<void>;
+  deleteExpiredTokens(): Promise<void>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -571,6 +578,25 @@ export class DatabaseStorage implements IStorage {
   async createCommunityPost(post: InsertCommunityPost): Promise<CommunityPost> {
     const [newPost] = await db.insert(communityPosts).values(post).returning();
     return newPost;
+  }
+
+  // Password Reset Tokens
+  async createPasswordResetToken(token: InsertPasswordResetToken): Promise<PasswordResetToken> {
+    const [newToken] = await db.insert(passwordResetTokens).values(token).returning();
+    return newToken;
+  }
+
+  async getPasswordResetToken(token: string): Promise<PasswordResetToken | undefined> {
+    const [resetToken] = await db.select().from(passwordResetTokens).where(eq(passwordResetTokens.token, token));
+    return resetToken;
+  }
+
+  async markTokenUsed(tokenId: number): Promise<void> {
+    await db.update(passwordResetTokens).set({ usedAt: new Date() }).where(eq(passwordResetTokens.id, tokenId));
+  }
+
+  async deleteExpiredTokens(): Promise<void> {
+    await db.delete(passwordResetTokens).where(sql`${passwordResetTokens.expiresAt} < NOW()`);
   }
 }
 
