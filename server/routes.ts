@@ -19,6 +19,7 @@ import {
   isWeakPassword
 } from "./auth";
 import { authRateLimiter, apiRateLimiter, validateCsrf } from "./index";
+import { registerObjectStorageRoutes } from "./integrations/object_storage";
 
 // Middleware to check if user is authenticated
 function requireAuth(req: Request, res: Response, next: NextFunction) {
@@ -112,6 +113,9 @@ export async function registerRoutes(
   httpServer: Server,
   app: Express
 ): Promise<Server> {
+
+  // Register object storage routes for file uploads
+  registerObjectStorageRoutes(app);
 
   // ==================== AUTHENTICATION ROUTES ====================
 
