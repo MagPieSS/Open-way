@@ -3,7 +3,8 @@ import type { Server } from "http";
 import { storage } from "./storage";
 import { api } from "@shared/routes";
 import { z } from "zod";
-import { ACCESSIBILITY_STATUS, ACCESSIBILITY_FEATURE_TYPES, insertUserSchema, loginSchema } from "@shared/schema";
+import { randomBytes } from "crypto";
+import { ACCESSIBILITY_STATUS, ACCESSIBILITY_FEATURE_TYPES, insertUserSchema, loginSchema, forgotPasswordSchema, resetPasswordSchema } from "@shared/schema";
 import { 
   registerUser, 
   loginUser, 
@@ -225,6 +226,107 @@ export async function registerRoutes(
     }
 
     res.json({ user: toSafeUser(user) });
+  });
+
+  // ==================== PASSWORD RESET ROUTES ====================
+
+  // Request password reset (forgot password)
+  app.post("/api/auth/forgot-password", authRateLimiter, async (req, res) => {
+    try {
+      const input = forgotPasswordSchema.parse(req.body);
+      const email = input.email.trim().toLowerCase();
+
+      // Always return success to prevent email enumeration
+      const user = await storage.getUserByEmail(email);
+      
+      if (user) {
+        // Generate secure reset token
+        const token = randomBytes(32).toString("hex");
+        const expiresAt = new Date(Date.now() + 60 * 60 * 1000); // 1 hour
+
+        // Delete any existing tokens for this user
+        await storage.deleteExpiredTokens();
+        
+        // Create new reset token
+        await storage.createPasswordResetToken({
+          userId: user.id,
+          token,
+          expiresAt,
+        });
+
+        // Build reset URL
+        const resetUrl = `${req.protocol}://${req.get("host")}/reset-password?token=${token}`;
+
+        // TODO: Send email when email service is configured
+        // For now, log the reset link to console for testing
+        console.log("=".repeat(60));
+        console.log("PASSWORD RESET REQUESTED");
+        console.log(`Email: ${email}`);
+        console.log(`Reset Link: ${resetUrl}`);
+        console.log(`Expires: ${expiresAt.toISOString()}`);
+        console.log("=".repeat(60));
+      }
+
+      // Always return success (prevents email enumeration attacks)
+      res.json({ message: "If an account exists with this email, you will receive a password reset link." });
+    } catch (err) {
+      if (err instanceof z.ZodError) {
+        return res.status(400).json({ message: err.errors[0].message });
+      }
+      console.error("Forgot password error:", err);
+      res.status(500).json({ message: "Unable to process password reset request" });
+    }
+  });
+
+  // Reset password with token
+  app.post("/api/auth/reset-password", authRateLimiter, async (req, res) => {
+    try {
+      const input = resetPasswordSchema.parse(req.body);
+
+      // Find and validate token
+      const resetToken = await storage.getPasswordResetToken(input.token);
+
+      if (!resetToken) {
+        return res.status(400).json({ message: "Invalid or expired reset link" });
+      }
+
+      if (resetToken.usedAt) {
+        return res.status(400).json({ message: "This reset link has already been used" });
+      }
+
+      if (new Date() > resetToken.expiresAt) {
+        return res.status(400).json({ message: "This reset link has expired" });
+      }
+
+      // Check password strength
+      if (isWeakPassword(input.password)) {
+        return res.status(400).json({ message: "Password is too common. Please choose a stronger password." });
+      }
+
+      // Get the user
+      const user = await storage.getUserById(resetToken.userId);
+      if (!user) {
+        return res.status(400).json({ message: "Account not found" });
+      }
+
+      // Hash and update password
+      const passwordHash = await hashPassword(input.password);
+      await storage.updateUser(user.id, { passwordHash });
+
+      // Mark token as used
+      await storage.markTokenUsed(resetToken.id);
+
+      // Note: 2FA is NOT bypassed - they still need to log in with 2FA after resetting password
+      console.log(`Password reset successful for user: ${user.email}`);
+
+      res.json({ message: "Password has been reset successfully. You can now log in with your new password." });
+    } catch (err) {
+      if (err instanceof z.ZodError) {
+        return res.status(400).json({ message: err.errors[0].message });
+      }
+      console.error("Reset password error:", err);
+      res.status(500).json({ message: "Unable to reset password" });
+    }
   });
 
   // ==================== 2FA MANAGEMENT ROUTES ====================
