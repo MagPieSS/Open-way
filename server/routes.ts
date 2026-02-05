@@ -856,7 +856,7 @@ export async function registerRoutes(
     res.json(event);
   });
 
-  app.post(api.events.create.path, requireAdmin, validateCsrf, async (req, res) => {
+  app.post(api.events.create.path, requireAuth, validateCsrf, async (req, res) => {
     try {
       const input = api.events.create.input.parse(req.body);
       const event = await storage.createEvent(input);
@@ -924,7 +924,7 @@ export async function registerRoutes(
     res.json(post);
   });
 
-  app.post(api.blogPosts.create.path, requireAdmin, validateCsrf, async (req, res) => {
+  app.post(api.blogPosts.create.path, requireAuth, validateCsrf, async (req, res) => {
     try {
       const input = api.blogPosts.create.input.parse(req.body);
       const post = await storage.createBlogPost(input);

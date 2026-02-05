@@ -1,9 +1,12 @@
 import { useState, useMemo } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useMutation } from "@tanstack/react-query";
 import { SectionLabel } from "@/components/SectionLabel";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
 import {
   Select,
   SelectContent,
@@ -11,6 +14,13 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from "@/components/ui/dialog";
 import {
   Calendar,
   Clock,
@@ -23,9 +33,13 @@ import {
   Heart,
   PartyPopper,
   Filter,
+  Plus,
 } from "lucide-react";
 import { format, isFuture, isPast } from "date-fns";
 import type { Event } from "@shared/schema";
+import { apiRequest, queryClient } from "@/lib/queryClient";
+import { useToast } from "@/hooks/use-toast";
+import { useAuth } from "@/hooks/use-auth";
 
 const CATEGORY_ICONS: Record<string, typeof Users> = {
   "Workshop": BookOpen,
@@ -46,9 +60,47 @@ export default function Events() {
   const [categoryFilter, setCategoryFilter] = useState("All");
   const [sortBy, setSortBy] = useState("soonest");
   const [showPast, setShowPast] = useState(false);
+  const [showCreateDialog, setShowCreateDialog] = useState(false);
+  const [newEvent, setNewEvent] = useState({
+    title: "",
+    description: "",
+    date: "",
+    location: "",
+    address: "",
+    category: "Community",
+    registrationUrl: "",
+  });
+  const { toast } = useToast();
+  const { user } = useAuth();
 
   const { data: events, isLoading, error } = useQuery<Event[]>({
     queryKey: ["/api/events"],
+  });
+
+  const createEventMutation = useMutation({
+    mutationFn: async (data: typeof newEvent) => {
+      return apiRequest("POST", "/api/events", {
+        ...data,
+        date: new Date(data.date).toISOString(),
+      });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/events"] });
+      setShowCreateDialog(false);
+      setNewEvent({
+        title: "",
+        description: "",
+        date: "",
+        location: "",
+        address: "",
+        category: "Community",
+        registrationUrl: "",
+      });
+      toast({ title: "Event submitted successfully!" });
+    },
+    onError: (err: Error) => {
+      toast({ title: "Failed to submit event", description: err.message, variant: "destructive" });
+    },
   });
 
   const featuredEvents = useMemo(() => {
@@ -199,9 +251,120 @@ export default function Events() {
         <div className="max-w-7xl mx-auto text-center">
           <SectionLabel>Events</SectionLabel>
           <h1 className="font-display font-bold text-4xl mt-2 mb-4">Upcoming Events</h1>
-          <p className="text-muted-foreground text-lg max-w-2xl mx-auto">
+          <p className="text-muted-foreground text-lg max-w-2xl mx-auto mb-6">
             Join workshops, community gatherings, and advocacy events supporting accessibility in Philadelphia
           </p>
+          {user && (
+            <Dialog open={showCreateDialog} onOpenChange={setShowCreateDialog}>
+              <DialogTrigger asChild>
+                <Button data-testid="button-submit-event">
+                  <Plus className="w-4 h-4 mr-2" />
+                  Submit an Event
+                </Button>
+              </DialogTrigger>
+              <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
+                <DialogHeader>
+                  <DialogTitle>Submit a New Event</DialogTitle>
+                </DialogHeader>
+                <form
+                  onSubmit={(e) => {
+                    e.preventDefault();
+                    createEventMutation.mutate(newEvent);
+                  }}
+                  className="space-y-4"
+                >
+                  <div>
+                    <Label htmlFor="event-title">Event Title</Label>
+                    <Input
+                      id="event-title"
+                      value={newEvent.title}
+                      onChange={(e) => setNewEvent({ ...newEvent, title: e.target.value })}
+                      required
+                      data-testid="input-event-title"
+                    />
+                  </div>
+                  <div>
+                    <Label htmlFor="event-description">Description</Label>
+                    <Textarea
+                      id="event-description"
+                      value={newEvent.description}
+                      onChange={(e) => setNewEvent({ ...newEvent, description: e.target.value })}
+                      required
+                      data-testid="input-event-description"
+                    />
+                  </div>
+                  <div>
+                    <Label htmlFor="event-date">Date & Time</Label>
+                    <Input
+                      id="event-date"
+                      type="datetime-local"
+                      value={newEvent.date}
+                      onChange={(e) => setNewEvent({ ...newEvent, date: e.target.value })}
+                      required
+                      data-testid="input-event-date"
+                    />
+                  </div>
+                  <div>
+                    <Label htmlFor="event-location">Venue Name</Label>
+                    <Input
+                      id="event-location"
+                      value={newEvent.location}
+                      onChange={(e) => setNewEvent({ ...newEvent, location: e.target.value })}
+                      placeholder="e.g. Philadelphia Library"
+                      data-testid="input-event-location"
+                    />
+                  </div>
+                  <div>
+                    <Label htmlFor="event-address">Address</Label>
+                    <Input
+                      id="event-address"
+                      value={newEvent.address}
+                      onChange={(e) => setNewEvent({ ...newEvent, address: e.target.value })}
+                      placeholder="e.g. 1901 Vine Street, Philadelphia"
+                      data-testid="input-event-address"
+                    />
+                  </div>
+                  <div>
+                    <Label htmlFor="event-category">Category</Label>
+                    <Select
+                      value={newEvent.category}
+                      onValueChange={(val) => setNewEvent({ ...newEvent, category: val })}
+                    >
+                      <SelectTrigger data-testid="select-event-category">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {CATEGORIES.filter((c) => c !== "All").map((cat) => (
+                          <SelectItem key={cat} value={cat}>
+                            {cat}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div>
+                    <Label htmlFor="event-registration">Registration URL (optional)</Label>
+                    <Input
+                      id="event-registration"
+                      type="url"
+                      value={newEvent.registrationUrl}
+                      onChange={(e) => setNewEvent({ ...newEvent, registrationUrl: e.target.value })}
+                      placeholder="https://..."
+                      data-testid="input-event-registration"
+                    />
+                  </div>
+                  <Button
+                    type="submit"
+                    className="w-full"
+                    disabled={createEventMutation.isPending}
+                    data-testid="button-create-event"
+                  >
+                    {createEventMutation.isPending ? "Submitting..." : "Submit Event"}
+                  </Button>
+                </form>
+              </DialogContent>
+            </Dialog>
+          )}
         </div>
       </section>
 

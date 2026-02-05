@@ -1,9 +1,12 @@
 import { useState, useMemo } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useMutation } from "@tanstack/react-query";
 import { SectionLabel } from "@/components/SectionLabel";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
 import {
   Select,
   SelectContent,
@@ -16,6 +19,7 @@ import {
   DialogContent,
   DialogHeader,
   DialogTitle,
+  DialogTrigger,
 } from "@/components/ui/dialog";
 import {
   Calendar,
@@ -25,9 +29,13 @@ import {
   Filter,
   BookOpen,
   Clock,
+  Plus,
 } from "lucide-react";
 import { format } from "date-fns";
 import type { BlogPost } from "@shared/schema";
+import { apiRequest, queryClient } from "@/lib/queryClient";
+import { useToast } from "@/hooks/use-toast";
+import { useAuth } from "@/hooks/use-auth";
 
 const CATEGORIES = ["All", "News", "Advocacy", "Community", "Resources", "Guides", "Stories"];
 
@@ -40,9 +48,45 @@ export default function Blog() {
   const [categoryFilter, setCategoryFilter] = useState("All");
   const [sortBy, setSortBy] = useState("newest");
   const [selectedPost, setSelectedPost] = useState<BlogPost | null>(null);
+  const [showCreateDialog, setShowCreateDialog] = useState(false);
+  const [newPost, setNewPost] = useState({
+    title: "",
+    content: "",
+    excerpt: "",
+    category: "Community",
+    author: "",
+  });
+  const { toast } = useToast();
+  const { user } = useAuth();
 
   const { data: posts, isLoading, error } = useQuery<BlogPost[]>({
     queryKey: ["/api/blog"],
+  });
+
+  const createPostMutation = useMutation({
+    mutationFn: async (data: typeof newPost) => {
+      const slug = data.title.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '');
+      return apiRequest("POST", "/api/blog", {
+        ...data,
+        slug,
+        isPublished: true,
+      });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/blog"] });
+      setShowCreateDialog(false);
+      setNewPost({
+        title: "",
+        content: "",
+        excerpt: "",
+        category: "Community",
+        author: "",
+      });
+      toast({ title: "Blog post submitted successfully!" });
+    },
+    onError: (err: Error) => {
+      toast({ title: "Failed to submit post", description: err.message, variant: "destructive" });
+    },
   });
 
   const featuredPosts = useMemo(() => {
@@ -150,9 +194,99 @@ export default function Blog() {
         <div className="max-w-7xl mx-auto text-center">
           <SectionLabel>Blog</SectionLabel>
           <h1 className="font-display font-bold text-4xl mt-2 mb-4">News & Stories</h1>
-          <p className="text-muted-foreground text-lg max-w-2xl mx-auto">
+          <p className="text-muted-foreground text-lg max-w-2xl mx-auto mb-6">
             Stay informed with the latest accessibility news, community stories, and advocacy updates
           </p>
+          {user && (
+            <Dialog open={showCreateDialog} onOpenChange={setShowCreateDialog}>
+              <DialogTrigger asChild>
+                <Button data-testid="button-submit-post">
+                  <Plus className="w-4 h-4 mr-2" />
+                  Write a Post
+                </Button>
+              </DialogTrigger>
+              <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
+                <DialogHeader>
+                  <DialogTitle>Write a Blog Post</DialogTitle>
+                </DialogHeader>
+                <form
+                  onSubmit={(e) => {
+                    e.preventDefault();
+                    createPostMutation.mutate(newPost);
+                  }}
+                  className="space-y-4"
+                >
+                  <div>
+                    <Label htmlFor="post-title">Title</Label>
+                    <Input
+                      id="post-title"
+                      value={newPost.title}
+                      onChange={(e) => setNewPost({ ...newPost, title: e.target.value })}
+                      required
+                      data-testid="input-post-title"
+                    />
+                  </div>
+                  <div>
+                    <Label htmlFor="post-author">Your Name</Label>
+                    <Input
+                      id="post-author"
+                      value={newPost.author}
+                      onChange={(e) => setNewPost({ ...newPost, author: e.target.value })}
+                      placeholder="e.g. Jane Smith"
+                      data-testid="input-post-author"
+                    />
+                  </div>
+                  <div>
+                    <Label htmlFor="post-excerpt">Summary (short description)</Label>
+                    <Textarea
+                      id="post-excerpt"
+                      value={newPost.excerpt}
+                      onChange={(e) => setNewPost({ ...newPost, excerpt: e.target.value })}
+                      placeholder="A brief summary of your post..."
+                      data-testid="input-post-excerpt"
+                    />
+                  </div>
+                  <div>
+                    <Label htmlFor="post-content">Content</Label>
+                    <Textarea
+                      id="post-content"
+                      value={newPost.content}
+                      onChange={(e) => setNewPost({ ...newPost, content: e.target.value })}
+                      required
+                      className="min-h-[150px]"
+                      data-testid="input-post-content"
+                    />
+                  </div>
+                  <div>
+                    <Label htmlFor="post-category">Category</Label>
+                    <Select
+                      value={newPost.category}
+                      onValueChange={(val) => setNewPost({ ...newPost, category: val })}
+                    >
+                      <SelectTrigger data-testid="select-post-category">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {CATEGORIES.filter((c) => c !== "All").map((cat) => (
+                          <SelectItem key={cat} value={cat}>
+                            {cat}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <Button
+                    type="submit"
+                    className="w-full"
+                    disabled={createPostMutation.isPending}
+                    data-testid="button-create-post"
+                  >
+                    {createPostMutation.isPending ? "Submitting..." : "Publish Post"}
+                  </Button>
+                </form>
+              </DialogContent>
+            </Dialog>
+          )}
         </div>
       </section>
 
