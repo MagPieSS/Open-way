@@ -328,3 +328,24 @@ html.text-size-xl { font-size: 20px; }
   0%, 100% { box-shadow: 0 0 0 0 hsl(var(--primary) / 0.4); }
   50% { box-shadow: 0 0 0 10px hsl(var(--primary) / 0); }
 }
+
+/* Leaflet map z-index fix - ensure maps stay below navigation */
+.leaflet-container {
+  z-index: 0 !important;
+}
+
+.leaflet-pane,
+.leaflet-tile-pane,
+.leaflet-overlay-pane,
+.leaflet-shadow-pane,
+.leaflet-marker-pane,
+.leaflet-tooltip-pane,
+.leaflet-popup-pane,
+.leaflet-control {
+  z-index: auto !important;
+}
+
+.leaflet-top,
+.leaflet-bottom {
+  z-index: 40 !important;
+}
