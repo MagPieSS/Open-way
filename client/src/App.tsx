@@ -36,6 +36,7 @@ function Router() {
       <Route path="/places/:id" component={PlaceDetail} />
       <Route path="/submit" component={Submit} />
       <Route path="/reviews" component={Community} />
+      <Route path="/community" component={Community} />
       <Route path="/petition" component={Petition} />
       <Route path="/about" component={About} />
       <Route path="/settings" component={Settings} />
