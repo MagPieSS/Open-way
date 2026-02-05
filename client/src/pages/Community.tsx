@@ -295,7 +295,7 @@ export default function Community() {
                     <SelectTrigger className="w-full">
                       <SelectValue placeholder="Category" />
                     </SelectTrigger>
-                    <SelectContent>
+                    <SelectContent className="z-[9999]">
                       {CATEGORIES.map((cat) => (
                         <SelectItem key={cat} value={cat}>
                           {cat}
@@ -310,7 +310,7 @@ export default function Community() {
                     <SelectTrigger className="w-full">
                       <SelectValue placeholder="Rating" />
                     </SelectTrigger>
-                    <SelectContent>
+                    <SelectContent className="z-[9999]">
                       {RATING_FILTERS.map((rf) => (
                         <SelectItem key={rf.value} value={rf.value}>
                           {rf.label}
@@ -325,7 +325,7 @@ export default function Community() {
                     <SelectTrigger className="w-full">
                       <SelectValue placeholder="Sort" />
                     </SelectTrigger>
-                    <SelectContent>
+                    <SelectContent className="z-[9999]">
                       {SORT_OPTIONS.map((so) => (
                         <SelectItem key={so.value} value={so.value}>
                           {so.label}
