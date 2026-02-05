@@ -311,7 +311,7 @@ export async function registerRoutes(
 
       // Hash and update password
       const passwordHash = await hashPassword(input.password);
-      await storage.updateUser(user.id, { passwordHash });
+      await storage.updateUserPassword(user.id, passwordHash);
 
       // Mark token as used
       await storage.markTokenUsed(resetToken.id);
