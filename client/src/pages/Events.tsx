@@ -34,12 +34,15 @@ import {
   PartyPopper,
   Filter,
   Plus,
+  Upload,
+  ImageIcon,
 } from "lucide-react";
 import { format, isFuture, isPast } from "date-fns";
 import type { Event } from "@shared/schema";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/hooks/use-auth";
+import { useUpload } from "@/hooks/use-upload";
 
 const CATEGORY_ICONS: Record<string, typeof Users> = {
   "Workshop": BookOpen,
@@ -69,9 +72,17 @@ export default function Events() {
     address: "",
     category: "Community",
     registrationUrl: "",
+    imageUrl: "",
   });
+  const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const [imagePreview, setImagePreview] = useState<string | null>(null);
   const { toast } = useToast();
   const { user } = useAuth();
+  const { uploadFile, isUploading } = useUpload({
+    onError: (err) => {
+      toast({ title: "Image upload failed", description: err.message, variant: "destructive" });
+    },
+  });
 
   const { data: events, isLoading, error } = useQuery<Event[]>({
     queryKey: ["/api/events"],
@@ -79,8 +90,19 @@ export default function Events() {
 
   const createEventMutation = useMutation({
     mutationFn: async (data: typeof newEvent) => {
+      let imageUrl = data.imageUrl;
+      
+      // If a file was selected, upload it first
+      if (selectedFile) {
+        const uploadResult = await uploadFile(selectedFile);
+        if (uploadResult) {
+          imageUrl = uploadResult.objectPath;
+        }
+      }
+      
       return apiRequest("POST", "/api/events", {
         ...data,
+        imageUrl,
         date: new Date(data.date).toISOString(),
       });
     },
@@ -95,7 +117,10 @@ export default function Events() {
         address: "",
         category: "Community",
         registrationUrl: "",
+        imageUrl: "",
       });
+      setSelectedFile(null);
+      setImagePreview(null);
       toast({ title: "Event submitted successfully!" });
     },
     onError: (err: Error) => {
@@ -353,13 +378,66 @@ export default function Events() {
                       data-testid="input-event-registration"
                     />
                   </div>
+                  <div>
+                    <Label htmlFor="event-image">Event Photo (optional)</Label>
+                    <div className="mt-2">
+                      {imagePreview ? (
+                        <div className="relative">
+                          <img
+                            src={imagePreview}
+                            alt="Event preview"
+                            className="w-full h-32 object-cover rounded-md"
+                          />
+                          <Button
+                            type="button"
+                            variant="destructive"
+                            size="sm"
+                            className="absolute top-2 right-2"
+                            onClick={() => {
+                              setSelectedFile(null);
+                              setImagePreview(null);
+                            }}
+                            data-testid="button-remove-image"
+                          >
+                            Remove
+                          </Button>
+                        </div>
+                      ) : (
+                        <label
+                          htmlFor="event-image"
+                          className="flex flex-col items-center justify-center w-full h-32 border-2 border-dashed border-muted-foreground/25 rounded-md cursor-pointer hover:border-primary/50 transition-colors"
+                        >
+                          <ImageIcon className="w-8 h-8 text-muted-foreground mb-2" />
+                          <span className="text-sm text-muted-foreground">Click to upload photo</span>
+                          <input
+                            id="event-image"
+                            type="file"
+                            accept="image/*"
+                            className="hidden"
+                            onChange={(e) => {
+                              const file = e.target.files?.[0];
+                              if (file) {
+                                setSelectedFile(file);
+                                const reader = new FileReader();
+                                reader.onload = (e) => {
+                                  setImagePreview(e.target?.result as string);
+                                };
+                                reader.readAsDataURL(file);
+                              }
+                            }}
+                            data-testid="input-event-image"
+                          />
+                        </label>
+                      )}
+                    </div>
+                  </div>
                   <Button
                     type="submit"
                     className="w-full"
-                    disabled={createEventMutation.isPending}
+                    disabled={createEventMutation.isPending || isUploading}
                     data-testid="button-create-event"
                   >
-                    {createEventMutation.isPending ? "Submitting..." : "Submit Event"}
+                    {isUploading ? "Uploading image..." : createEventMutation.isPending ? "Submitting..." : "Submit Event"}
                   </Button>
                 </form>
               </DialogContent>
