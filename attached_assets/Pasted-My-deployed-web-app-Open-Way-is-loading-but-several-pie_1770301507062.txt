@@ -1,0 +1,91 @@
+My deployed web app “Open Way” is loading but several pieces of dynamic content are missing in the published version.
+
+In the preview everything partly works, but on the live site:
+
+- Some place photos do not display
+- Some places do not appear at all
+- The map does not show all place markers
+- The Resources page shows no resources
+- The Community page shows no posts
+- The Petitions page shows no petitions
+
+This means there is a data loading or file path issue. Please fix the following WITHOUT redesigning the app.
+
+========================
+1️⃣ FIX IMAGE DISPLAY
+========================
+Problem: Uploaded or stored place images are not appearing on the live site.
+
+Fixes needed:
+- Make sure image paths are relative (example: /uploads/image1.jpg) and NOT local file system paths
+- Ensure the server is set to statically serve the uploads folder
+- Add a fallback placeholder image if a photo fails to load
+- Confirm uploaded files are actually saved in the correct directory
+
+========================
+2️⃣ FIX MISSING PLACES
+========================
+Problem: Some places do not appear on the Places page or map.
+
+Fixes needed:
+- Ensure the places data file/database is loading correctly in production
+- Add console/server logs to confirm data is being read
+- Make sure the frontend fetch request points to the correct API endpoint
+- Confirm all starter locations are included in the data source:
+  - SEPTA Train Stations
+  - Philadelphia Museum of Art
+  - Free Library of Philadelphia
+  - Parkway Central Library
+
+========================
+3️⃣ FIX MAP MARKERS
+========================
+Problem: Not all places are showing as markers on the map.
+
+Fixes needed:
+- Ensure every place entry has latitude and longitude values
+- If coordinates are missing, add default ones for now
+- Make sure the map script loops through ALL places
+- Add error handling so one bad entry doesn't stop the rest from rendering
+
+========================
+4️⃣ FIX RESOURCES PAGE
+========================
+Problem: Resources page shows empty.
+
+Fixes needed:
+- Ensure the resources data is being loaded from backend or static file
+- If it uses fetch(), verify correct path and endpoint
+- Add starter resources if none exist
+
+========================
+5️⃣ FIX COMMUNITY POSTS
+========================
+Problem: No posts appear.
+
+Fixes needed:
+- Confirm posts are being saved and read from backend storage
+- Fix API endpoint for fetching posts
+- Make sure frontend actually renders returned data
+- Add placeholder message if no posts exist yet
+
+========================
+6️⃣ FIX PETITIONS PAGE
+========================
+Problem: Petitions are not displaying.
+
+Fixes needed:
+- Ensure petitions are stored in backend file/database
+- Fix fetch path to petitions API
+- Render petitions dynamically
+- Add placeholder if empty
+
+========================
+7️⃣ GENERAL DEPLOYMENT FIXES
+========================
+- Replace any absolute file paths with relative paths
+- Make sure all backend routes return JSON properly
+- Add console logs for failed fetch requests
+- Add try/catch blocks so one error does not break the whole page
+
+Do NOT redesign the UI. Focus only on fixing data loading, image paths, API routes, and map rendering so all content appears on the deployed version.
