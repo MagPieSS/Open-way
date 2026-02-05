@@ -82,9 +82,11 @@ interface AccessibilityMapProps {
   places: Place[];
   className?: string;
   onMarkerClick?: (place: Place) => void;
+  center?: [number, number];
+  zoom?: number;
 }
 
-export function AccessibilityMap({ places, className = "", onMarkerClick }: AccessibilityMapProps) {
+export function AccessibilityMap({ places, className = "", onMarkerClick, center, zoom }: AccessibilityMapProps) {
   const { theme } = useSettings();
   const mapRef = useRef<L.Map | null>(null);
 
@@ -104,14 +106,14 @@ export function AccessibilityMap({ places, className = "", onMarkerClick }: Acce
       data-testid="accessibility-map"
     >
       <MapContainer
-        center={PHILADELPHIA_CENTER}
-        zoom={DEFAULT_ZOOM}
+        center={center || PHILADELPHIA_CENTER}
+        zoom={zoom || DEFAULT_ZOOM}
         className="w-full h-full"
         ref={mapRef}
         scrollWheelZoom={true}
       >
         <TileLayer url={tileUrl} attribution={tileAttribution} />
-        <MapRecenter center={PHILADELPHIA_CENTER} />
+        <MapRecenter center={center || PHILADELPHIA_CENTER} />
         
         {placesWithCoords.map((place) => {
           const statusConfig = getStatusConfig(place.accessibilityStatus);

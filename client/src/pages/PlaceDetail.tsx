@@ -672,12 +672,12 @@ export default function PlaceDetail() {
                         <div className="flex items-center justify-between mb-2">
                           <div className="flex items-center gap-2">
                             <User className="w-4 h-4 text-muted-foreground" />
-                            <span className="text-sm font-bold">{tip.uploadedBy || "Anonymous"}</span>
+                            <span className="text-sm font-bold">{tip.author || "Anonymous"}</span>
                             <span className="text-xs text-muted-foreground">
-                              {format(new Date(tip.uploadedAt || new Date()), "MMM d, yyyy")}
+                              {format(new Date(tip.createdAt || new Date()), "MMM d, yyyy")}
                             </span>
                           </div>
-                          {user && (user.displayName === tip.uploadedBy || user.email === tip.uploadedBy || user.isAdmin) && (
+                          {user && (user.displayName === tip.author || user.email === tip.author || user.isAdmin) && (
                             <div className="flex items-center gap-1">
                               <Button
                                 size="icon"

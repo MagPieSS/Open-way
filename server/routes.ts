@@ -1048,9 +1048,9 @@ async function seedDatabase() {
       {
         name: 'Philadelphia Museum of Art',
         category: 'museums',
-        accessibilityStatus: 'Accessible',
-        description: 'World-class art museum with extensive accessibility features. Wheelchair accessible galleries, elevators, accessible parking, and accessible restrooms available.',
-        imageUrl: 'https://images.unsplash.com/photo-1564399579883-451a5b44a221?w=800&h=600&fit=crop',
+        accessibilityStatus: 'Not Accessible',
+        description: 'World-class art museum with limited accessibility. Many galleries lack elevator access, historic staircases present barriers, and accessible parking is limited.',
+        imageUrl: 'https://images.unsplash.com/photo-1565060169194-19fabf63012c?w=800&h=600&fit=crop',
         address: '2600 Benjamin Franklin Parkway, Philadelphia, PA 19130',
         latitude: 39.9657,
         longitude: -75.1811,
@@ -1062,9 +1062,9 @@ async function seedDatabase() {
       {
         name: 'Free Library of Philadelphia - Main Branch',
         category: 'libraries',
-        accessibilityStatus: 'Accessible',
-        description: 'Historic research library with full accessibility. Elevator access to all floors, accessible seating areas, and trained staff to assist.',
-        imageUrl: 'https://images.unsplash.com/photo-1507842217343-583f20270319?w=800&h=600&fit=crop',
+        accessibilityStatus: 'Partially Accessible',
+        description: 'Historic research library with some accessibility features. Elevator access available but not to all areas, some narrow aisles between stacks.',
+        imageUrl: 'https://images.unsplash.com/photo-1568667256549-094345857637?w=800&h=600&fit=crop',
         address: '1901 Vine Street, Philadelphia, PA 19103',
         latitude: 39.9543,
         longitude: -75.1658,
@@ -1072,6 +1072,20 @@ async function seedDatabase() {
         website: 'https://libwww.freelibrary.org',
         hours: 'Mon-Fri 9am-6pm, Sat 10am-5pm, Sun 1pm-5pm',
         isFeatured: true,
+      },
+      {
+        name: 'Parkway Central Library',
+        category: 'libraries',
+        accessibilityStatus: 'Not Accessible',
+        description: 'Historic Beaux-Arts building with significant accessibility barriers. Multiple levels without elevator access, heavy entrance doors, and limited accessible seating.',
+        imageUrl: 'https://images.unsplash.com/photo-1521587760476-6c12a4b040da?w=800&h=600&fit=crop',
+        address: '1901 Vine Street, Philadelphia, PA 19103',
+        latitude: 39.9543,
+        longitude: -75.1658,
+        phone: '(215) 686-5322',
+        website: 'https://libwww.freelibrary.org',
+        hours: 'Mon-Fri 9am-6pm, Sat 10am-5pm',
+        isFeatured: false,
       },
       {
         name: 'Rittenhouse Square Park',
@@ -1102,18 +1116,18 @@ async function seedDatabase() {
         isFeatured: false,
       },
       {
-        name: 'SEPTA - Market-Frankford Station',
+        name: 'SEPTA Train Stations',
         category: 'transit',
-        accessibilityStatus: 'Accessible',
-        description: 'Major transit hub with elevators, accessible entry points, and tactile guidance for visually impaired riders.',
-        imageUrl: 'https://images.unsplash.com/photo-1587395853207-0ca2b7a37bd6?w=800&h=600&fit=crop',
-        address: '11th & Market Street, Philadelphia, PA 19107',
+        accessibilityStatus: 'Partially Accessible',
+        description: 'Major transit system with mixed accessibility. Some stations have elevators and accessible entry points, but many older stations lack full accessibility features.',
+        imageUrl: 'https://images.unsplash.com/photo-1544620347-c4fd4a3d5957?w=800&h=600&fit=crop',
+        address: '1234 Market Street, Philadelphia, PA 19107',
         latitude: 39.9520,
         longitude: -75.1595,
         phone: '(215) 580-7800',
         website: 'https://www.septa.org',
         hours: '24/7',
-        isFeatured: false,
+        isFeatured: true,
       },
       {
         name: 'Pennsylvania Hospital',
@@ -1283,6 +1297,50 @@ async function seedDatabase() {
 
     for (const faq of faqs) {
       await storage.createFaqEntry(faq);
+    }
+
+    // Add ADA Resources
+    const adaResources = [
+      {
+        title: 'Report ADA Violations',
+        description: 'File a complaint about accessibility barriers or ADA violations with the Department of Justice. You can report businesses, government facilities, or public services that fail to meet accessibility standards.',
+        category: 'Advocacy',
+        url: 'https://www.ada.gov/file-a-complaint/',
+        icon: 'AlertTriangle',
+        isFeatured: true,
+        sortOrder: 1,
+      },
+      {
+        title: 'Know Your ADA Rights',
+        description: 'Comprehensive guide to your rights under the Americans with Disabilities Act. Learn about protections in employment, public accommodations, transportation, and telecommunications.',
+        category: 'Advocacy',
+        url: 'https://www.ada.gov/resources/disability-rights-guide/',
+        icon: 'Scale',
+        isFeatured: true,
+        sortOrder: 2,
+      },
+      {
+        title: 'Request Accommodations',
+        description: 'Learn how to request reasonable accommodations at work, school, or in public spaces. Includes templates and step-by-step guidance for the accommodation process.',
+        category: 'Advocacy',
+        url: 'https://askjan.org/info-by-role.cfm',
+        icon: 'FileText',
+        isFeatured: true,
+        sortOrder: 3,
+      },
+      {
+        title: 'Accessibility Advocacy Resources',
+        description: 'Connect with disability rights organizations, advocacy groups, and legal resources in Philadelphia. Find support for fighting accessibility barriers in your community.',
+        category: 'Advocacy',
+        url: 'https://www.disabilityrightspa.org/',
+        icon: 'Users',
+        isFeatured: true,
+        sortOrder: 4,
+      },
+    ];
+
+    for (const resource of adaResources) {
+      await storage.createResource(resource);
     }
 
     // Add events
