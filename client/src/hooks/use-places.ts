@@ -1,5 +1,6 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { api, buildUrl, type PlaceInput } from "@shared/routes";
+import { apiRequest } from "@/lib/queryClient";
 import { z } from "zod";
 
 // Helper to handle API responses properly
@@ -44,11 +45,7 @@ export function useCreatePlace() {
   return useMutation({
     mutationFn: async (data: PlaceInput) => {
       const validated = api.places.create.input.parse(data);
-      const res = await fetch(api.places.create.path, {
-        method: api.places.create.method,
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(validated),
-      });
+      const res = await apiRequest(api.places.create.method, api.places.create.path, validated);
       return handleResponse(res, api.places.create.responses[201]);
     },
     onSuccess: () => {
