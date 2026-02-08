@@ -4,10 +4,12 @@ import { PlaceCardSkeleton } from "@/components/Skeleton";
 import { SectionLabel } from "@/components/SectionLabel";
 import { AccessibilityMap } from "@/components/AccessibilityMap";
 import { AccessibilityLegend } from "@/components/AccessibilityLegend";
-import { Search, MapPin, Filter, List, Map } from "lucide-react";
+import { Search, MapPin, Filter, List, Map, Plus } from "lucide-react";
 import { useState, useMemo } from "react";
 import { useSettings } from "@/hooks/use-settings";
 import { ACCESSIBILITY_STATUS, PLACE_CATEGORIES } from "@shared/schema";
+import { Button } from "@/components/ui/button";
+import { Link } from "wouter";
 import {
   Select,
   SelectContent,
@@ -59,26 +61,32 @@ export default function Places() {
       {/* Header */}
       <section className="bg-gradient-to-r from-primary/10 to-accent/10 py-12 px-4 border-b border-border">
         <div className="max-w-7xl mx-auto">
-          <div className="flex flex-col md:flex-row md:items-end justify-between gap-6">
+          <div className="flex flex-col md:flex-row md:items-end justify-between gap-4 flex-wrap">
             <div>
               <SectionLabel>Directory</SectionLabel>
               <h1 className="font-display font-bold text-4xl mt-2 mb-2">Explore Places</h1>
               <p className="text-muted-foreground text-lg">Find accessible locations in Philadelphia</p>
             </div>
             
-            {/* Search */}
-            <div className="relative w-full md:w-96">
-              <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none">
-                <Search className="h-5 w-5 text-muted-foreground" />
+            <div className="flex flex-wrap gap-3 items-center w-full md:w-auto">
+              <div className="relative flex-1 md:w-96 md:flex-none">
+                <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none">
+                  <Search className="h-5 w-5 text-muted-foreground" />
+                </div>
+                <input
+                  type="text"
+                  placeholder="Search by name or category..."
+                  className="w-full h-9 pl-12 pr-4 rounded-md border border-border bg-card text-foreground focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent transition-all"
+                  value={searchTerm}
+                  onChange={(e) => setSearchTerm(e.target.value)}
+                  data-testid="input-search-places"
+                />
               </div>
-              <input
-                type="text"
-                placeholder="Search by name or category..."
-                className="w-full pl-12 pr-4 py-3 rounded-xl border border-border bg-card text-foreground focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent transition-all"
-                value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
-                data-testid="input-search-places"
-              />
+              <Button asChild data-testid="button-add-place">
+                <Link href="/submit">
+                  <Plus className="w-4 h-4" /> Add Place
+                </Link>
+              </Button>
             </div>
           </div>
         </div>
