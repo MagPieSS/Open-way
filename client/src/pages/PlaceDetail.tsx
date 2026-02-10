@@ -18,6 +18,7 @@ import { useToast } from "@/hooks/use-toast";
 import { useState } from "react";
 import { apiRequest } from "@/lib/queryClient";
 import { Pencil, Trash2 } from "lucide-react";
+import { ReportButton } from "@/components/ReportButton";
 
 const FEATURE_GROUPS: Record<string, { label: string; icon: typeof Move; features: string[] }> = {
   mobility: {
@@ -537,16 +538,15 @@ export default function PlaceDetail() {
                       alt={item.caption || `Photo ${index + 1}`}
                       className="w-full h-full object-cover"
                     />
-                    {item.caption && (
-                      <div 
-                        className={`absolute inset-x-0 bottom-0 bg-black/70 text-white text-sm p-2 transition-opacity ${
-                          hoveredImage === item.id ? "opacity-100" : "opacity-0"
-                        }`}
-                        style={{ visibility: hoveredImage === item.id ? "visible" : "hidden" }}
-                      >
-                        {item.caption}
-                      </div>
-                    )}
+                    <div 
+                      className={`absolute inset-x-0 bottom-0 bg-black/70 text-white text-sm p-2 transition-opacity flex items-center justify-between gap-2 ${
+                        hoveredImage === item.id ? "opacity-100" : "opacity-0"
+                      }`}
+                      style={{ visibility: hoveredImage === item.id ? "visible" : "hidden" }}
+                    >
+                      <span className="truncate">{item.caption || ""}</span>
+                      <ReportButton contentType="photo" contentId={item.id} />
+                    </div>
                   </div>
                 ))}
               </div>

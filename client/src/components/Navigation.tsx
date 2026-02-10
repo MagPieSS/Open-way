@@ -53,7 +53,7 @@ export function Navigation() {
     ...(user?.isAdmin ? [{
       label: "Admin",
       items: [
-        { href: "/admin/moderation", label: "Photo Moderation", icon: Shield },
+        { href: "/admin/dashboard", label: "Admin Dashboard", icon: Shield },
       ],
     }] : []),
   ];

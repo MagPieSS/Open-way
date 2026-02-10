@@ -1153,6 +1153,262 @@ export async function registerRoutes(
     }
   });
 
+  // ==================== ADMIN ROUTES ====================
+
+  // Admin: Get all users with stats
+  app.get("/api/admin/users", requireAdmin, async (req, res) => {
+    try {
+      const allUsers = await storage.getAllUsers();
+      const usersWithStats = await Promise.all(
+        allUsers.map(async (user) => {
+          const stats = await storage.getUserStats(user.id);
+          return { ...user, ...stats };
+        })
+      );
+      res.json(usersWithStats);
+    } catch (err: any) {
+      res.status(500).json({ message: "Failed to fetch users" });
+    }
+  });
+
+  // Admin: Ban user
+  app.patch("/api/admin/users/:id/ban", requireAdmin, validateCsrf, async (req, res) => {
+    try {
+      const id = Number(req.params.id);
+      if (isNaN(id)) return res.status(400).json({ message: "Invalid user ID" });
+
+      const { reason } = req.body;
+      if (!reason || typeof reason !== "string") {
+        return res.status(400).json({ message: "Ban reason is required" });
+      }
+
+      const user = await storage.getUserById(id);
+      if (!user) return res.status(404).json({ message: "User not found" });
+      if (user.isAdmin) return res.status(403).json({ message: "Cannot ban admin users" });
+
+      await storage.banUser(id, sanitizeString(reason, 500));
+      res.json({ message: "User banned successfully" });
+    } catch (err: any) {
+      res.status(500).json({ message: "Failed to ban user" });
+    }
+  });
+
+  // Admin: Unban user
+  app.patch("/api/admin/users/:id/unban", requireAdmin, validateCsrf, async (req, res) => {
+    try {
+      const id = Number(req.params.id);
+      if (isNaN(id)) return res.status(400).json({ message: "Invalid user ID" });
+
+      const user = await storage.getUserById(id);
+      if (!user) return res.status(404).json({ message: "User not found" });
+
+      await storage.unbanUser(id);
+      res.json({ message: "User unbanned successfully" });
+    } catch (err: any) {
+      res.status(500).json({ message: "Failed to unban user" });
+    }
+  });
+
+  // Admin: Get all reviews
+  app.get("/api/admin/reviews", requireAdmin, async (req, res) => {
+    try {
+      const allReviews = await storage.getReviews();
+      res.json(allReviews);
+    } catch (err: any) {
+      res.status(500).json({ message: "Failed to fetch reviews" });
+    }
+  });
+
+  // Admin: Delete review (no ownership check)
+  app.delete("/api/admin/reviews/:id", requireAdmin, validateCsrf, async (req, res) => {
+    try {
+      const id = Number(req.params.id);
+      if (isNaN(id)) return res.status(400).json({ message: "Invalid review ID" });
+
+      const deleted = await storage.deleteReviewAdmin(id);
+      if (!deleted) return res.status(404).json({ message: "Review not found" });
+      res.json({ message: "Review deleted successfully" });
+    } catch (err: any) {
+      res.status(500).json({ message: "Failed to delete review" });
+    }
+  });
+
+  // Admin: Get all community posts
+  app.get("/api/admin/community-posts", requireAdmin, async (req, res) => {
+    try {
+      const allPosts = await storage.getCommunityPosts();
+      res.json(allPosts);
+    } catch (err: any) {
+      res.status(500).json({ message: "Failed to fetch community posts" });
+    }
+  });
+
+  // Admin: Delete community post (no ownership check)
+  app.delete("/api/admin/community-posts/:id", requireAdmin, validateCsrf, async (req, res) => {
+    try {
+      const id = Number(req.params.id);
+      if (isNaN(id)) return res.status(400).json({ message: "Invalid post ID" });
+
+      const deleted = await storage.deleteCommunityPostAdmin(id);
+      if (!deleted) return res.status(404).json({ message: "Community post not found" });
+      res.json({ message: "Community post deleted successfully" });
+    } catch (err: any) {
+      res.status(500).json({ message: "Failed to delete community post" });
+    }
+  });
+
+  // Admin: Update place
+  app.put("/api/admin/places/:id", requireAdmin, validateCsrf, async (req, res) => {
+    try {
+      const id = Number(req.params.id);
+      if (isNaN(id)) return res.status(400).json({ message: "Invalid place ID" });
+
+      const place = await storage.getPlace(id);
+      if (!place) return res.status(404).json({ message: "Place not found" });
+
+      const updates: Record<string, any> = {};
+      if (req.body.name) updates.name = sanitizeString(req.body.name, 200);
+      if (req.body.description) updates.description = sanitizeString(req.body.description, 5000);
+      if (req.body.accessibilityStatus) updates.accessibilityStatus = sanitizeString(req.body.accessibilityStatus, 50);
+      if (req.body.address) updates.address = sanitizeString(req.body.address, 500);
+      if (req.body.phone) updates.phone = sanitizeString(req.body.phone, 50);
+      if (req.body.website) updates.website = sanitizeString(req.body.website, 500);
+      if (req.body.hours) updates.hours = sanitizeString(req.body.hours, 200);
+      if (req.body.category) updates.category = sanitizeString(req.body.category, 50);
+      if (req.body.imageUrl) updates.imageUrl = sanitizeString(req.body.imageUrl, 1000);
+      if (typeof req.body.isFeatured === "boolean") updates.isFeatured = req.body.isFeatured;
+      if (typeof req.body.latitude === "number") updates.latitude = req.body.latitude;
+      if (typeof req.body.longitude === "number") updates.longitude = req.body.longitude;
+
+      const updated = await storage.updatePlace(id, updates);
+      res.json(updated);
+    } catch (err: any) {
+      res.status(500).json({ message: "Failed to update place" });
+    }
+  });
+
+  // Admin: Delete place and all related data
+  app.delete("/api/admin/places/:id", requireAdmin, validateCsrf, async (req, res) => {
+    try {
+      const id = Number(req.params.id);
+      if (isNaN(id)) return res.status(400).json({ message: "Invalid place ID" });
+
+      const deleted = await storage.deletePlace(id);
+      if (!deleted) return res.status(404).json({ message: "Place not found" });
+      res.json({ message: "Place and all related data deleted successfully" });
+    } catch (err: any) {
+      res.status(500).json({ message: "Failed to delete place" });
+    }
+  });
+
+  // Admin: Delete signature (remove spam)
+  app.delete("/api/admin/signatures/:id", requireAdmin, validateCsrf, async (req, res) => {
+    try {
+      const id = Number(req.params.id);
+      if (isNaN(id)) return res.status(400).json({ message: "Invalid signature ID" });
+
+      const deleted = await storage.deleteSignature(id);
+      if (!deleted) return res.status(404).json({ message: "Signature not found" });
+      res.json({ message: "Signature deleted successfully" });
+    } catch (err: any) {
+      res.status(500).json({ message: "Failed to delete signature" });
+    }
+  });
+
+  // Reports: Create report (any authenticated user)
+  app.post("/api/reports", requireAuth, validateCsrf, async (req, res) => {
+    try {
+      const { contentType, contentId, reason } = req.body;
+
+      if (!contentType || !contentId || !reason) {
+        return res.status(400).json({ message: "contentType, contentId, and reason are required" });
+      }
+
+      const validContentTypes = ['photo', 'review', 'community_post'];
+      if (!validContentTypes.includes(contentType)) {
+        return res.status(400).json({ message: "contentType must be one of: photo, review, community_post" });
+      }
+
+      const report = await storage.createReport({
+        reporterId: req.session.userId!,
+        contentType: sanitizeString(contentType, 50),
+        contentId: Number(contentId),
+        reason: sanitizeString(reason, 1000),
+      });
+      res.status(201).json(report);
+    } catch (err: any) {
+      res.status(500).json({ message: "Failed to create report" });
+    }
+  });
+
+  // Admin: Get all reports
+  app.get("/api/admin/reports", requireAdmin, async (req, res) => {
+    try {
+      const allReports = await storage.getReports();
+      res.json(allReports);
+    } catch (err: any) {
+      res.status(500).json({ message: "Failed to fetch reports" });
+    }
+  });
+
+  // Admin: Resolve report
+  app.patch("/api/admin/reports/:id", requireAdmin, validateCsrf, async (req, res) => {
+    try {
+      const id = Number(req.params.id);
+      if (isNaN(id)) return res.status(400).json({ message: "Invalid report ID" });
+
+      const { status } = req.body;
+      if (!status || !['resolved', 'dismissed'].includes(status)) {
+        return res.status(400).json({ message: "Status must be 'resolved' or 'dismissed'" });
+      }
+
+      const updated = await storage.resolveReport(id, req.session.userId!, status);
+      if (!updated) return res.status(404).json({ message: "Report not found" });
+      res.json(updated);
+    } catch (err: any) {
+      res.status(500).json({ message: "Failed to resolve report" });
+    }
+  });
+
+  // Admin: Delete report
+  app.delete("/api/admin/reports/:id", requireAdmin, validateCsrf, async (req, res) => {
+    try {
+      const id = Number(req.params.id);
+      if (isNaN(id)) return res.status(400).json({ message: "Invalid report ID" });
+
+      const deleted = await storage.deleteReport(id);
+      if (!deleted) return res.status(404).json({ message: "Report not found" });
+      res.json({ message: "Report deleted successfully" });
+    } catch (err: any) {
+      res.status(500).json({ message: "Failed to delete report" });
+    }
+  });
+
+  // Admin: Dashboard stats
+  app.get("/api/admin/stats", requireAdmin, async (req, res) => {
+    try {
+      const [allUsers, allPlaces, allReviews, allMedia, pendingReports, allSignatures] = await Promise.all([
+        storage.getAllUsers(),
+        storage.getPlaces(),
+        storage.getReviews(),
+        storage.getAllPlaceMedia(),
+        storage.getPendingReports(),
+        storage.getSignatures(),
+      ]);
+
+      res.json({
+        totalUsers: allUsers.length,
+        totalPlaces: allPlaces.length,
+        totalReviews: allReviews.length,
+        totalMedia: allMedia.length,
+        totalReports: pendingReports.length,
+        totalSignatures: allSignatures.length,
+      });
+    } catch (err: any) {
+      res.status(500).json({ message: "Failed to fetch admin stats" });
+    }
+  });
+
   // Seed Data
   await seedDatabase();
 

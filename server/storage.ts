@@ -3,7 +3,7 @@ import {
   places, reviews, signatures, categories, accessibilityFeatures,
   placeMedia, placeTips, petitionUpdates, events, resources,
   blogPosts, faqEntries, contactSubmissions, activityLog, partners,
-  users, savedPlaces, communityPosts, passwordResetTokens,
+  users, savedPlaces, communityPosts, passwordResetTokens, reports,
   type Place, type InsertPlace,
   type Review, type InsertReview,
   type Signature, type InsertSignature,
@@ -22,6 +22,7 @@ import {
   type User, type SavedPlace, type InsertSavedPlace,
   type CommunityPost, type InsertCommunityPost,
   type PasswordResetToken, type InsertPasswordResetToken,
+  type Report, type InsertReport,
 } from "@shared/schema";
 import { eq, desc, sql, and, inArray } from "drizzle-orm";
 
@@ -146,6 +147,27 @@ export interface IStorage {
   getPasswordResetToken(token: string): Promise<PasswordResetToken | undefined>;
   markTokenUsed(tokenId: number): Promise<void>;
   deleteExpiredTokens(): Promise<void>;
+
+  // Admin User Management
+  getAllUsers(): Promise<Omit<User, 'passwordHash' | 'twoFactorSecret' | 'backupCodes'>[]>;
+  banUser(id: number, reason: string): Promise<void>;
+  unbanUser(id: number): Promise<void>;
+  getUserStats(userId: number): Promise<{ reviewCount: number; communityPostCount: number; mediaCount: number }>;
+
+  // Admin Content Deletion
+  deleteReviewAdmin(id: number): Promise<boolean>;
+  deleteCommunityPostAdmin(id: number): Promise<boolean>;
+  deletePlace(id: number): Promise<boolean>;
+
+  // Admin Petition Management
+  deleteSignature(id: number): Promise<boolean>;
+
+  // Reports
+  createReport(report: InsertReport): Promise<Report>;
+  getReports(): Promise<Report[]>;
+  getPendingReports(): Promise<Report[]>;
+  resolveReport(id: number, adminId: number, status: string): Promise<Report | undefined>;
+  deleteReport(id: number): Promise<boolean>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -608,6 +630,106 @@ export class DatabaseStorage implements IStorage {
 
   async deleteExpiredTokens(): Promise<void> {
     await db.delete(passwordResetTokens).where(sql`${passwordResetTokens.expiresAt} < NOW()`);
+  }
+
+  // Admin User Management
+  async getAllUsers(): Promise<Omit<User, 'passwordHash' | 'twoFactorSecret' | 'backupCodes'>[]> {
+    const result = await db.select({
+      id: users.id,
+      email: users.email,
+      displayName: users.displayName,
+      twoFactorEnabled: users.twoFactorEnabled,
+      isActive: users.isActive,
+      isAdmin: users.isAdmin,
+      isBanned: users.isBanned,
+      banReason: users.banReason,
+      lastLoginAt: users.lastLoginAt,
+      createdAt: users.createdAt,
+    }).from(users).orderBy(desc(users.createdAt));
+    return result;
+  }
+
+  async banUser(id: number, reason: string): Promise<void> {
+    await db.update(users).set({ isBanned: true, banReason: reason }).where(eq(users.id, id));
+  }
+
+  async unbanUser(id: number): Promise<void> {
+    await db.update(users).set({ isBanned: false, banReason: null }).where(eq(users.id, id));
+  }
+
+  async getUserStats(userId: number): Promise<{ reviewCount: number; communityPostCount: number; mediaCount: number }> {
+    const [reviewResult] = await db.select({ count: sql<number>`count(*)` }).from(reviews).where(eq(reviews.userId, userId));
+    const [postResult] = await db.select({ count: sql<number>`count(*)` }).from(communityPosts).where(eq(communityPosts.userId, userId));
+    const [mediaResult] = await db.select({ count: sql<number>`count(*)` }).from(placeMedia);
+    return {
+      reviewCount: Number(reviewResult.count),
+      communityPostCount: Number(postResult.count),
+      mediaCount: Number(mediaResult.count),
+    };
+  }
+
+  // Admin Content Deletion
+  async deleteReviewAdmin(id: number): Promise<boolean> {
+    const review = await this.getReview(id);
+    if (!review) return false;
+
+    const result = await db.delete(reviews).where(eq(reviews.id, id));
+
+    if ((result.rowCount ?? 0) > 0 && review.placeId) {
+      await db.update(places).set({
+        reviewCount: sql`GREATEST(${places.reviewCount} - 1, 0)`,
+        updatedAt: new Date()
+      }).where(eq(places.id, review.placeId));
+    }
+    return (result.rowCount ?? 0) > 0;
+  }
+
+  async deleteCommunityPostAdmin(id: number): Promise<boolean> {
+    const result = await db.delete(communityPosts).where(eq(communityPosts.id, id));
+    return (result.rowCount ?? 0) > 0;
+  }
+
+  async deletePlace(id: number): Promise<boolean> {
+    await db.delete(accessibilityFeatures).where(eq(accessibilityFeatures.placeId, id));
+    await db.delete(placeMedia).where(eq(placeMedia.placeId, id));
+    await db.delete(placeTips).where(eq(placeTips.placeId, id));
+    await db.delete(reviews).where(eq(reviews.placeId, id));
+    const result = await db.delete(places).where(eq(places.id, id));
+    return (result.rowCount ?? 0) > 0;
+  }
+
+  // Admin Petition Management
+  async deleteSignature(id: number): Promise<boolean> {
+    const result = await db.delete(signatures).where(eq(signatures.id, id));
+    return (result.rowCount ?? 0) > 0;
+  }
+
+  // Reports
+  async createReport(report: InsertReport): Promise<Report> {
+    const [newReport] = await db.insert(reports).values(report).returning();
+    return newReport;
+  }
+
+  async getReports(): Promise<Report[]> {
+    return await db.select().from(reports).orderBy(desc(reports.createdAt));
+  }
+
+  async getPendingReports(): Promise<Report[]> {
+    return await db.select().from(reports).where(eq(reports.status, "pending")).orderBy(desc(reports.createdAt));
+  }
+
+  async resolveReport(id: number, adminId: number, status: string): Promise<Report | undefined> {
+    const [updated] = await db.update(reports).set({
+      status,
+      resolvedBy: adminId,
+      resolvedAt: new Date(),
+    }).where(eq(reports.id, id)).returning();
+    return updated;
+  }
+
+  async deleteReport(id: number): Promise<boolean> {
+    const result = await db.delete(reports).where(eq(reports.id, id));
+    return (result.rowCount ?? 0) > 0;
   }
 }
 

@@ -17,6 +17,8 @@ export const users = pgTable("users", {
   // Account status
   isActive: boolean("is_active").default(true),
   isAdmin: boolean("is_admin").default(false),
+  isBanned: boolean("is_banned").default(false),
+  banReason: text("ban_reason"),
   lastLoginAt: timestamp("last_login_at"),
   createdAt: timestamp("created_at").defaultNow(),
 });
@@ -233,6 +235,19 @@ export const communityPosts = pgTable("community_posts", {
   createdAt: timestamp("created_at").defaultNow(),
 });
 
+// Content reports (users can report photos, reviews, community posts)
+export const reports = pgTable("reports", {
+  id: serial("id").primaryKey(),
+  reporterId: integer("reporter_id").references(() => users.id).notNull(),
+  contentType: text("content_type").notNull(), // 'photo', 'review', 'community_post'
+  contentId: integer("content_id").notNull(),
+  reason: text("reason").notNull(),
+  status: text("status").default("pending"), // 'pending', 'resolved', 'dismissed'
+  resolvedBy: integer("resolved_by").references(() => users.id),
+  resolvedAt: timestamp("resolved_at"),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
 // Password reset tokens
 export const passwordResetTokens = pgTable("password_reset_tokens", {
   id: serial("id").primaryKey(),
@@ -284,6 +299,8 @@ export const insertActivityLogSchema = createInsertSchema(activityLog).omit({ id
 export const insertPartnerSchema = createInsertSchema(partners).omit({ id: true });
 
 export const insertCommunityPostSchema = createInsertSchema(communityPosts).omit({ id: true, createdAt: true });
+
+export const insertReportSchema = createInsertSchema(reports).omit({ id: true, createdAt: true, status: true, resolvedBy: true, resolvedAt: true });
 
 export const insertPasswordResetTokenSchema = createInsertSchema(passwordResetTokens).omit({ id: true, createdAt: true, usedAt: true });
 
@@ -357,6 +374,9 @@ export type InsertPartner = z.infer<typeof insertPartnerSchema>;
 
 export type CommunityPost = typeof communityPosts.$inferSelect;
 export type InsertCommunityPost = z.infer<typeof insertCommunityPostSchema>;
+
+export type Report = typeof reports.$inferSelect;
+export type InsertReport = z.infer<typeof insertReportSchema>;
 
 export type PasswordResetToken = typeof passwordResetTokens.$inferSelect;
 export type InsertPasswordResetToken = z.infer<typeof insertPasswordResetTokenSchema>;

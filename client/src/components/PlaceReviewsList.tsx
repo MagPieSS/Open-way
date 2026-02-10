@@ -3,6 +3,7 @@ import { Star, User, ChevronDown, ChevronUp } from "lucide-react";
 import { useState } from "react";
 import { format } from "date-fns";
 import { Button } from "@/components/ui/button";
+import { ReportButton } from "@/components/ReportButton";
 import type { Review } from "@shared/schema";
 
 interface PlaceReviewsListProps {
@@ -78,11 +79,14 @@ export function PlaceReviewsList({ placeId }: PlaceReviewsListProps) {
             <p className="text-xs text-muted-foreground leading-relaxed line-clamp-3">
               {review.content}
             </p>
-            {review.createdAt && (
-              <p className="text-[10px] text-muted-foreground/60 mt-1">
-                {format(new Date(review.createdAt), "MMM d, yyyy")}
-              </p>
-            )}
+            <div className="flex items-center justify-between mt-1">
+              {review.createdAt && (
+                <p className="text-[10px] text-muted-foreground/60">
+                  {format(new Date(review.createdAt), "MMM d, yyyy")}
+                </p>
+              )}
+              <ReportButton contentType="review" contentId={review.id} />
+            </div>
           </div>
         ))}
       </div>

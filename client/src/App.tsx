@@ -28,7 +28,7 @@ import ForgotPassword from "@/pages/ForgotPassword";
 import ResetPassword from "@/pages/ResetPassword";
 import SavedPlaces from "@/pages/SavedPlaces";
 import Profile from "@/pages/Profile";
-import AdminModeration from "@/pages/AdminModeration";
+import AdminDashboard from "@/pages/AdminDashboard";
 import NotFound from "@/pages/not-found";
 
 function Router() {
@@ -54,7 +54,8 @@ function Router() {
       <Route path="/reset-password" component={ResetPassword} />
       <Route path="/saved" component={SavedPlaces} />
       <Route path="/profile" component={Profile} />
-      <Route path="/admin/moderation" component={AdminModeration} />
+      <Route path="/admin/dashboard" component={AdminDashboard} />
+      <Route path="/admin/moderation" component={AdminDashboard} />
       <Route component={NotFound} />
     </Switch>
   );

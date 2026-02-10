@@ -26,6 +26,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { useAuth } from "@/hooks/use-auth";
+import { ReportButton } from "@/components/ReportButton";
 
 const CATEGORIES = ["All", "Transit", "Museums", "Libraries", "Parks", "Restaurants", "Healthcare", "Government", "Education"];
 const RATING_FILTERS = [
@@ -444,6 +445,10 @@ export default function Community() {
                             <Badge variant="secondary" className="text-[10px] h-5">
                               {review.helpfulCount ?? 0}
                             </Badge>
+                            <ReportButton
+                              contentType={isCommunityPost ? "community_post" : "review"}
+                              contentId={review.id}
+                            />
                           </div>
                         </div>
                       </CardContent>
