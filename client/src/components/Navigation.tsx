@@ -1,5 +1,5 @@
 import { Link, useLocation } from "wouter";
-import { Heart, Menu, MapPin, Settings, Home, Users, FileText, Megaphone, Info, X, BookOpen, Calendar, HelpCircle, Mail, User, LogIn, LogOut, Bookmark } from "lucide-react";
+import { Heart, Menu, MapPin, Settings, Home, Users, FileText, Megaphone, Info, X, BookOpen, Calendar, HelpCircle, Mail, User, LogIn, LogOut, Bookmark, Shield } from "lucide-react";
 import { useState, useEffect, useRef } from "react";
 import { useSettings } from "@/hooks/use-settings";
 import { useAuth } from "@/hooks/use-auth";
@@ -50,6 +50,12 @@ export function Navigation() {
         { href: "/settings", label: "Settings", icon: Settings },
       ],
     },
+    ...(user?.isAdmin ? [{
+      label: "Admin",
+      items: [
+        { href: "/admin/moderation", label: "Photo Moderation", icon: Shield },
+      ],
+    }] : []),
   ];
 
   useEffect(() => {

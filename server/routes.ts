@@ -632,6 +632,35 @@ export async function registerRoutes(
     }
   });
 
+  // Admin: Get all place media across all places
+  app.get("/api/admin/media", requireAdmin, async (req, res) => {
+    try {
+      const allMedia = await storage.getAllPlaceMedia();
+      const places = await storage.getPlaces();
+      const placeMap = new Map(places.map(p => [p.id, p.name]));
+      const mediaWithPlaceName = allMedia.map(m => ({
+        ...m,
+        placeName: placeMap.get(m.placeId) || "Unknown Place",
+      }));
+      res.json(mediaWithPlaceName);
+    } catch (err: any) {
+      res.status(500).json({ message: "Failed to fetch media" });
+    }
+  });
+
+  // Admin: Delete a place media item
+  app.delete("/api/admin/media/:id", requireAdmin, validateCsrf, async (req, res) => {
+    try {
+      const id = Number(req.params.id);
+      if (isNaN(id)) return res.status(400).json({ message: "Invalid media ID" });
+      const deleted = await storage.deletePlaceMedia(id);
+      if (!deleted) return res.status(404).json({ message: "Media not found" });
+      res.json({ message: "Media deleted successfully" });
+    } catch (err: any) {
+      res.status(500).json({ message: "Failed to delete media" });
+    }
+  });
+
   // Place Tips (requires authentication)
   app.post(api.placeTips.create.path, requireAuth, validateCsrf, async (req, res) => {
     try {

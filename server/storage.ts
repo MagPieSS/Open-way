@@ -48,7 +48,9 @@ export interface IStorage {
 
   // Place Media
   getPlaceMedia(placeId: number): Promise<PlaceMedia[]>;
+  getAllPlaceMedia(): Promise<PlaceMedia[]>;
   createPlaceMedia(media: InsertPlaceMedia): Promise<PlaceMedia>;
+  deletePlaceMedia(id: number): Promise<boolean>;
 
   // Place Tips
   getPlaceTips(placeId: number): Promise<PlaceTip[]>;
@@ -221,9 +223,18 @@ export class DatabaseStorage implements IStorage {
     return await db.select().from(placeMedia).where(eq(placeMedia.placeId, placeId)).orderBy(desc(placeMedia.createdAt));
   }
 
+  async getAllPlaceMedia(): Promise<PlaceMedia[]> {
+    return await db.select().from(placeMedia).orderBy(desc(placeMedia.createdAt));
+  }
+
   async createPlaceMedia(media: InsertPlaceMedia): Promise<PlaceMedia> {
     const [newMedia] = await db.insert(placeMedia).values(media).returning();
     return newMedia;
+  }
+
+  async deletePlaceMedia(id: number): Promise<boolean> {
+    const result = await db.delete(placeMedia).where(eq(placeMedia.id, id)).returning();
+    return result.length > 0;
   }
 
   // Place Tips
