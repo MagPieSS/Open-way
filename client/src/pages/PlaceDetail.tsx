@@ -4,7 +4,7 @@ import { useParams, Link } from "wouter";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { 
   Loader2, ArrowLeft, MapPin, Calendar, CheckCircle, AlertTriangle, XCircle, 
-  User, ThumbsUp, Share2, Copy, Navigation, Lightbulb,
+  User, ThumbsUp, Share2, Copy, Navigation, Lightbulb, MessageSquare, Star,
   Eye, Ear, Move, Sparkles, X, Bookmark, BookmarkCheck, Upload, Plus
 } from "lucide-react";
 import { SiX, SiFacebook } from "react-icons/si";
@@ -723,6 +723,143 @@ export default function PlaceDetail() {
             ) : (
               <div className="bg-secondary/30 rounded-xl p-6 text-center text-muted-foreground" data-testid="no-tips-message">
                 No tips shared for this location yet. Be the first to share one!
+              </div>
+            )}
+          </div>
+
+          {/* Reviews Section */}
+          <div className="mb-10" data-testid="reviews-section">
+            <div className="flex items-center justify-between gap-4 flex-wrap mb-4">
+              <h3 className="text-foreground font-bold text-xl flex items-center gap-2">
+                <MessageSquare className="w-5 h-5 text-primary" />
+                Reviews {reviews && reviews.length > 0 && `(${reviews.length})`}
+              </h3>
+              <Link href={`/submit?placeId=${place.id}&type=review`}>
+                <Button variant="outline" size="sm" data-testid="button-add-review">
+                  Write a Review
+                </Button>
+              </Link>
+            </div>
+            {isLoadingReviews ? (
+              <div className="flex items-center justify-center py-8">
+                <Loader2 className="animate-spin text-primary" />
+              </div>
+            ) : reviews && reviews.length > 0 ? (
+              <div className="space-y-4" data-testid="reviews-list">
+                {reviews.map((review: any) => (
+                  <div
+                    key={review.id}
+                    className="bg-secondary/30 p-4 rounded-xl border border-border/50"
+                    data-testid={`review-card-${review.id}`}
+                  >
+                    {editingReviewId === review.id ? (
+                      <div className="space-y-3">
+                        <textarea
+                          className="w-full rounded-lg border border-border bg-background p-3 text-foreground min-h-[80px]"
+                          value={editContent}
+                          onChange={(e) => setEditContent(e.target.value)}
+                          data-testid={`input-edit-review-${review.id}`}
+                        />
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <Button
+                            size="sm"
+                            onClick={() => updateReviewMutation.mutate({ reviewId: review.id, content: editContent, rating: editRating })}
+                            disabled={updateReviewMutation.isPending}
+                            data-testid={`button-save-review-${review.id}`}
+                          >
+                            Save
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            onClick={() => { setEditingReviewId(null); setEditContent(""); setEditRating(undefined); }}
+                            data-testid={`button-cancel-edit-review-${review.id}`}
+                          >
+                            Cancel
+                          </Button>
+                        </div>
+                      </div>
+                    ) : (
+                      <>
+                        <div className="flex items-center justify-between gap-2 flex-wrap mb-2">
+                          <div className="flex items-center gap-2">
+                            <div className="w-8 h-8 rounded-full bg-primary/10 flex items-center justify-center">
+                              <User className="w-4 h-4 text-primary" />
+                            </div>
+                            <div>
+                              <span className="font-semibold text-foreground text-sm" data-testid={`text-review-author-${review.id}`}>
+                                {review.authorName || "Anonymous"}
+                              </span>
+                              {review.authorRole && (
+                                <span className="text-xs text-muted-foreground ml-2">{review.authorRole}</span>
+                              )}
+                            </div>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            {review.rating && (
+                              <div className="flex items-center gap-1" data-testid={`rating-${review.id}`}>
+                                {Array.from({ length: 5 }).map((_, i) => (
+                                  <Star
+                                    key={i}
+                                    className={`w-4 h-4 ${i < review.rating ? "text-yellow-500 fill-yellow-500" : "text-muted-foreground/30"}`}
+                                  />
+                                ))}
+                              </div>
+                            )}
+                            <span className="text-xs text-muted-foreground">
+                              {format(new Date(review.createdAt), "MMM d, yyyy")}
+                            </span>
+                          </div>
+                        </div>
+                        <p className="text-foreground" data-testid={`text-review-content-${review.id}`}>{review.content}</p>
+                        {review.imageUrl && review.imageUrl.trim() !== "" && (
+                          <img
+                            src={review.imageUrl}
+                            alt="Review"
+                            className="mt-3 rounded-lg max-h-48 object-cover"
+                            data-testid={`img-review-${review.id}`}
+                          />
+                        )}
+                        <div className="flex items-center gap-3 mt-3 flex-wrap">
+                          <ReportButton contentType="review" contentId={review.id} />
+                          {user && review.userId === user.id && (
+                            <div className="flex items-center gap-1 ml-auto">
+                              <Button
+                                size="icon"
+                                variant="ghost"
+                                onClick={() => {
+                                  setEditingReviewId(review.id);
+                                  setEditContent(review.content);
+                                  setEditRating(review.rating ?? undefined);
+                                }}
+                                data-testid={`button-edit-review-${review.id}`}
+                              >
+                                <Pencil className="w-3 h-3" />
+                              </Button>
+                              <Button
+                                size="icon"
+                                variant="ghost"
+                                className="text-destructive hover:text-destructive"
+                                onClick={() => {
+                                  if (confirm("Delete this review?")) {
+                                    deleteReviewMutation.mutate(review.id);
+                                  }
+                                }}
+                                data-testid={`button-delete-review-${review.id}`}
+                              >
+                                <Trash2 className="w-3 h-3" />
+                              </Button>
+                            </div>
+                          )}
+                        </div>
+                      </>
+                    )}
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div className="bg-secondary/30 rounded-xl p-6 text-center text-muted-foreground" data-testid="no-reviews-message">
+                No reviews yet for this location. Be the first to share your experience!
               </div>
             )}
           </div>
