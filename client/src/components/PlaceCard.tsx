@@ -2,6 +2,8 @@ import { Place, ACCESSIBILITY_STATUS } from "@shared/schema";
 import { Link } from "wouter";
 import { MapPin, CheckCircle, AlertTriangle, XCircle, ArrowRight } from "lucide-react";
 import { useSettings } from "@/hooks/use-settings";
+import { PlaceReviewsList } from "@/components/PlaceReviewsList";
+import { Button } from "@/components/ui/button";
 
 interface PlaceCardProps {
   place: Place;
@@ -84,15 +86,13 @@ export function PlaceCard({ place }: PlaceCardProps) {
           {place.description}
         </p>
         
-        {/* Action Button */}
-        <Link href={`/places/${place.id}`}>
-          <button 
-            className="w-full py-3 rounded-lg font-bold flex items-center justify-center gap-2 bg-primary text-primary-foreground hover:bg-primary/90 focus:outline-none focus:ring-2 focus:ring-primary/50 transition-colors"
-            data-testid={`button-view-place-${place.id}`}
-          >
+        <PlaceReviewsList placeId={place.id} />
+
+        <Button asChild className="w-full mt-4 gap-2" data-testid={`button-view-place-${place.id}`}>
+          <Link href={`/places/${place.id}`}>
             View Details <ArrowRight className="w-4 h-4" />
-          </button>
-        </Link>
+          </Link>
+        </Button>
       </div>
     </div>
   );

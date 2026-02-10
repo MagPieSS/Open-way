@@ -572,6 +572,12 @@ export async function registerRoutes(
     res.json(tips);
   });
 
+  app.get('/api/places/:id/place-reviews', async (req, res) => {
+    const placeId = Number(req.params.id);
+    const reviews = await storage.getReviews(placeId);
+    res.json(reviews);
+  });
+
   // Accessibility Features (admin only)
   app.post(api.accessibilityFeatures.create.path, requireAdmin, validateCsrf, async (req, res) => {
     try {
