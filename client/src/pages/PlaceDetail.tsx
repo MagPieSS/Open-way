@@ -1,5 +1,4 @@
 import { usePlace, usePlaces } from "@/hooks/use-places";
-import { useReviews } from "@/hooks/use-reviews";
 import { useAuth } from "@/hooks/use-auth";
 import { useParams, Link } from "wouter";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
@@ -100,7 +99,15 @@ export default function PlaceDetail() {
   const params = useParams();
   const id = Number(params.id);
   const { data: place, isLoading: isLoadingPlace } = usePlace(id);
-  const { data: reviews, isLoading: isLoadingReviews } = useReviews(id);
+  const { data: reviews, isLoading: isLoadingReviews } = useQuery<any[]>({
+    queryKey: ["/api/places", id, "place-reviews"],
+    queryFn: async () => {
+      const res = await fetch(`/api/places/${id}/place-reviews`);
+      if (!res.ok) throw new Error("Failed to fetch reviews");
+      return res.json();
+    },
+    enabled: !!id,
+  });
   const { data: media, isLoading: isLoadingMedia } = useMedia(id);
   const { data: features, isLoading: isLoadingFeatures } = useFeatures(id);
   const { data: tips, isLoading: isLoadingTips } = useTips(id);
@@ -220,7 +227,7 @@ export default function PlaceDetail() {
       await apiRequest("PATCH", `/api/reviews/${reviewId}`, { content, rating });
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/reviews", id] });
+      queryClient.invalidateQueries({ queryKey: ["/api/places", id, "place-reviews"] });
       setEditingReviewId(null);
       setEditContent("");
       setEditRating(undefined);
@@ -236,7 +243,7 @@ export default function PlaceDetail() {
       await apiRequest("DELETE", `/api/reviews/${reviewId}`);
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/reviews", id] });
+      queryClient.invalidateQueries({ queryKey: ["/api/places", id, "place-reviews"] });
       toast({ title: "Review deleted" });
     },
     onError: () => {

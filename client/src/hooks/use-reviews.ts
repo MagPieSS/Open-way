@@ -40,9 +40,8 @@ export function useCreateReview() {
     },
     onSuccess: (_, variables) => {
       queryClient.invalidateQueries({ queryKey: [api.reviews.list.path] });
-      // Invalidate specific place reviews if needed
       if (variables.placeId) {
-        queryClient.invalidateQueries({ queryKey: [api.reviews.list.path, variables.placeId] });
+        queryClient.invalidateQueries({ queryKey: ["/api/places", Number(variables.placeId), "place-reviews"] });
       }
     },
   });

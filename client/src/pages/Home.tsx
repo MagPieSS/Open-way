@@ -4,7 +4,6 @@ import { useSettings } from "@/hooks/use-settings";
 import { motion } from "framer-motion";
 import { usePetitionCount } from "@/hooks/use-petition";
 import { usePlaces } from "@/hooks/use-places";
-import { useReviews } from "@/hooks/use-reviews";
 import { useQuery } from "@tanstack/react-query";
 import { TestimonialCarousel } from "@/components/TestimonialCarousel";
 import { SectionLabel } from "@/components/SectionLabel";
@@ -19,7 +18,9 @@ export default function Home() {
   const { textSize, reducedMotion } = useSettings();
   const { data: petitionData } = usePetitionCount();
   const { data: places } = usePlaces();
-  const { data: reviews } = useReviews();
+  const { data: communityPosts } = useQuery<any[]>({
+    queryKey: ["/api/community/posts"],
+  });
 
   const { data: featuredPlaces, isLoading: loadingFeatured } = useQuery<Place[]>({
     queryKey: ['/api/places', 'featured'],
@@ -56,7 +57,7 @@ export default function Home() {
   const stats = [
     { value: places?.length || 0, label: "Places Mapped", icon: MapPin },
     { value: categories?.length || 0, label: "Categories", icon: Folder },
-    { value: reviews?.length || 0, label: "Community Reviews", icon: MessageSquarePlus },
+    { value: communityPosts?.length || 0, label: "Community Posts", icon: MessageSquarePlus },
     { value: petitionData?.total || 0, label: "Petition Signatures", icon: PenTool },
   ];
 
