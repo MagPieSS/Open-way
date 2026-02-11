@@ -58,13 +58,13 @@ app.use(
         scriptSrc: ["'self'", "'unsafe-inline'"],
         styleSrc: ["'self'", "'unsafe-inline'", "https://fonts.googleapis.com"],
         fontSrc: ["'self'", "https://fonts.gstatic.com"],
-        imgSrc: ["'self'", "data:", "https:", "blob:"],
-        connectSrc: ["'self'"],
+        imgSrc: ["'self'", "data:", "https:", "blob:", "https://*.basemaps.cartocdn.com", "https://*.tile.openstreetmap.org", "https://unpkg.com"],
+        connectSrc: ["'self'", "https://*.basemaps.cartocdn.com", "https://*.tile.openstreetmap.org", "https://unpkg.com"],
         frameSrc: ["'none'"],
         objectSrc: ["'none'"],
         baseUri: ["'self'"],
         formAction: ["'self'"],
-        upgradeInsecureRequests: [],
+        workerSrc: ["'self'", "blob:"],
       },
     } : false,
     crossOriginEmbedderPolicy: false,
@@ -136,12 +136,18 @@ app.use("/uploads", express.static(path.resolve(process.cwd(), "uploads")));
 const assetsPath = path.resolve(process.cwd(), "attached_assets");
 app.use("/assets", express.static(assetsPath));
 
-// Serve place images from client/public (source) and dist/public (built) 
-const clientImagesPath = path.resolve(process.cwd(), "client/public/images");
-const distImagesPath = path.resolve(process.cwd(), "dist/public/images");
-app.use("/images", express.static(clientImagesPath));
-app.use("/images", express.static(distImagesPath));
-console.log(`[static] Serving images from: ${clientImagesPath} and ${distImagesPath}`);
+// Serve place images - try multiple paths for dev vs production
+import fsSync from "fs";
+const possibleImagePaths = [
+  path.resolve(process.cwd(), "dist/public/images"),
+  path.resolve(process.cwd(), "client/public/images"),
+];
+for (const imgPath of possibleImagePaths) {
+  if (fsSync.existsSync(imgPath)) {
+    app.use("/images", express.static(imgPath, { maxAge: "1d" }));
+    console.log(`[static] Serving images from: ${imgPath}`);
+  }
+}
 
 // ==================== CSRF PROTECTION ====================
 import crypto from "crypto";
