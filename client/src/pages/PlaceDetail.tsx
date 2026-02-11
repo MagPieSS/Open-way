@@ -18,6 +18,7 @@ import { useState } from "react";
 import { apiRequest } from "@/lib/queryClient";
 import { Pencil, Trash2 } from "lucide-react";
 import { ReportButton } from "@/components/ReportButton";
+import { useUpload } from "@/hooks/use-upload";
 
 const FEATURE_GROUPS: Record<string, { label: string; icon: typeof Move; features: string[] }> = {
   mobility: {
@@ -122,18 +123,20 @@ export default function PlaceDetail() {
   const [editContent, setEditContent] = useState("");
   const [editRating, setEditRating] = useState<number | undefined>(undefined);
   const [uploading, setUploading] = useState(false);
+  const { uploadFile: uploadToStorage, isUploading: isStorageUploading } = useUpload();
 
   const uploadMutation = useMutation({
-    mutationFn: async (formData: FormData) => {
+    mutationFn: async ({ objectPath, placeId, caption }: { objectPath: string; placeId: number; caption?: string }) => {
       const csrfRes = await fetch("/api/csrf-token");
       const { token } = await csrfRes.json();
       
       const res = await fetch("/api/place-media/upload", {
         method: "POST",
-        body: formData,
         headers: {
+          "Content-Type": "application/json",
           "x-csrf-token": token,
         },
+        body: JSON.stringify({ placeId, objectPath, caption }),
       });
       if (!res.ok) {
         const error = await res.json();
@@ -152,7 +155,7 @@ export default function PlaceDetail() {
     },
   });
 
-  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
     
@@ -161,12 +164,14 @@ export default function PlaceDetail() {
       return;
     }
 
-    const formData = new FormData();
-    formData.append("image", file);
-    formData.append("placeId", String(id));
-    
     setUploading(true);
-    uploadMutation.mutate(formData);
+    const result = await uploadToStorage(file);
+    if (result?.objectPath) {
+      uploadMutation.mutate({ objectPath: result.objectPath, placeId: Number(id) });
+    } else {
+      setUploading(false);
+      toast({ variant: "destructive", title: "Upload failed", description: "Could not upload image to storage" });
+    }
   };
 
   const { data: savedStatus, isLoading: isLoadingSaved } = useQuery<{ isSaved: boolean }>({

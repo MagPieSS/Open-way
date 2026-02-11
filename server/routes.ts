@@ -78,36 +78,6 @@ function encodeHtml(input: string): string {
     .replace(/'/g, "&#x27;");
 }
 
-import multer from "multer";
-import path from "path";
-import fs from "fs";
-
-// Configure multer for image uploads
-const storage_multer = multer.diskStorage({
-  destination: function (req, file, cb) {
-    const uploadPath = path.resolve(process.cwd(), "uploads");
-    if (!fs.existsSync(uploadPath)) {
-      fs.mkdirSync(uploadPath, { recursive: true });
-    }
-    cb(null, uploadPath);
-  },
-  filename: function (req, file, cb) {
-    const uniqueSuffix = Date.now() + "-" + Math.round(Math.random() * 1e9);
-    cb(null, file.fieldname + "-" + uniqueSuffix + path.extname(file.originalname));
-  }
-});
-
-const upload = multer({ 
-  storage: storage_multer,
-  limits: { fileSize: 5 * 1024 * 1024 }, // 5MB limit
-  fileFilter: (req, file, cb) => {
-    if (file.mimetype.startsWith("image/")) {
-      cb(null, true);
-    } else {
-      cb(new Error("Only images are allowed"));
-    }
-  }
-});
 
 export async function registerRoutes(
   httpServer: Server,
@@ -487,8 +457,13 @@ export async function registerRoutes(
   
   // Categories
   app.get(api.categories.list.path, async (req, res) => {
-    const results = await storage.getCategories();
-    res.json(results);
+    try {
+      const results = await storage.getCategories();
+      res.json(results);
+    } catch (err) {
+      console.error("[PRODUCTION] Failed to load categories:", err);
+      res.status(500).json({ message: "Failed to load categories" });
+    }
   });
 
   app.get(api.categories.get.path, async (req, res) => {
@@ -518,30 +493,40 @@ export async function registerRoutes(
 
   // Places
   app.get(api.places.list.path, async (req, res) => {
-    const search = req.query.search as string | undefined;
-    const category = req.query.category as string | undefined;
-    const featured = req.query.featured as string | undefined;
-    
-    if (search) {
-      const results = await storage.searchPlaces(search);
-      res.json(results);
-    } else if (category) {
-      const results = await storage.getPlacesByCategory(category);
-      res.json(results);
-    } else if (featured === 'true') {
-      const results = await storage.getFeaturedPlaces();
-      res.json(results);
-    } else {
-      const results = await storage.getPlaces();
-      res.json(results);
+    try {
+      const search = req.query.search as string | undefined;
+      const category = req.query.category as string | undefined;
+      const featured = req.query.featured as string | undefined;
+      
+      if (search) {
+        const results = await storage.searchPlaces(search);
+        res.json(results);
+      } else if (category) {
+        const results = await storage.getPlacesByCategory(category);
+        res.json(results);
+      } else if (featured === 'true') {
+        const results = await storage.getFeaturedPlaces();
+        res.json(results);
+      } else {
+        const results = await storage.getPlaces();
+        res.json(results);
+      }
+    } catch (err) {
+      console.error("[PRODUCTION] Failed to load places:", err);
+      res.status(500).json({ message: "Failed to load places" });
     }
   });
 
   app.get(api.places.get.path, async (req, res) => {
-    const place = await storage.getPlace(Number(req.params.id));
-    if (!place) return res.status(404).json({ message: "Place not found" });
-    await storage.incrementPlaceViewCount(place.id);
-    res.json(place);
+    try {
+      const place = await storage.getPlace(Number(req.params.id));
+      if (!place) return res.status(404).json({ message: "Place not found" });
+      await storage.incrementPlaceViewCount(place.id);
+      res.json(place);
+    } catch (err) {
+      console.error("[PRODUCTION] Failed to load place:", err);
+      res.status(500).json({ message: "Failed to load place" });
+    }
   });
 
   app.post(api.places.create.path, requireAuth, validateCsrf, async (req, res) => {
@@ -558,24 +543,44 @@ export async function registerRoutes(
   });
 
   app.get(api.places.features.path, async (req, res) => {
-    const features = await storage.getAccessibilityFeatures(Number(req.params.id));
-    res.json(features);
+    try {
+      const features = await storage.getAccessibilityFeatures(Number(req.params.id));
+      res.json(features);
+    } catch (err) {
+      console.error("[PRODUCTION] Failed to load place features:", err);
+      res.status(500).json({ message: "Failed to load place features" });
+    }
   });
 
   app.get(api.places.media.path, async (req, res) => {
-    const media = await storage.getPlaceMedia(Number(req.params.id));
-    res.json(media);
+    try {
+      const media = await storage.getPlaceMedia(Number(req.params.id));
+      res.json(media);
+    } catch (err) {
+      console.error("[PRODUCTION] Failed to load place media:", err);
+      res.status(500).json({ message: "Failed to load place media" });
+    }
   });
 
   app.get(api.places.tips.path, async (req, res) => {
-    const tips = await storage.getPlaceTips(Number(req.params.id));
-    res.json(tips);
+    try {
+      const tips = await storage.getPlaceTips(Number(req.params.id));
+      res.json(tips);
+    } catch (err) {
+      console.error("[PRODUCTION] Failed to load place tips:", err);
+      res.status(500).json({ message: "Failed to load place tips" });
+    }
   });
 
   app.get('/api/places/:id/place-reviews', async (req, res) => {
-    const placeId = Number(req.params.id);
-    const reviews = await storage.getReviews(placeId);
-    res.json(reviews);
+    try {
+      const placeId = Number(req.params.id);
+      const reviews = await storage.getReviews(placeId);
+      res.json(reviews);
+    } catch (err) {
+      console.error("[PRODUCTION] Failed to load place reviews:", err);
+      res.status(500).json({ message: "Failed to load place reviews" });
+    }
   });
 
   // Accessibility Features (admin only)
@@ -592,25 +597,25 @@ export async function registerRoutes(
     }
   });
 
-  // Place Media (users can upload)
-  app.post("/api/place-media/upload", requireAuth, validateCsrf, upload.single("image"), async (req, res) => {
+  // Place Media (users can upload via Object Storage)
+  app.post("/api/place-media/upload", requireAuth, validateCsrf, async (req, res) => {
     try {
-      if (!req.file) return res.status(400).json({ message: "No file uploaded" });
-      const { placeId, caption } = req.body;
+      const { placeId, caption, objectPath } = req.body;
       if (!placeId) return res.status(400).json({ message: "Place ID is required" });
+      if (!objectPath) return res.status(400).json({ message: "No image path provided" });
 
       const user = await storage.getUserById(req.session.userId!);
-      const url = `/uploads/${req.file.filename}`;
       
       const media = await storage.createPlaceMedia({
         placeId: Number(placeId),
-        url,
+        url: objectPath,
         caption: caption ? sanitizeString(caption, 200) : undefined,
         uploadedBy: user?.displayName || user?.email,
       });
       
       res.status(201).json(media);
     } catch (err: any) {
+      console.error("[PRODUCTION] Failed to create place media:", err);
       res.status(400).json({ message: err.message || "Failed to upload image" });
     }
   });
@@ -874,18 +879,23 @@ export async function registerRoutes(
 
   // Events
   app.get(api.events.list.path, async (req, res) => {
-    const upcoming = req.query.upcoming as string | undefined;
-    const featured = req.query.featured as string | undefined;
-    
-    if (upcoming === 'true') {
-      const results = await storage.getUpcomingEvents();
-      res.json(results);
-    } else if (featured === 'true') {
-      const results = await storage.getFeaturedEvents();
-      res.json(results);
-    } else {
-      const results = await storage.getEvents();
-      res.json(results);
+    try {
+      const upcoming = req.query.upcoming as string | undefined;
+      const featured = req.query.featured as string | undefined;
+      
+      if (upcoming === 'true') {
+        const results = await storage.getUpcomingEvents();
+        res.json(results);
+      } else if (featured === 'true') {
+        const results = await storage.getFeaturedEvents();
+        res.json(results);
+      } else {
+        const results = await storage.getEvents();
+        res.json(results);
+      }
+    } catch (err) {
+      console.error("[PRODUCTION] Failed to load events:", err);
+      res.status(500).json({ message: "Failed to load events" });
     }
   });
 
@@ -910,18 +920,23 @@ export async function registerRoutes(
 
   // Resources
   app.get(api.resources.list.path, async (req, res) => {
-    const category = req.query.category as string | undefined;
-    const featured = req.query.featured as string | undefined;
-    
-    if (category) {
-      const results = await storage.getResourcesByCategory(category);
-      res.json(results);
-    } else if (featured === 'true') {
-      const results = await storage.getFeaturedResources();
-      res.json(results);
-    } else {
-      const results = await storage.getResources();
-      res.json(results);
+    try {
+      const category = req.query.category as string | undefined;
+      const featured = req.query.featured as string | undefined;
+      
+      if (category) {
+        const results = await storage.getResourcesByCategory(category);
+        res.json(results);
+      } else if (featured === 'true') {
+        const results = await storage.getFeaturedResources();
+        res.json(results);
+      } else {
+        const results = await storage.getResources();
+        res.json(results);
+      }
+    } catch (err) {
+      console.error("[PRODUCTION] Failed to load resources:", err);
+      res.status(500).json({ message: "Failed to load resources" });
     }
   });
 
@@ -940,14 +955,19 @@ export async function registerRoutes(
 
   // Blog Posts
   app.get(api.blogPosts.list.path, async (req, res) => {
-    const featured = req.query.featured as string | undefined;
-    
-    if (featured === 'true') {
-      const results = await storage.getFeaturedBlogPosts();
-      res.json(results);
-    } else {
-      const results = await storage.getPublishedBlogPosts();
-      res.json(results);
+    try {
+      const featured = req.query.featured as string | undefined;
+      
+      if (featured === 'true') {
+        const results = await storage.getFeaturedBlogPosts();
+        res.json(results);
+      } else {
+        const results = await storage.getPublishedBlogPosts();
+        res.json(results);
+      }
+    } catch (err) {
+      console.error("[PRODUCTION] Failed to load blog posts:", err);
+      res.status(500).json({ message: "Failed to load blog posts" });
     }
   });
 
@@ -978,14 +998,19 @@ export async function registerRoutes(
 
   // FAQ
   app.get(api.faq.list.path, async (req, res) => {
-    const category = req.query.category as string | undefined;
-    
-    if (category) {
-      const results = await storage.getFaqEntriesByCategory(category);
-      res.json(results);
-    } else {
-      const results = await storage.getFaqEntries();
-      res.json(results);
+    try {
+      const category = req.query.category as string | undefined;
+      
+      if (category) {
+        const results = await storage.getFaqEntriesByCategory(category);
+        res.json(results);
+      } else {
+        const results = await storage.getFaqEntries();
+        res.json(results);
+      }
+    } catch (err) {
+      console.error("[PRODUCTION] Failed to load FAQ entries:", err);
+      res.status(500).json({ message: "Failed to load FAQ entries" });
     }
   });
 
@@ -1051,14 +1076,19 @@ export async function registerRoutes(
 
   // Partners
   app.get(api.partners.list.path, async (req, res) => {
-    const featured = req.query.featured as string | undefined;
-    
-    if (featured === 'true') {
-      const results = await storage.getFeaturedPartners();
-      res.json(results);
-    } else {
-      const results = await storage.getPartners();
-      res.json(results);
+    try {
+      const featured = req.query.featured as string | undefined;
+      
+      if (featured === 'true') {
+        const results = await storage.getFeaturedPartners();
+        res.json(results);
+      } else {
+        const results = await storage.getPartners();
+        res.json(results);
+      }
+    } catch (err) {
+      console.error("[PRODUCTION] Failed to load partners:", err);
+      res.status(500).json({ message: "Failed to load partners" });
     }
   });
 

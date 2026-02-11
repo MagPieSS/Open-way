@@ -136,11 +136,12 @@ app.use("/uploads", express.static(path.resolve(process.cwd(), "uploads")));
 const assetsPath = path.resolve(process.cwd(), "attached_assets");
 app.use("/assets", express.static(assetsPath));
 
-// Serve place images - in production from dist/public/images, in development Vite handles it
-if (process.env.NODE_ENV === "production") {
-  const imagesPath = path.resolve(process.cwd(), "dist/public/images");
-  app.use("/images", express.static(imagesPath));
-}
+// Serve place images from client/public (source) and dist/public (built) 
+const clientImagesPath = path.resolve(process.cwd(), "client/public/images");
+const distImagesPath = path.resolve(process.cwd(), "dist/public/images");
+app.use("/images", express.static(clientImagesPath));
+app.use("/images", express.static(distImagesPath));
+console.log(`[static] Serving images from: ${clientImagesPath} and ${distImagesPath}`);
 
 // ==================== CSRF PROTECTION ====================
 import crypto from "crypto";
@@ -227,6 +228,7 @@ app.use((req, res, next) => {
 });
 
 (async () => {
+  console.log("[startup] Database connection check...");
   await registerRoutes(httpServer, app);
 
   // Error handler - don't expose stack traces to users
