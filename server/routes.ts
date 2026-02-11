@@ -1447,355 +1447,477 @@ export async function registerRoutes(
 
 async function seedDatabase() {
   try {
-    // Check if database already has data
     const existingPlaces = await storage.getPlaces();
-    if (existingPlaces.length > 0) {
-      console.log("✅ Database already seeded");
-      return;
+    const existingResources = await storage.getResources();
+
+    if (existingPlaces.length === 0) {
+      console.log("Seeding places and categories...");
+
+      const categoryData = [
+        { name: 'Transit', slug: 'transit', icon: 'Train', description: 'Public transportation options' },
+        { name: 'Museums', slug: 'museums', icon: 'Landmark', description: 'Cultural and historical museums' },
+        { name: 'Libraries', slug: 'libraries', icon: 'BookOpen', description: 'Public libraries with resources' },
+        { name: 'Parks', slug: 'parks', icon: 'Trees', description: 'Parks and outdoor spaces' },
+        { name: 'Restaurants', slug: 'restaurants', icon: 'UtensilsCrossed', description: 'Dining establishments' },
+        { name: 'Healthcare', slug: 'healthcare', icon: 'Heart', description: 'Medical facilities' },
+      ];
+
+      for (const cat of categoryData) {
+        await storage.createCategory(cat);
+      }
+
+      const places = [
+        {
+          name: 'Philadelphia Museum of Art',
+          category: 'museums',
+          accessibilityStatus: 'Not Accessible',
+          description: 'World-class art museum with limited accessibility. Many galleries lack elevator access, historic staircases present barriers, and accessible parking is limited.',
+          imageUrl: '/images/places/philadelphia-museum-art.jpg',
+          address: '2600 Benjamin Franklin Parkway, Philadelphia, PA 19130',
+          latitude: 39.9657,
+          longitude: -75.1811,
+          phone: '(215) 763-8100',
+          website: 'https://philart.org',
+          hours: 'Tue-Sun 10am-5pm, Wed 10am-8:45pm',
+          isFeatured: true,
+        },
+        {
+          name: 'Free Library of Philadelphia - Main Branch',
+          category: 'libraries',
+          accessibilityStatus: 'Partially Accessible',
+          description: 'Historic research library with some accessibility features. Elevator access available but not to all areas, some narrow aisles between stacks.',
+          imageUrl: '/images/places/free-library.jpg',
+          address: '1901 Vine Street, Philadelphia, PA 19103',
+          latitude: 39.9543,
+          longitude: -75.1658,
+          phone: '(215) 686-5322',
+          website: 'https://libwww.freelibrary.org',
+          hours: 'Mon-Fri 9am-6pm, Sat 10am-5pm, Sun 1pm-5pm',
+          isFeatured: true,
+        },
+        {
+          name: 'Parkway Central Library',
+          category: 'libraries',
+          accessibilityStatus: 'Not Accessible',
+          description: 'Historic Beaux-Arts building with significant accessibility barriers. Multiple levels without elevator access, heavy entrance doors, and limited accessible seating.',
+          imageUrl: '/images/places/parkway-library.jpg',
+          address: '1901 Vine Street, Philadelphia, PA 19103',
+          latitude: 39.9543,
+          longitude: -75.1658,
+          phone: '(215) 686-5322',
+          website: 'https://libwww.freelibrary.org',
+          hours: 'Mon-Fri 9am-6pm, Sat 10am-5pm',
+          isFeatured: false,
+        },
+        {
+          name: 'Rittenhouse Square Park',
+          category: 'parks',
+          accessibilityStatus: 'Partially Accessible',
+          description: 'Beautiful urban park with accessible pathways, accessible restrooms, and seating areas. Some areas may be challenging for wheelchairs.',
+          imageUrl: '/images/places/rittenhouse-park.jpg',
+          address: 'Rittenhouse Square, Philadelphia, PA 19103',
+          latitude: 39.9485,
+          longitude: -75.1733,
+          phone: '(215) 686-0752',
+          website: 'https://www.phila.gov',
+          hours: 'Open 6am-sunset daily',
+          isFeatured: true,
+        },
+        {
+          name: 'Wawa - Center City',
+          category: 'restaurants',
+          accessibilityStatus: 'Accessible',
+          description: 'Accessible convenience store with wheelchair ramp, accessible restroom, and clear aisles. Service animals welcome.',
+          imageUrl: '/images/places/wawa-store.jpg',
+          address: '1500 Market Street, Philadelphia, PA 19102',
+          latitude: 39.9526,
+          longitude: -75.1678,
+          phone: '(215) 985-1900',
+          website: 'https://www.wawa.com',
+          hours: 'Open 24/7',
+          isFeatured: false,
+        },
+        {
+          name: 'SEPTA Train Stations',
+          category: 'transit',
+          accessibilityStatus: 'Partially Accessible',
+          description: 'Major transit system with mixed accessibility. Some stations have elevators and accessible entry points, but many older stations lack full accessibility features.',
+          imageUrl: '/images/places/septa-train.jpg',
+          address: '1234 Market Street, Philadelphia, PA 19107',
+          latitude: 39.9520,
+          longitude: -75.1595,
+          phone: '(215) 580-7800',
+          website: 'https://www.septa.org',
+          hours: '24/7',
+          isFeatured: true,
+        },
+        {
+          name: 'Pennsylvania Hospital',
+          category: 'healthcare',
+          accessibilityStatus: 'Accessible',
+          description: 'Historic medical center with full accessibility including accessible parking, elevators, wheelchair accessible treatment areas, and interpreter services.',
+          imageUrl: '/images/places/pennsylvania-hospital.jpg',
+          address: '800 Spruce Street, Philadelphia, PA 19107',
+          latitude: 39.9402,
+          longitude: -75.1444,
+          phone: '(215) 829-3000',
+          website: 'https://www.pennmedicine.org',
+          hours: '24/7 Emergency, Other hours vary',
+          isFeatured: false,
+        },
+        {
+          name: 'Reading Terminal Market',
+          category: 'restaurants',
+          accessibilityStatus: 'Partially Accessible',
+          description: 'Historic public market with level entry, multiple food vendors, and seating areas. Some vendor stalls may be challenging for wheelchair access during busy times.',
+          imageUrl: '/images/places/reading-terminal.jpg',
+          address: '12th & Arch Street, Philadelphia, PA 19107',
+          latitude: 39.9550,
+          longitude: -75.1580,
+          phone: '(215) 922-2317',
+          website: 'https://readingterminalmarket.org',
+          hours: 'Mon-Sat 8am-6pm, Sun 9am-5pm',
+          isFeatured: false,
+        },
+        {
+          name: 'Franklin Institute',
+          category: 'museums',
+          accessibilityStatus: 'Accessible',
+          description: 'Science museum with comprehensive accessibility. All floors accessible via elevators, accessible parking, accessible restrooms, and interactive exhibits designed for all abilities.',
+          imageUrl: '/images/places/franklin-institute.jpg',
+          address: '222 North 20th Street, Philadelphia, PA 19103',
+          latitude: 39.9569,
+          longitude: -75.1728,
+          phone: '(215) 448-1200',
+          website: 'https://www.fi.edu',
+          hours: 'Mon-Sun 9:30am-5pm',
+          isFeatured: true,
+        },
+      ];
+
+      for (const place of places) {
+        await storage.createPlace(place);
+      }
+
+      const placeIds = (await storage.getPlaces()).map(p => p.id);
+
+      if (placeIds.length > 0) {
+        await storage.createAccessibilityFeature({
+          placeId: placeIds[0],
+          featureType: 'wheelchair_accessible',
+          available: true,
+          description: 'Full wheelchair accessibility throughout museum',
+        });
+        await storage.createAccessibilityFeature({
+          placeId: placeIds[0],
+          featureType: 'accessible_restroom',
+          available: true,
+          description: 'Multiple accessible restrooms on each floor',
+        });
+        await storage.createAccessibilityFeature({
+          placeId: placeIds[0],
+          featureType: 'elevator',
+          available: true,
+          description: 'Elevators to all gallery floors',
+        });
+
+        const sampleReviews = [
+          {
+            placeId: placeIds[0] || 1,
+            content: 'Excellent accessibility! Staff was very helpful. Elevators work well, and wheelchair paths are clear.',
+            rating: 5,
+            authorName: 'Sarah M.',
+            authorRole: 'Visitor with wheelchair',
+            isFeatured: true,
+          },
+          {
+            placeId: placeIds[2] || 3,
+            content: 'Beautiful park with accessible pathways. Restrooms are clean and accessible.',
+            rating: 4,
+            authorName: 'James T.',
+            authorRole: 'Regular visitor',
+          },
+          {
+            placeId: placeIds[1] || 2,
+            content: 'Great library with amazing resources. Very accessible and welcoming.',
+            rating: 5,
+            authorName: 'Emma L.',
+            authorRole: 'Researcher',
+            isFeatured: true,
+          },
+        ];
+
+        for (const review of sampleReviews) {
+          await storage.createReview(review);
+        }
+      }
+
+      const blogPosts = [
+        {
+          title: 'Top 5 Accessible Museums in Philadelphia',
+          slug: 'top-5-accessible-museums-philadelphia',
+          excerpt: 'Discover the best museums with full accessibility features in Philadelphia...',
+          content: 'Philadelphia has many world-class museums that are fully accessible. From the Philadelphia Museum of Art to the Franklin Institute, these institutions are committed to making art and science accessible to everyone.',
+          author: 'Open Way Team',
+          category: 'Museums',
+          imageUrl: '/images/places/philadelphia-museum-art.jpg',
+          isFeatured: true,
+          isPublished: true,
+        },
+        {
+          title: 'Navigating SEPTA Transit Accessibly',
+          slug: 'navigating-septa-transit-accessibly',
+          excerpt: 'Tips for using Philadelphia transit as a person with disabilities...',
+          content: 'SEPTA provides various accessibility features throughout Philadelphia. Learn how to navigate the rail system, use accessible station elevators, and communicate with transit staff about your accessibility needs.',
+          author: 'Open Way Team',
+          category: 'Transit',
+          imageUrl: '/images/places/septa-train.jpg',
+          isFeatured: true,
+          isPublished: true,
+        },
+        {
+          title: 'Accessibility Standards and What They Mean',
+          slug: 'accessibility-standards-what-they-mean',
+          excerpt: 'Understanding ADA compliance and accessibility ratings...',
+          content: 'Learn about ADA compliance standards, what "Accessible," "Partially Accessible," and other ratings mean, and how to advocate for better accessibility in your community.',
+          author: 'Accessibility Advocate',
+          category: 'Guides',
+          imageUrl: '/images/places/franklin-institute.jpg',
+          isPublished: true,
+        },
+      ];
+
+      for (const post of blogPosts) {
+        await storage.createBlogPost(post);
+      }
+
+      const faqs = [
+        {
+          question: 'What does "Accessible" mean on this site?',
+          answer: 'A place marked as "Accessible" meets ADA standards and has full wheelchair accessibility, accessible restrooms, parking, and other features for people with disabilities.',
+          category: 'General',
+          sortOrder: 1,
+        },
+        {
+          question: 'How can I submit information about a new place?',
+          answer: 'You can submit a new place using our "Submit a Place" form. Please provide details about accessibility features, hours, location, and contact information.',
+          category: 'Submission',
+          sortOrder: 2,
+        },
+        {
+          question: 'Can I request accessibility improvements?',
+          answer: 'Yes! You can sign our petition for better accessibility standards. Your voice matters in advocating for more accessible public spaces.',
+          category: 'Petition',
+          sortOrder: 3,
+        },
+      ];
+
+      for (const faq of faqs) {
+        await storage.createFaqEntry(faq);
+      }
+
+      const events = [
+        {
+          title: 'Accessibility Awareness Week',
+          description: 'Join us for a week-long celebration of accessibility in Philadelphia. Featuring workshops, panel discussions, and community events.',
+          date: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
+          endDate: new Date(Date.now() + 37 * 24 * 60 * 60 * 1000),
+          location: 'Various venues across Philadelphia',
+          category: 'Awareness',
+          isFeatured: true,
+        },
+        {
+          title: 'Accessible Dining Guide Workshop',
+          description: 'Learn about accessible restaurants and dining options in Philadelphia. Get tips on communication and what to expect.',
+          date: new Date(Date.now() + 14 * 24 * 60 * 60 * 1000),
+          location: 'Free Library of Philadelphia - Main Branch',
+          category: 'Workshop',
+        },
+      ];
+
+      for (const event of events) {
+        await storage.createEvent(event);
+      }
+
+      console.log('Database seeded with places and content');
+    } else {
+      console.log(`Found ${existingPlaces.length} existing places`);
     }
 
-    console.log("🌱 Seeding database with real places and accessibility data...");
+    if (existingResources.length === 0) {
+      console.log("Seeding resources...");
 
-    // Create categories
-    const categoryData = [
-      { name: 'Transit', slug: 'transit', icon: 'Train', description: 'Public transportation options' },
-      { name: 'Museums', slug: 'museums', icon: 'Landmark', description: 'Cultural and historical museums' },
-      { name: 'Libraries', slug: 'libraries', icon: 'BookOpen', description: 'Public libraries with resources' },
-      { name: 'Parks', slug: 'parks', icon: 'Trees', description: 'Parks and outdoor spaces' },
-      { name: 'Restaurants', slug: 'restaurants', icon: 'UtensilsCrossed', description: 'Dining establishments' },
-      { name: 'Healthcare', slug: 'healthcare', icon: 'Heart', description: 'Medical facilities' },
-    ];
+      const adaResources = [
+        {
+          title: 'Report ADA Violations',
+          description: 'File a formal complaint about accessibility barriers with the U.S. Department of Justice Civil Rights Division. Covers public spaces, businesses, and government facilities.',
+          category: 'ADA Services',
+          url: 'https://www.ada.gov/file-a-complaint/',
+          phone: '(800) 514-0301',
+          icon: 'AlertTriangle',
+          isFeatured: true,
+          sortOrder: 1,
+        },
+        {
+          title: 'Know Your ADA Rights',
+          description: 'Comprehensive guide to your civil rights under the Americans with Disabilities Act, including protections in employment, public services, and telecommunications.',
+          category: 'Legal',
+          url: 'https://www.ada.gov/resources/disability-rights-guide/',
+          icon: 'Scale',
+          isFeatured: true,
+          sortOrder: 2,
+        },
+        {
+          title: 'Request Workplace Accommodations',
+          description: 'Step-by-step guidance on requesting reasonable accommodations from your employer, including sample letters and negotiation tips from the Job Accommodation Network.',
+          category: 'ADA Services',
+          url: 'https://askjan.org/info-by-role.cfm',
+          phone: '(800) 526-7234',
+          icon: 'FileText',
+          isFeatured: true,
+          sortOrder: 3,
+        },
+        {
+          title: 'Philadelphia Office for People with Disabilities',
+          description: 'The city office dedicated to ensuring equal access for residents with disabilities. Offers local advocacy, resources, and accessibility guidance.',
+          category: 'Government',
+          url: 'https://www.phila.gov/departments/mayors-office-for-people-with-disabilities/',
+          phone: '(215) 686-2798',
+          email: 'odp@phila.gov',
+          address: '1401 JFK Blvd, Suite 600, Philadelphia, PA 19102',
+          icon: 'Building2',
+          isFeatured: true,
+          sortOrder: 4,
+        },
+        {
+          title: 'Disability Rights Pennsylvania',
+          description: 'Free legal services and advocacy for Pennsylvanians with disabilities. Assists with discrimination complaints, housing rights, and institutional issues.',
+          category: 'Legal',
+          url: 'https://www.disabilityrightspa.org/',
+          phone: '(800) 692-7443',
+          email: 'intake@disabilityrightspa.org',
+          icon: 'Scale',
+          isFeatured: true,
+          sortOrder: 5,
+        },
+        {
+          title: 'SEPTA Accessible Transit Services',
+          description: 'Information on accessible bus, train, and paratransit options in Philadelphia, including CCT Connect door-to-door service for eligible riders.',
+          category: 'Transportation',
+          url: 'https://www.septa.org/accessibility/',
+          phone: '(215) 580-7145',
+          icon: 'Car',
+          isFeatured: false,
+          sortOrder: 1,
+        },
+        {
+          title: 'National Federation of the Blind - Philadelphia Chapter',
+          description: 'Local chapter providing peer support, advocacy, and resources for blind and visually impaired individuals in the Philadelphia area.',
+          category: 'Community',
+          url: 'https://nfb.org/about-us/state-affiliates',
+          phone: '(410) 659-9314',
+          icon: 'Users',
+          isFeatured: false,
+          sortOrder: 2,
+        },
+        {
+          title: 'Inglis Community Services',
+          description: 'Programs and services supporting adults with physical disabilities in Philadelphia, including housing, employment, and community integration.',
+          category: 'Community',
+          url: 'https://www.inglis.org/',
+          phone: '(215) 878-5600',
+          address: '2600 Belmont Avenue, Philadelphia, PA 19131',
+          icon: 'Heart',
+          isFeatured: false,
+          sortOrder: 3,
+        },
+        {
+          title: 'Pennsylvania Client Assistance Program',
+          description: 'Free advocacy for individuals with disabilities seeking or receiving vocational rehabilitation services in Pennsylvania.',
+          category: 'ADA Services',
+          url: 'https://www.equalemployment.org/programs/cap',
+          phone: '(888) 745-2357',
+          icon: 'Accessibility',
+          isFeatured: false,
+          sortOrder: 4,
+        },
+        {
+          title: 'AccessibleGO - Accessible Travel Planning',
+          description: 'Find wheelchair-accessible hotels, restaurants, and activities. Plan trips with detailed accessibility information for popular destinations.',
+          category: 'Transportation',
+          url: 'https://accessiblego.com/',
+          icon: 'Car',
+          isFeatured: false,
+          sortOrder: 5,
+        },
+        {
+          title: 'Social Security Disability Benefits',
+          description: 'Learn about SSDI and SSI benefits, eligibility requirements, and how to apply for disability income assistance.',
+          category: 'Government',
+          url: 'https://www.ssa.gov/disability/',
+          phone: '(800) 772-1213',
+          icon: 'Building2',
+          isFeatured: false,
+          sortOrder: 6,
+        },
+        {
+          title: 'Assistive Technology Resource Center',
+          description: 'Explore assistive technology solutions for mobility, communication, and daily living. Includes device lending and training programs in Pennsylvania.',
+          category: 'Education',
+          url: 'https://www.temple.edu/iat/',
+          phone: '(215) 204-1356',
+          address: 'Temple University, Philadelphia, PA 19122',
+          icon: 'GraduationCap',
+          isFeatured: false,
+          sortOrder: 7,
+        },
+      ];
 
-    for (const cat of categoryData) {
-      await storage.createCategory(cat);
+      for (const resource of adaResources) {
+        await storage.createResource(resource);
+      }
+
+      console.log(`Seeded ${adaResources.length} resources`);
+    } else {
+      console.log(`Found ${existingResources.length} existing resources`);
     }
 
-    // Real places with accessibility information (Philadelphia)
-    const places = [
-      {
-        name: 'Philadelphia Museum of Art',
-        category: 'museums',
-        accessibilityStatus: 'Not Accessible',
-        description: 'World-class art museum with limited accessibility. Many galleries lack elevator access, historic staircases present barriers, and accessible parking is limited.',
-        imageUrl: '/images/places/philadelphia-museum-art.jpg',
-        address: '2600 Benjamin Franklin Parkway, Philadelphia, PA 19130',
-        latitude: 39.9657,
-        longitude: -75.1811,
-        phone: '(215) 763-8100',
-        website: 'https://philart.org',
-        hours: 'Tue-Sun 10am-5pm, Wed 10am-8:45pm',
-        isFeatured: true,
-      },
-      {
-        name: 'Free Library of Philadelphia - Main Branch',
-        category: 'libraries',
-        accessibilityStatus: 'Partially Accessible',
-        description: 'Historic research library with some accessibility features. Elevator access available but not to all areas, some narrow aisles between stacks.',
-        imageUrl: '/images/places/free-library.jpg',
-        address: '1901 Vine Street, Philadelphia, PA 19103',
-        latitude: 39.9543,
-        longitude: -75.1658,
-        phone: '(215) 686-5322',
-        website: 'https://libwww.freelibrary.org',
-        hours: 'Mon-Fri 9am-6pm, Sat 10am-5pm, Sun 1pm-5pm',
-        isFeatured: true,
-      },
-      {
-        name: 'Parkway Central Library',
-        category: 'libraries',
-        accessibilityStatus: 'Not Accessible',
-        description: 'Historic Beaux-Arts building with significant accessibility barriers. Multiple levels without elevator access, heavy entrance doors, and limited accessible seating.',
-        imageUrl: '/images/places/parkway-library.jpg',
-        address: '1901 Vine Street, Philadelphia, PA 19103',
-        latitude: 39.9543,
-        longitude: -75.1658,
-        phone: '(215) 686-5322',
-        website: 'https://libwww.freelibrary.org',
-        hours: 'Mon-Fri 9am-6pm, Sat 10am-5pm',
-        isFeatured: false,
-      },
-      {
-        name: 'Rittenhouse Square Park',
-        category: 'parks',
-        accessibilityStatus: 'Partially Accessible',
-        description: 'Beautiful urban park with accessible pathways, accessible restrooms, and seating areas. Some areas may be challenging for wheelchairs.',
-        imageUrl: '/images/places/rittenhouse-park.jpg',
-        address: 'Rittenhouse Square, Philadelphia, PA 19103',
-        latitude: 39.9485,
-        longitude: -75.1733,
-        phone: '(215) 686-0752',
-        website: 'https://www.phila.gov',
-        hours: 'Open 6am-sunset daily',
-        isFeatured: true,
-      },
-      {
-        name: 'Wawa - Center City',
-        category: 'restaurants',
-        accessibilityStatus: 'Accessible',
-        description: 'Accessible convenience store with wheelchair ramp, accessible restroom, and clear aisles. Service animals welcome.',
-        imageUrl: '/images/places/wawa-store.jpg',
-        address: '1500 Market Street, Philadelphia, PA 19102',
-        latitude: 39.9526,
-        longitude: -75.1678,
-        phone: '(215) 985-1900',
-        website: 'https://www.wawa.com',
-        hours: 'Open 24/7',
-        isFeatured: false,
-      },
-      {
-        name: 'SEPTA Train Stations',
-        category: 'transit',
-        accessibilityStatus: 'Partially Accessible',
-        description: 'Major transit system with mixed accessibility. Some stations have elevators and accessible entry points, but many older stations lack full accessibility features.',
-        imageUrl: '/images/places/septa-train.jpg',
-        address: '1234 Market Street, Philadelphia, PA 19107',
-        latitude: 39.9520,
-        longitude: -75.1595,
-        phone: '(215) 580-7800',
-        website: 'https://www.septa.org',
-        hours: '24/7',
-        isFeatured: true,
-      },
-      {
-        name: 'Pennsylvania Hospital',
-        category: 'healthcare',
-        accessibilityStatus: 'Accessible',
-        description: 'Historic medical center with full accessibility including accessible parking, elevators, wheelchair accessible treatment areas, and interpreter services.',
-        imageUrl: '/images/places/pennsylvania-hospital.jpg',
-        address: '800 Spruce Street, Philadelphia, PA 19107',
-        latitude: 39.9402,
-        longitude: -75.1444,
-        phone: '(215) 829-3000',
-        website: 'https://www.pennmedicine.org',
-        hours: '24/7 Emergency, Other hours vary',
-        isFeatured: false,
-      },
-      {
-        name: 'Reading Terminal Market',
-        category: 'restaurants',
-        accessibilityStatus: 'Partially Accessible',
-        description: 'Historic public market with level entry, multiple food vendors, and seating areas. Some vendor stalls may be challenging for wheelchair access during busy times.',
-        imageUrl: '/images/places/reading-terminal.jpg',
-        address: '12th & Arch Street, Philadelphia, PA 19107',
-        latitude: 39.9550,
-        longitude: -75.1580,
-        phone: '(215) 922-2317',
-        website: 'https://readingterminalmarket.org',
-        hours: 'Mon-Sat 8am-6pm, Sun 9am-5pm',
-        isFeatured: false,
-      },
-      {
-        name: 'Franklin Institute',
-        category: 'museums',
-        accessibilityStatus: 'Accessible',
-        description: 'Science museum with comprehensive accessibility. All floors accessible via elevators, accessible parking, accessible restrooms, and interactive exhibits designed for all abilities.',
-        imageUrl: '/images/places/franklin-institute.jpg',
-        address: '222 North 20th Street, Philadelphia, PA 19103',
-        latitude: 39.9569,
-        longitude: -75.1728,
-        phone: '(215) 448-1200',
-        website: 'https://www.fi.edu',
-        hours: 'Mon-Sun 9:30am-5pm',
-        isFeatured: true,
-      },
-    ];
+    await migrateImageUrls();
 
-    for (const place of places) {
-      await storage.createPlace(place);
-    }
-
-    // Add accessibility features for places
-    const placeIds = (await storage.getPlaces()).map(p => p.id);
-    
-    if (placeIds.length > 0) {
-      // Add features for Metropolitan Museum (index 0)
-      await storage.createAccessibilityFeature({
-        placeId: placeIds[0],
-        featureType: 'wheelchair_accessible',
-        available: true,
-        description: 'Full wheelchair accessibility throughout museum',
-      });
-      await storage.createAccessibilityFeature({
-        placeId: placeIds[0],
-        featureType: 'accessible_restroom',
-        available: true,
-        description: 'Multiple accessible restrooms on each floor',
-      });
-      await storage.createAccessibilityFeature({
-        placeId: placeIds[0],
-        featureType: 'elevator',
-        available: true,
-        description: 'Elevators to all gallery floors',
-      });
-    }
-
-    // Add sample reviews
-    const sampleReviews = [
-      {
-        placeId: placeIds[0] || 1,
-        content: 'Excellent accessibility! Staff was very helpful. Elevators work well, and wheelchair paths are clear.',
-        rating: 5,
-        authorName: 'Sarah M.',
-        authorRole: 'Visitor with wheelchair',
-        isFeatured: true,
-      },
-      {
-        placeId: placeIds[2] || 3,
-        content: 'Beautiful park with accessible pathways. Restrooms are clean and accessible.',
-        rating: 4,
-        authorName: 'James T.',
-        authorRole: 'Regular visitor',
-      },
-      {
-        placeId: placeIds[1] || 2,
-        content: 'Great library with amazing resources. Very accessible and welcoming.',
-        rating: 5,
-        authorName: 'Emma L.',
-        authorRole: 'Researcher',
-        isFeatured: true,
-      },
-    ];
-
-    for (const review of sampleReviews) {
-      await storage.createReview(review);
-    }
-
-    // Add blog posts
-    const blogPosts = [
-      {
-        title: 'Top 5 Accessible Museums in Philadelphia',
-        slug: 'top-5-accessible-museums-philadelphia',
-        excerpt: 'Discover the best museums with full accessibility features in Philadelphia...',
-        content: 'Philadelphia has many world-class museums that are fully accessible. From the Philadelphia Museum of Art to the Franklin Institute, these institutions are committed to making art and science accessible to everyone.',
-        author: 'Open Way Team',
-        category: 'Museums',
-        imageUrl: 'https://images.unsplash.com/photo-1564399579883-451a5b44a221?w=800&h=600&fit=crop',
-        isFeatured: true,
-        isPublished: true,
-      },
-      {
-        title: 'Navigating SEPTA Transit Accessibly',
-        slug: 'navigating-septa-transit-accessibly',
-        excerpt: 'Tips for using Philadelphia transit as a person with disabilities...',
-        content: 'SEPTA provides various accessibility features throughout Philadelphia. Learn how to navigate the rail system, use accessible station elevators, and communicate with transit staff about your accessibility needs.',
-        author: 'Open Way Team',
-        category: 'Transit',
-        imageUrl: 'https://images.unsplash.com/photo-1587395853207-0ca2b7a37bd6?w=800&h=600&fit=crop',
-        isFeatured: true,
-        isPublished: true,
-      },
-      {
-        title: 'Accessibility Standards and What They Mean',
-        slug: 'accessibility-standards-what-they-mean',
-        excerpt: 'Understanding ADA compliance and accessibility ratings...',
-        content: 'Learn about ADA compliance standards, what "Accessible," "Partially Accessible," and other ratings mean, and how to advocate for better accessibility in your community.',
-        author: 'Accessibility Advocate',
-        category: 'Guides',
-        imageUrl: 'https://images.unsplash.com/photo-1552664730-d307ca884978?w=800&h=600&fit=crop',
-        isPublished: true,
-      },
-    ];
-
-    for (const post of blogPosts) {
-      await storage.createBlogPost(post);
-    }
-
-    // Add FAQ entries
-    const faqs = [
-      {
-        question: 'What does "Accessible" mean on this site?',
-        answer: 'A place marked as "Accessible" meets ADA standards and has full wheelchair accessibility, accessible restrooms, parking, and other features for people with disabilities.',
-        category: 'General',
-        sortOrder: 1,
-      },
-      {
-        question: 'How can I submit information about a new place?',
-        answer: 'You can submit a new place using our "Submit a Place" form. Please provide details about accessibility features, hours, location, and contact information.',
-        category: 'Submission',
-        sortOrder: 2,
-      },
-      {
-        question: 'Can I request accessibility improvements?',
-        answer: 'Yes! You can sign our petition for better accessibility standards. Your voice matters in advocating for more accessible public spaces.',
-        category: 'Petition',
-        sortOrder: 3,
-      },
-    ];
-
-    for (const faq of faqs) {
-      await storage.createFaqEntry(faq);
-    }
-
-    // Add ADA Resources
-    const adaResources = [
-      {
-        title: 'Report ADA Violations',
-        description: 'File a complaint about accessibility barriers or ADA violations with the Department of Justice. You can report businesses, government facilities, or public services that fail to meet accessibility standards.',
-        category: 'Advocacy',
-        url: 'https://www.ada.gov/file-a-complaint/',
-        icon: 'AlertTriangle',
-        isFeatured: true,
-        sortOrder: 1,
-      },
-      {
-        title: 'Know Your ADA Rights',
-        description: 'Comprehensive guide to your rights under the Americans with Disabilities Act. Learn about protections in employment, public accommodations, transportation, and telecommunications.',
-        category: 'Advocacy',
-        url: 'https://www.ada.gov/resources/disability-rights-guide/',
-        icon: 'Scale',
-        isFeatured: true,
-        sortOrder: 2,
-      },
-      {
-        title: 'Request Accommodations',
-        description: 'Learn how to request reasonable accommodations at work, school, or in public spaces. Includes templates and step-by-step guidance for the accommodation process.',
-        category: 'Advocacy',
-        url: 'https://askjan.org/info-by-role.cfm',
-        icon: 'FileText',
-        isFeatured: true,
-        sortOrder: 3,
-      },
-      {
-        title: 'Accessibility Advocacy Resources',
-        description: 'Connect with disability rights organizations, advocacy groups, and legal resources in Philadelphia. Find support for fighting accessibility barriers in your community.',
-        category: 'Advocacy',
-        url: 'https://www.disabilityrightspa.org/',
-        icon: 'Users',
-        isFeatured: true,
-        sortOrder: 4,
-      },
-    ];
-
-    for (const resource of adaResources) {
-      await storage.createResource(resource);
-    }
-
-    // Add events
-    const events = [
-      {
-        title: 'Accessibility Awareness Week',
-        description: 'Join us for a week-long celebration of accessibility in NYC. Featuring workshops, panel discussions, and community events.',
-        date: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000), // 30 days from now
-        endDate: new Date(Date.now() + 37 * 24 * 60 * 60 * 1000), // 37 days from now
-        location: 'Various venues across NYC',
-        category: 'Awareness',
-        isFeatured: true,
-      },
-      {
-        title: 'Accessible Dining Guide Workshop',
-        description: 'Learn about accessible restaurants and dining options in NYC. Get tips on communication and what to expect.',
-        date: new Date(Date.now() + 14 * 24 * 60 * 60 * 1000), // 14 days from now
-        location: 'NYC Public Library - Main Branch',
-        category: 'Workshop',
-      },
-    ];
-
-    for (const event of events) {
-      await storage.createEvent(event);
-    }
-
-    console.log('✅ Database seeded successfully with real places and data!');
+    console.log('Database seed check complete');
   } catch (error) {
-    console.error('❌ Seeding error:', error);
+    console.error('Seeding error:', error);
+  }
+}
+
+async function migrateImageUrls() {
+  try {
+    const places = await storage.getPlaces();
+    const imageUrlMap: Record<string, string> = {
+      'Philadelphia Museum of Art': '/images/places/philadelphia-museum-art.jpg',
+      'Free Library of Philadelphia - Main Branch': '/images/places/free-library.jpg',
+      'Rittenhouse Square Park': '/images/places/rittenhouse-park.jpg',
+      'Wawa - Center City': '/images/places/wawa-store.jpg',
+      'SEPTA - Market-Frankford Station': '/images/places/septa-train.jpg',
+      'SEPTA Train Stations': '/images/places/septa-train.jpg',
+      'Pennsylvania Hospital': '/images/places/pennsylvania-hospital.jpg',
+      'Reading Terminal Market': '/images/places/reading-terminal.jpg',
+      'Franklin Institute': '/images/places/franklin-institute.jpg',
+      'Parkway Central Library': '/images/places/parkway-library.jpg',
+    };
+
+    let updated = 0;
+    for (const place of places) {
+      const correctUrl = imageUrlMap[place.name];
+      if (correctUrl && place.imageUrl !== correctUrl && place.imageUrl?.includes('unsplash.com')) {
+        await storage.updatePlace(place.id, { imageUrl: correctUrl });
+        updated++;
+      }
+    }
+    if (updated > 0) {
+      console.log(`Migrated ${updated} place image URLs to local paths`);
+    }
+  } catch (error) {
+    console.error('Image URL migration error:', error);
   }
 }
