@@ -1,10 +1,12 @@
 import type { Express, Request, Response, NextFunction } from "express";
 import type { Server } from "http";
 import { storage } from "./storage";
+import { db } from "./db";
 import { api } from "@shared/routes";
 import { z } from "zod";
+import { eq } from "drizzle-orm";
 import { randomBytes } from "crypto";
-import { ACCESSIBILITY_STATUS, ACCESSIBILITY_FEATURE_TYPES, insertUserSchema, loginSchema, forgotPasswordSchema, resetPasswordSchema } from "@shared/schema";
+import { ACCESSIBILITY_STATUS, ACCESSIBILITY_FEATURE_TYPES, insertUserSchema, loginSchema, forgotPasswordSchema, resetPasswordSchema, blogPosts as blogPostsTable, reviews as reviewsTable } from "@shared/schema";
 import { 
   registerUser, 
   loginUser, 
@@ -1882,7 +1884,7 @@ async function seedDatabase() {
       console.log(`Found ${existingResources.length} existing resources`);
     }
 
-    await migrateImageUrls();
+    await migrateProductionData();
 
     console.log('Database seed check complete');
   } catch (error) {
@@ -1890,10 +1892,10 @@ async function seedDatabase() {
   }
 }
 
-async function migrateImageUrls() {
+async function migrateProductionData() {
   try {
     const places = await storage.getPlaces();
-    const imageUrlMap: Record<string, string> = {
+    const placeImageMap: Record<string, string> = {
       'Philadelphia Museum of Art': '/images/places/philadelphia-museum-art.jpg',
       'Free Library of Philadelphia - Main Branch': '/images/places/free-library.jpg',
       'Rittenhouse Square Park': '/images/places/rittenhouse-park.jpg',
@@ -1908,7 +1910,7 @@ async function migrateImageUrls() {
 
     let updated = 0;
     for (const place of places) {
-      const correctUrl = imageUrlMap[place.name];
+      const correctUrl = placeImageMap[place.name];
       if (correctUrl && place.imageUrl !== correctUrl && place.imageUrl?.includes('unsplash.com')) {
         await storage.updatePlace(place.id, { imageUrl: correctUrl });
         updated++;
@@ -1917,7 +1919,61 @@ async function migrateImageUrls() {
     if (updated > 0) {
       console.log(`Migrated ${updated} place image URLs to local paths`);
     }
+
+    const placeNames = places.map(p => p.name);
+    if (!placeNames.includes('Parkway Central Library')) {
+      await storage.createPlace({
+        name: 'Parkway Central Library',
+        category: 'libraries',
+        accessibilityStatus: 'Not Accessible',
+        description: 'Historic Beaux-Arts building with significant accessibility barriers. Multiple levels without elevator access, heavy entrance doors, and limited accessible seating.',
+        imageUrl: '/images/places/parkway-library.jpg',
+        address: '1901 Vine Street, Philadelphia, PA 19103',
+        latitude: 39.9543,
+        longitude: -75.1658,
+        phone: '(215) 686-5322',
+        website: 'https://libwww.freelibrary.org',
+        hours: 'Mon-Fri 9am-6pm, Sat 10am-5pm',
+        isFeatured: false,
+      });
+      console.log('Added missing Parkway Central Library place');
+    }
+
+    const blogImageMap: Record<string, string> = {
+      'top-5-accessible-museums-philadelphia': '/images/places/philadelphia-museum-art.jpg',
+      'navigating-septa-transit-accessibly': '/images/places/septa-train.jpg',
+      'accessibility-standards-what-they-mean': '/images/places/franklin-institute.jpg',
+    };
+
+    const blogPosts = await storage.getBlogPosts();
+    let blogUpdated = 0;
+    for (const post of blogPosts) {
+      const correctUrl = blogImageMap[post.slug];
+      if (correctUrl && post.imageUrl !== correctUrl && post.imageUrl?.includes('unsplash.com')) {
+        await db.update(blogPostsTable).set({ imageUrl: correctUrl }).where(eq(blogPostsTable.id, post.id));
+        blogUpdated++;
+      }
+    }
+    if (blogUpdated > 0) {
+      console.log(`Migrated ${blogUpdated} blog post image URLs to local paths`);
+    }
+
+    const testBlogPosts = blogPosts.filter(p => p.title === 'Test' || p.slug === 'test');
+    for (const post of testBlogPosts) {
+      await db.delete(blogPostsTable).where(eq(blogPostsTable.id, post.id));
+      console.log(`Removed test blog post: "${post.title}"`);
+    }
+
+    const allReviews = await db.select().from(reviewsTable);
+    const junkReviews = allReviews.filter((r: { id: number; content: string | null; rating: number | null; authorName: string | null }) =>
+      r.content === 'attempt to add tip' || (!r.rating && !r.authorName && (r.content?.length ?? 0) < 20)
+    );
+    for (const review of junkReviews) {
+      await db.delete(reviewsTable).where(eq(reviewsTable.id, review.id));
+      console.log(`Removed junk review id=${review.id}: "${review.content}"`);
+    }
+
   } catch (error) {
-    console.error('Image URL migration error:', error);
+    console.error('Production data migration error:', error);
   }
 }
