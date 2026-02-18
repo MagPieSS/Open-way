@@ -20,7 +20,7 @@ const routeLabels: Record<string, string> = {
   "/places": "Places",
   "/reviews": "Community",
   "/submit": "Submit",
-  "/petition": "Petition",
+  "/petitions": "Petitions",
   "/about": "About",
   "/settings": "Settings",
   "/resources": "Resources",
@@ -33,12 +33,24 @@ const routeLabels: Record<string, string> = {
 export function Breadcrumbs() {
   const [location] = useLocation();
   const [matchPlaceDetail, paramsPlace] = useRoute("/places/:id");
+  const [matchPetitionDetail, paramsPetition] = useRoute("/petitions/:id");
   
   const placeId = matchPlaceDetail ? Number(paramsPlace?.id) : undefined;
+  const petitionId = matchPetitionDetail ? Number(paramsPetition?.id) : undefined;
   
   const { data: place } = useQuery<{ id: number; name: string }>({
     queryKey: ['/api/places', placeId],
     enabled: !!placeId,
+  });
+
+  const { data: petition } = useQuery<{ id: number; title: string }>({
+    queryKey: ['/api/petitions', petitionId],
+    queryFn: async () => {
+      const res = await fetch(`/api/petitions/${petitionId}`);
+      if (!res.ok) throw new Error("Failed to fetch petition");
+      return res.json();
+    },
+    enabled: !!petitionId,
   });
 
   const getBreadcrumbs = (): BreadcrumbSegment[] => {
@@ -56,6 +68,14 @@ export function Breadcrumbs() {
       
       if (pathParts[1] && place) {
         segments.push({ label: place.name });
+      } else if (pathParts[1]) {
+        segments.push({ label: "Loading..." });
+      }
+    } else if (pathParts[0] === "petitions") {
+      segments.push({ label: "Petitions", href: "/petitions" });
+      
+      if (pathParts[1] && petition) {
+        segments.push({ label: petition.title });
       } else if (pathParts[1]) {
         segments.push({ label: "Loading..." });
       }

@@ -1,9 +1,9 @@
 import { useState, useEffect, useCallback } from "react";
-import { usePetitionCount, useSignPetition, usePetitionSignatures, usePetitionUpdates, usePetitionStatus } from "@/hooks/use-petition";
+import { usePetitions, usePetition, usePetitionCount, useSignPetition, usePetitionSignatures, usePetitionUpdates, usePetitionStatus, useCreatePetition } from "@/hooks/use-petition";
 import { useAuth } from "@/hooks/use-auth";
-import { Link } from "wouter";
+import { Link, useRoute } from "wouter";
 import { useSettings } from "@/hooks/use-settings";
-import { PenTool, Heart, Target, Users, TrendingUp, Share2, Trophy, Star, Clock, Copy, Check, Calendar, User, MapPin, Megaphone, ArrowRight, Sparkles, Quote, BarChart3 } from "lucide-react";
+import { PenTool, Heart, Target, Users, TrendingUp, Share2, Trophy, Star, Clock, Copy, Check, Calendar, User, MapPin, Megaphone, ArrowRight, Sparkles, Quote, BarChart3, ArrowLeft, Plus, Eye } from "lucide-react";
 import { SiX, SiFacebook } from "react-icons/si";
 import { motion, AnimatePresence } from "framer-motion";
 import { useToast } from "@/hooks/use-toast";
@@ -18,20 +18,30 @@ import { Label } from "@/components/ui/label";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
+import { Progress } from "@/components/ui/progress";
 import { formatDistanceToNow } from "date-fns";
+import type { Petition as PetitionType } from "@shared/schema";
 
-const PETITION_GOAL = 10000;
-const MILESTONES = [100, 250, 500, 1000, 2500, 5000, 10000];
-
-function getNextMilestone(current: number): number {
-  for (const milestone of MILESTONES) {
-    if (current < milestone) return milestone;
+function getMilestones(goal: number): number[] {
+  const milestones: number[] = [];
+  const steps = [100, 250, 500, 1000, 2500, 5000, 10000, 25000, 50000, 100000];
+  for (const s of steps) {
+    if (s <= goal) milestones.push(s);
   }
-  return MILESTONES[MILESTONES.length - 1];
+  if (!milestones.includes(goal)) milestones.push(goal);
+  return milestones;
 }
 
-function getAchievedMilestones(current: number): number[] {
-  return MILESTONES.filter(m => current >= m);
+function getNextMilestone(current: number, milestones: number[]): number {
+  for (const milestone of milestones) {
+    if (current < milestone) return milestone;
+  }
+  return milestones[milestones.length - 1];
+}
+
+function getAchievedMilestones(current: number, milestones: number[]): number[] {
+  return milestones.filter(m => current >= m);
 }
 
 function ConfettiEffect({ active }: { active: boolean }) {
@@ -171,8 +181,8 @@ function ShareProgressCard({ signatures, goal, progressPercent }: { signatures: 
   );
 }
 
-function RecentSignersList() {
-  const { data: signatures, isLoading } = usePetitionSignatures();
+function RecentSignersList({ petitionId }: { petitionId: number }) {
+  const { data: signatures, isLoading } = usePetitionSignatures(petitionId);
   const { reducedMotion } = useSettings();
   
   const publicSignatures = signatures?.filter(s => s.shareConsent) || [];
@@ -260,8 +270,8 @@ function RecentSignersList() {
   );
 }
 
-function OrganizerUpdates() {
-  const { data: updates, isLoading } = usePetitionUpdates();
+function OrganizerUpdates({ petitionId }: { petitionId: number }) {
+  const { data: updates, isLoading } = usePetitionUpdates(petitionId);
 
   if (isLoading) {
     return (
@@ -327,12 +337,12 @@ function OrganizerUpdates() {
   );
 }
 
-function SignPetitionForm({ onSuccess }: { onSuccess: () => void }) {
-  const signPetition = useSignPetition();
+function SignPetitionForm({ petitionId, onSuccess }: { petitionId: number; onSuccess: () => void }) {
+  const signPetition = useSignPetition(petitionId);
   const { textSize, reducedMotion } = useSettings();
   const { toast } = useToast();
   const { user, isLoading: authLoading } = useAuth();
-  const { data: statusData, isLoading: statusLoading } = usePetitionStatus();
+  const { data: statusData, isLoading: statusLoading } = usePetitionStatus(petitionId);
   const [showSuccess, setShowSuccess] = useState(false);
   
   const [formData, setFormData] = useState({
@@ -368,7 +378,6 @@ function SignPetitionForm({ onSuccess }: { onSuccess: () => void }) {
     });
   };
 
-  // Show login prompt if not authenticated
   if (!authLoading && !user) {
     return (
       <div className="text-center py-6" data-testid="sign-login-prompt">
@@ -393,7 +402,6 @@ function SignPetitionForm({ onSuccess }: { onSuccess: () => void }) {
     );
   }
 
-  // Show "already signed" if user has already signed
   if (!statusLoading && statusData?.hasSigned) {
     return (
       <div className="text-center py-6" data-testid="already-signed">
@@ -500,16 +508,297 @@ function SignPetitionForm({ onSuccess }: { onSuccess: () => void }) {
   );
 }
 
-export default function Petition() {
-  const { data: countData, isLoading } = usePetitionCount();
+function CreatePetitionDialog() {
+  const { user, isLoading: authLoading } = useAuth();
+  const { toast } = useToast();
+  const createPetition = useCreatePetition();
+  const [open, setOpen] = useState(false);
+  const [formData, setFormData] = useState({
+    title: '',
+    description: '',
+    goalSignatures: 1000,
+    creatorName: '',
+  });
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!formData.title.trim() || !formData.description.trim()) {
+      toast({ title: "Missing fields", description: "Title and description are required.", variant: "destructive" });
+      return;
+    }
+
+    createPetition.mutate(
+      {
+        title: formData.title,
+        description: formData.description,
+        goalSignatures: formData.goalSignatures || 1000,
+        creatorName: formData.creatorName || undefined,
+      },
+      {
+        onSuccess: () => {
+          toast({ title: "Petition created!", description: "Your petition is now live." });
+          setOpen(false);
+          setFormData({ title: '', description: '', goalSignatures: 1000, creatorName: '' });
+        },
+        onError: (error: any) => {
+          toast({ title: "Error", description: error.message || "Failed to create petition.", variant: "destructive" });
+        },
+      }
+    );
+  };
+
+  if (!authLoading && !user) {
+    return (
+      <Link href="/login">
+        <Button className="gap-2" data-testid="button-start-petition-login">
+          <Plus className="w-4 h-4" />
+          Sign In to Start a Petition
+        </Button>
+      </Link>
+    );
+  }
+
+  return (
+    <Dialog open={open} onOpenChange={setOpen}>
+      <DialogTrigger asChild>
+        <Button className="gap-2" data-testid="button-start-petition">
+          <Plus className="w-4 h-4" />
+          Start a Petition
+        </Button>
+      </DialogTrigger>
+      <DialogContent className="sm:max-w-lg" data-testid="dialog-create-petition">
+        <DialogHeader>
+          <DialogTitle>Start a New Petition</DialogTitle>
+        </DialogHeader>
+        <form onSubmit={handleSubmit} className="space-y-4 mt-4">
+          <div>
+            <Label htmlFor="petition-title">Title *</Label>
+            <Input
+              id="petition-title"
+              placeholder="Give your petition a clear title"
+              value={formData.title}
+              onChange={(e) => setFormData({ ...formData, title: e.target.value })}
+              className="mt-1"
+              required
+              data-testid="input-petition-title"
+            />
+          </div>
+          <div>
+            <Label htmlFor="petition-description">Description *</Label>
+            <Textarea
+              id="petition-description"
+              placeholder="Describe what you're petitioning for and why it matters..."
+              value={formData.description}
+              onChange={(e) => setFormData({ ...formData, description: e.target.value })}
+              className="mt-1 resize-none"
+              rows={4}
+              required
+              data-testid="input-petition-description"
+            />
+          </div>
+          <div>
+            <Label htmlFor="petition-goal">Signature Goal</Label>
+            <Input
+              id="petition-goal"
+              type="number"
+              min={10}
+              placeholder="1000"
+              value={formData.goalSignatures}
+              onChange={(e) => setFormData({ ...formData, goalSignatures: parseInt(e.target.value) || 1000 })}
+              className="mt-1"
+              data-testid="input-petition-goal"
+            />
+          </div>
+          <div>
+            <Label htmlFor="petition-creator">Your Name (optional)</Label>
+            <Input
+              id="petition-creator"
+              placeholder="How you'd like to be identified"
+              value={formData.creatorName}
+              onChange={(e) => setFormData({ ...formData, creatorName: e.target.value })}
+              className="mt-1"
+              data-testid="input-petition-creator"
+            />
+          </div>
+          <Button
+            type="submit"
+            className="w-full gap-2"
+            disabled={createPetition.isPending}
+            data-testid="button-submit-petition"
+          >
+            {createPetition.isPending ? "Creating..." : "Create Petition"}
+          </Button>
+        </form>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function PetitionCard({ petition }: { petition: PetitionType }) {
+  const { data: countData } = usePetitionCount(petition.id);
+  const { reducedMotion } = useSettings();
+  const signatures = countData?.total || 0;
+  const goal = petition.goalSignatures || 1000;
+  const progressPercent = Math.min((signatures / goal) * 100, 100);
+
+  return (
+    <motion.div
+      initial={reducedMotion ? {} : { opacity: 0, y: 20 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.3 }}
+    >
+      <Link href={`/petitions/${petition.id}`}>
+        <Card
+          className="p-6 hover-elevate cursor-pointer h-full flex flex-col"
+          data-testid={`card-petition-${petition.id}`}
+        >
+          <div className="flex items-start justify-between gap-3 mb-3 flex-wrap">
+            <h3 className="font-bold text-lg text-foreground line-clamp-2 flex-1" data-testid={`text-petition-title-${petition.id}`}>
+              {petition.title}
+            </h3>
+            {petition.status === 'active' && (
+              <Badge variant="secondary">Active</Badge>
+            )}
+          </div>
+
+          <p className="text-muted-foreground text-sm line-clamp-3 mb-4 flex-1" data-testid={`text-petition-desc-${petition.id}`}>
+            {petition.description}
+          </p>
+
+          {petition.creatorName && (
+            <div className="flex items-center gap-2 text-xs text-muted-foreground mb-4">
+              <User className="w-3 h-3" />
+              <span>Started by {petition.creatorName}</span>
+            </div>
+          )}
+
+          <div className="mt-auto">
+            <div className="flex items-center justify-between gap-2 mb-2 flex-wrap">
+              <span className="text-sm font-medium text-foreground" data-testid={`text-petition-signatures-${petition.id}`}>
+                {signatures.toLocaleString()} signatures
+              </span>
+              <span className="text-xs text-muted-foreground">
+                Goal: {goal.toLocaleString()}
+              </span>
+            </div>
+            <div className="w-full h-2 bg-secondary rounded-full overflow-hidden">
+              <div
+                className="h-full bg-gradient-to-r from-primary to-accent transition-all duration-700"
+                style={{ width: `${progressPercent}%` }}
+              />
+            </div>
+            <div className="mt-3 flex items-center justify-between gap-2 flex-wrap">
+              <span className="text-xs text-muted-foreground">
+                {Math.round(progressPercent)}% of goal
+              </span>
+              <Button variant="outline" size="sm" className="gap-1" data-testid={`button-view-petition-${petition.id}`}>
+                <Eye className="w-3 h-3" />
+                View
+              </Button>
+            </div>
+          </div>
+        </Card>
+      </Link>
+    </motion.div>
+  );
+}
+
+export default function PetitionListPage() {
+  const { data: petitions, isLoading } = usePetitions();
+  const { textSize, reducedMotion } = useSettings();
+
+  return (
+    <div className="min-h-screen bg-background">
+      <section className="bg-gradient-to-br from-primary to-primary/80 text-white py-16 px-4">
+        <div className="max-w-4xl mx-auto text-center">
+          <motion.div
+            initial={reducedMotion ? {} : { scale: 0.9, opacity: 0 }}
+            animate={{ scale: 1, opacity: 1 }}
+            transition={{ duration: 0.5 }}
+            className="mb-6 inline-block"
+          >
+            <div className="bg-white/20 p-5 rounded-full inline-flex items-center justify-center">
+              <Megaphone className="w-12 h-12" />
+            </div>
+          </motion.div>
+
+          <h1 className="font-display font-bold text-4xl md:text-6xl mb-4">
+            Petitions
+          </h1>
+          <p className={`text-white/90 max-w-2xl mx-auto mb-8 text-${textSize === 'xl' ? 'xl' : 'lg'}`}>
+            Raise your voice for accessibility. Start or sign a petition to demand better accessibility standards in Philadelphia.
+          </p>
+
+          <CreatePetitionDialog />
+        </div>
+      </section>
+
+      <section className="py-16 px-4">
+        <div className="max-w-6xl mx-auto">
+          <div className="flex items-center justify-between gap-4 mb-8 flex-wrap">
+            <div>
+              <SectionLabel>Active Petitions</SectionLabel>
+              <h2 className="font-display font-bold text-3xl mt-2">Browse & Sign</h2>
+            </div>
+            {petitions && petitions.length > 0 && (
+              <Badge variant="secondary" className="text-sm">
+                {petitions.length} petition{petitions.length !== 1 ? 's' : ''}
+              </Badge>
+            )}
+          </div>
+
+          {isLoading ? (
+            <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
+              {Array.from({ length: 6 }).map((_, i) => (
+                <Card key={i} className="p-6">
+                  <Skeleton className="h-6 w-3/4 mb-3" />
+                  <Skeleton className="h-4 w-full mb-2" />
+                  <Skeleton className="h-4 w-2/3 mb-4" />
+                  <Skeleton className="h-2 w-full rounded-full mb-2" />
+                  <div className="flex items-center justify-between gap-2">
+                    <Skeleton className="h-4 w-20" />
+                    <Skeleton className="h-8 w-16" />
+                  </div>
+                </Card>
+              ))}
+            </div>
+          ) : petitions && petitions.length > 0 ? (
+            <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6" data-testid="petitions-grid">
+              {petitions.map((petition) => (
+                <PetitionCard key={petition.id} petition={petition} />
+              ))}
+            </div>
+          ) : (
+            <div className="text-center py-16">
+              <PenTool className="w-16 h-16 mx-auto text-muted-foreground/30 mb-4" />
+              <h3 className="font-bold text-xl mb-2 text-foreground">No Petitions Yet</h3>
+              <p className="text-muted-foreground mb-6">
+                Be the first to start a petition for a more accessible Philadelphia.
+              </p>
+              <CreatePetitionDialog />
+            </div>
+          )}
+        </div>
+      </section>
+    </div>
+  );
+}
+
+export function PetitionDetail() {
+  const [, params] = useRoute("/petitions/:id");
+  const petitionId = params?.id ? Number(params.id) : 0;
+  const { data: petition, isLoading: petitionLoading } = usePetition(petitionId);
+  const { data: countData, isLoading } = usePetitionCount(petitionId);
   const { textSize, reducedMotion } = useSettings();
   const [showConfetti, setShowConfetti] = useState(false);
   const [lastMilestone, setLastMilestone] = useState(0);
 
+  const goal = petition?.goalSignatures || 1000;
+  const milestones = getMilestones(goal);
   const signatures = countData?.total || 0;
-  const progressPercent = Math.min((signatures / PETITION_GOAL) * 100, 100);
-  const nextMilestone = getNextMilestone(signatures);
-  const achievedMilestones = getAchievedMilestones(signatures);
+  const progressPercent = Math.min((signatures / goal) * 100, 100);
+  const nextMilestone = getNextMilestone(signatures, milestones);
+  const achievedMilestones = getAchievedMilestones(signatures, milestones);
   const progressToNext = nextMilestone > 0 ? ((signatures / nextMilestone) * 100) : 100;
 
   useEffect(() => {
@@ -528,6 +817,42 @@ export default function Petition() {
     }
   };
 
+  if (petitionLoading) {
+    return (
+      <div className="min-h-screen bg-background">
+        <section className="bg-gradient-to-br from-primary to-primary/80 text-white py-16 px-4">
+          <div className="max-w-4xl mx-auto text-center">
+            <Skeleton className="h-12 w-64 mx-auto mb-4 bg-white/20" />
+            <Skeleton className="h-6 w-96 mx-auto bg-white/20" />
+          </div>
+        </section>
+        <section className="py-16 px-4">
+          <div className="max-w-6xl mx-auto">
+            <Skeleton className="h-96 w-full rounded-xl" />
+          </div>
+        </section>
+      </div>
+    );
+  }
+
+  if (!petition) {
+    return (
+      <div className="min-h-screen bg-background flex items-center justify-center">
+        <div className="text-center">
+          <PenTool className="w-16 h-16 mx-auto text-muted-foreground/30 mb-4" />
+          <h2 className="font-bold text-2xl mb-2">Petition Not Found</h2>
+          <p className="text-muted-foreground mb-6">This petition may have been removed or doesn't exist.</p>
+          <Link href="/petitions">
+            <Button className="gap-2" data-testid="button-back-to-petitions">
+              <ArrowLeft className="w-4 h-4" />
+              Back to All Petitions
+            </Button>
+          </Link>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="min-h-screen bg-background">
       <ConfettiEffect active={showConfetti} />
@@ -545,16 +870,30 @@ export default function Petition() {
             </div>
           </motion.div>
 
-          <h1 className="font-display font-bold text-4xl md:text-6xl mb-4">
-            Sign the Petition
+          <h1 className="font-display font-bold text-4xl md:text-6xl mb-4" data-testid="text-petition-detail-title">
+            {petition.title}
           </h1>
-          <p className={`text-white/90 max-w-2xl mx-auto text-${textSize === 'xl' ? 'xl' : 'lg'}`}>
-            We demand standardized accessibility ratings for all public venues in Philadelphia. Access is not a luxury—it's a right.
+          <p className={`text-white/90 max-w-2xl mx-auto text-${textSize === 'xl' ? 'xl' : 'lg'}`} data-testid="text-petition-detail-description">
+            {petition.description}
           </p>
+          {petition.creatorName && (
+            <p className="text-white/70 mt-4 text-sm">
+              Started by {petition.creatorName}
+            </p>
+          )}
         </div>
       </section>
 
-      <section className="py-16 px-4">
+      <div className="max-w-6xl mx-auto px-4 py-4">
+        <Link href="/petitions">
+          <Button variant="ghost" className="gap-2" data-testid="link-back-to-petitions">
+            <ArrowLeft className="w-4 h-4" />
+            Back to All Petitions
+          </Button>
+        </Link>
+      </div>
+
+      <section className="pb-16 px-4">
         <div className="max-w-6xl mx-auto">
           <div className="grid lg:grid-cols-3 gap-8">
             <div className="lg:col-span-2 space-y-8">
@@ -578,14 +917,14 @@ export default function Petition() {
                     </div>
                     <div className="mt-4 text-center">
                       <p className="text-muted-foreground" data-testid="text-goal-progress">
-                        <span className="font-bold text-foreground">{Math.round(progressPercent)}%</span> of {PETITION_GOAL.toLocaleString()} goal
+                        <span className="font-bold text-foreground">{Math.round(progressPercent)}%</span> of {goal.toLocaleString()} goal
                       </p>
                     </div>
                   </div>
 
                   <div>
                     <h2 className="font-display font-bold text-2xl mb-4">Join the Movement</h2>
-                    <SignPetitionForm onSuccess={handleSignSuccess} />
+                    <SignPetitionForm petitionId={petitionId} onSuccess={handleSignSuccess} />
                   </div>
                 </div>
 
@@ -610,7 +949,7 @@ export default function Petition() {
                   </div>
                   
                   <div className="flex flex-wrap gap-2" data-testid="milestones-container">
-                    {MILESTONES.slice(0, 6).map((milestone) => (
+                    {milestones.slice(0, 6).map((milestone) => (
                       <MilestoneBadge
                         key={milestone}
                         milestone={milestone}
@@ -623,15 +962,15 @@ export default function Petition() {
 
               <ShareProgressCard
                 signatures={signatures}
-                goal={PETITION_GOAL}
+                goal={goal}
                 progressPercent={progressPercent}
               />
 
-              <OrganizerUpdates />
+              <OrganizerUpdates petitionId={petitionId} />
             </div>
 
             <div className="space-y-6">
-              <RecentSignersList />
+              <RecentSignersList petitionId={petitionId} />
             </div>
           </div>
         </div>

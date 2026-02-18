@@ -14,7 +14,7 @@ import Places from "@/pages/Places";
 import PlaceDetail from "@/pages/PlaceDetail";
 import Submit from "@/pages/Submit";
 import Community from "@/pages/Community";
-import Petition from "@/pages/Petition";
+import Petition, { PetitionDetail } from "@/pages/Petition";
 import About from "@/pages/About";
 import Settings from "@/pages/Settings";
 import Resources from "@/pages/Resources";
@@ -40,7 +40,8 @@ function Router() {
       <Route path="/submit" component={Submit} />
       <Route path="/community" component={Community} />
       <Route path="/reviews" component={Community} />
-      <Route path="/petition" component={Petition} />
+      <Route path="/petitions" component={Petition} />
+      <Route path="/petitions/:id" component={PetitionDetail} />
       <Route path="/about" component={About} />
       <Route path="/settings" component={Settings} />
       <Route path="/resources" component={Resources} />

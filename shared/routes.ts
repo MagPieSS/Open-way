@@ -2,11 +2,11 @@ import { z } from 'zod';
 import { 
   insertPlaceSchema, insertReviewSchema, insertSignatureSchema,
   insertCategorySchema, insertAccessibilityFeatureSchema, insertPlaceMediaSchema,
-  insertPlaceTipSchema, insertPetitionUpdateSchema, insertEventSchema,
+  insertPlaceTipSchema, insertPetitionSchema, insertPetitionUpdateSchema, insertEventSchema,
   insertResourceSchema, insertBlogPostSchema, insertFaqEntrySchema,
   insertContactSubmissionSchema, insertActivityLogSchema, insertPartnerSchema,
   places, reviews, signatures, categories, accessibilityFeatures,
-  placeMedia, placeTips, petitionUpdates, events, resources,
+  placeMedia, placeTips, petitions, petitionUpdates, events, resources,
   blogPosts, faqEntries, contactSubmissions, activityLog, partners
 } from './schema';
 
@@ -177,11 +177,35 @@ export const api = {
     },
   },
 
-  // Petition & Signatures
-  petition: {
+  // Petitions
+  petitions: {
+    list: {
+      method: 'GET' as const,
+      path: '/api/petitions',
+      responses: {
+        200: z.array(z.custom<typeof petitions.$inferSelect>()),
+      },
+    },
+    get: {
+      method: 'GET' as const,
+      path: '/api/petitions/:id',
+      responses: {
+        200: z.custom<typeof petitions.$inferSelect>(),
+        404: errorSchemas.notFound,
+      },
+    },
+    create: {
+      method: 'POST' as const,
+      path: '/api/petitions',
+      input: insertPetitionSchema,
+      responses: {
+        201: z.custom<typeof petitions.$inferSelect>(),
+        400: errorSchemas.validation,
+      },
+    },
     sign: {
       method: 'POST' as const,
-      path: '/api/petition/sign',
+      path: '/api/petitions/:id/sign',
       input: insertSignatureSchema,
       responses: {
         200: z.object({ total: z.number() }),
@@ -189,21 +213,28 @@ export const api = {
     },
     count: {
       method: 'GET' as const,
-      path: '/api/petition/count',
+      path: '/api/petitions/:id/count',
       responses: {
         200: z.object({ total: z.number() }),
       },
     },
+    status: {
+      method: 'GET' as const,
+      path: '/api/petitions/:id/status',
+      responses: {
+        200: z.object({ hasSigned: z.boolean() }),
+      },
+    },
     signatures: {
       method: 'GET' as const,
-      path: '/api/petition/signatures',
+      path: '/api/petitions/:id/signatures',
       responses: {
         200: z.array(z.custom<typeof signatures.$inferSelect>()),
       },
     },
     updates: {
       method: 'GET' as const,
-      path: '/api/petition/updates',
+      path: '/api/petitions/:id/updates',
       responses: {
         200: z.array(z.custom<typeof petitionUpdates.$inferSelect>()),
       },
@@ -214,7 +245,7 @@ export const api = {
   petitionUpdates: {
     create: {
       method: 'POST' as const,
-      path: '/api/petition-updates',
+      path: '/api/petitions/:id/updates',
       input: insertPetitionUpdateSchema,
       responses: {
         201: z.custom<typeof petitionUpdates.$inferSelect>(),
@@ -461,7 +492,8 @@ export function buildUrl(path: string, params?: Record<string, string | number>)
 
 export type PlaceInput = z.infer<typeof api.places.create.input>;
 export type ReviewInput = z.infer<typeof api.reviews.create.input>;
-export type SignatureInput = z.infer<typeof api.petition.sign.input>;
+export type SignatureInput = z.infer<typeof api.petitions.sign.input>;
+export type PetitionInput = z.infer<typeof api.petitions.create.input>;
 export type CategoryInput = z.infer<typeof api.categories.create.input>;
 export type EventInput = z.infer<typeof api.events.create.input>;
 export type ResourceInput = z.infer<typeof api.resources.create.input>;

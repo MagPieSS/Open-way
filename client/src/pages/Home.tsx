@@ -16,7 +16,7 @@ import { ACCESSIBILITY_STATUS } from "@shared/schema";
 
 export default function Home() {
   const { textSize, reducedMotion } = useSettings();
-  const { data: petitionData } = usePetitionCount();
+  const { data: petitionData } = usePetitionCount(1);
   const { data: places } = usePlaces();
   const { data: communityPosts } = useQuery<any[]>({
     queryKey: ["/api/community/posts"],
@@ -98,7 +98,7 @@ export default function Home() {
                     <Search className="w-5 h-5" /> Explore Places
                   </button>
                 </Link>
-                <Link href="/petition">
+                <Link href="/petitions">
                   <button 
                     className="w-full sm:w-auto px-8 py-4 rounded-full bg-white/20 backdrop-blur-sm text-white font-bold text-lg border-2 border-white/30 hover:bg-white/30 transition-all flex items-center justify-center gap-2"
                     data-testid="button-sign-petition"
@@ -241,7 +241,7 @@ export default function Home() {
               title="Take Action"
               description="Sign our petition to demand better accessibility standards in public spaces."
               color="text-accessible"
-              link="/petition"
+              link="/petitions"
             />
           </div>
         </div>
@@ -394,9 +394,9 @@ export default function Home() {
                 Share Your Review
               </button>
             </Link>
-            <Link href="/petition">
+            <Link href="/petitions">
               <button className="px-8 py-4 rounded-full bg-white/20 text-white font-bold text-lg border-2 border-white/30 hover:bg-white/30 transition-all" data-testid="button-cta-sign-petition">
-                Sign the Petition
+                Sign a Petition
               </button>
             </Link>
           </div>

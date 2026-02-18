@@ -1,11 +1,12 @@
 import { db } from "./db";
 import {
   places, reviews, signatures, categories, accessibilityFeatures,
-  placeMedia, placeTips, petitionUpdates, events, resources,
+  placeMedia, placeTips, petitions, petitionUpdates, events, resources,
   blogPosts, faqEntries, contactSubmissions, activityLog, partners,
   users, savedPlaces, communityPosts, passwordResetTokens, reports,
   type Place, type InsertPlace,
   type Review, type InsertReview,
+  type Petition, type InsertPetition,
   type Signature, type InsertSignature,
   type Category, type InsertCategory,
   type AccessibilityFeature, type InsertAccessibilityFeature,
@@ -69,16 +70,21 @@ export interface IStorage {
   deleteReview(id: number, userId: number): Promise<boolean>;
   incrementReviewHelpfulCount(id: number): Promise<Review | undefined>;
 
+  // Petitions
+  getPetitions(): Promise<Petition[]>;
+  getPetition(id: number): Promise<Petition | undefined>;
+  createPetition(petition: InsertPetition & { createdBy: number }): Promise<Petition>;
+
   // Signatures
-  getSignatures(): Promise<Signature[]>;
-  getPublicSignatures(): Promise<Signature[]>;
+  getSignatures(petitionId: number): Promise<Signature[]>;
+  getPublicSignatures(petitionId: number): Promise<Signature[]>;
   createSignature(signature: InsertSignature & { userId: number }): Promise<Signature>;
-  getPetitionCount(): Promise<number>;
-  hasUserSigned(userId: number): Promise<boolean>;
-  getUserSignature(userId: number): Promise<Signature | undefined>;
+  getPetitionCount(petitionId: number): Promise<number>;
+  hasUserSigned(userId: number, petitionId: number): Promise<boolean>;
+  getUserSignature(userId: number, petitionId: number): Promise<Signature | undefined>;
 
   // Petition Updates
-  getPetitionUpdates(): Promise<PetitionUpdate[]>;
+  getPetitionUpdates(petitionId: number): Promise<PetitionUpdate[]>;
   createPetitionUpdate(update: InsertPetitionUpdate): Promise<PetitionUpdate>;
 
   // Events
@@ -347,13 +353,28 @@ export class DatabaseStorage implements IStorage {
     return updated;
   }
 
-  // Signatures
-  async getSignatures(): Promise<Signature[]> {
-    return await db.select().from(signatures).orderBy(desc(signatures.signedAt));
+  // Petitions
+  async getPetitions(): Promise<Petition[]> {
+    return await db.select().from(petitions).orderBy(desc(petitions.createdAt));
   }
 
-  async getPublicSignatures(): Promise<Signature[]> {
-    return await db.select().from(signatures).where(eq(signatures.shareConsent, true)).orderBy(desc(signatures.signedAt));
+  async getPetition(id: number): Promise<Petition | undefined> {
+    const [petition] = await db.select().from(petitions).where(eq(petitions.id, id));
+    return petition;
+  }
+
+  async createPetition(petition: InsertPetition & { createdBy: number }): Promise<Petition> {
+    const [newPetition] = await db.insert(petitions).values(petition).returning();
+    return newPetition;
+  }
+
+  // Signatures
+  async getSignatures(petitionId: number): Promise<Signature[]> {
+    return await db.select().from(signatures).where(eq(signatures.petitionId, petitionId)).orderBy(desc(signatures.signedAt));
+  }
+
+  async getPublicSignatures(petitionId: number): Promise<Signature[]> {
+    return await db.select().from(signatures).where(and(eq(signatures.petitionId, petitionId), eq(signatures.shareConsent, true))).orderBy(desc(signatures.signedAt));
   }
 
   async createSignature(signature: InsertSignature & { userId: number }): Promise<Signature> {
@@ -361,24 +382,24 @@ export class DatabaseStorage implements IStorage {
     return newSignature;
   }
 
-  async getPetitionCount(): Promise<number> {
-    const [result] = await db.select({ count: sql<number>`count(*)` }).from(signatures);
+  async getPetitionCount(petitionId: number): Promise<number> {
+    const [result] = await db.select({ count: sql<number>`count(*)` }).from(signatures).where(eq(signatures.petitionId, petitionId));
     return Number(result.count);
   }
 
-  async hasUserSigned(userId: number): Promise<boolean> {
-    const [signature] = await db.select().from(signatures).where(eq(signatures.userId, userId)).limit(1);
+  async hasUserSigned(userId: number, petitionId: number): Promise<boolean> {
+    const [signature] = await db.select().from(signatures).where(and(eq(signatures.userId, userId), eq(signatures.petitionId, petitionId))).limit(1);
     return !!signature;
   }
 
-  async getUserSignature(userId: number): Promise<Signature | undefined> {
-    const [signature] = await db.select().from(signatures).where(eq(signatures.userId, userId)).limit(1);
+  async getUserSignature(userId: number, petitionId: number): Promise<Signature | undefined> {
+    const [signature] = await db.select().from(signatures).where(and(eq(signatures.userId, userId), eq(signatures.petitionId, petitionId))).limit(1);
     return signature;
   }
 
   // Petition Updates
-  async getPetitionUpdates(): Promise<PetitionUpdate[]> {
-    return await db.select().from(petitionUpdates).orderBy(desc(petitionUpdates.createdAt));
+  async getPetitionUpdates(petitionId: number): Promise<PetitionUpdate[]> {
+    return await db.select().from(petitionUpdates).where(eq(petitionUpdates.petitionId, petitionId)).orderBy(desc(petitionUpdates.createdAt));
   }
 
   async createPetitionUpdate(update: InsertPetitionUpdate): Promise<PetitionUpdate> {

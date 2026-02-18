@@ -27,7 +27,7 @@ interface AdminStats {
   totalReviews: number;
   totalMedia: number;
   totalReports: number;
-  totalSignatures: number;
+  totalPetitions: number;
 }
 
 interface PlaceMediaWithName extends PlaceMedia {
@@ -275,7 +275,7 @@ export default function AdminDashboard() {
     { label: "Total Reviews", value: stats?.totalReviews ?? 0, icon: Star, testId: "stat-total-reviews" },
     { label: "Total Photos", value: stats?.totalMedia ?? 0, icon: Camera, testId: "stat-total-photos" },
     { label: "Pending Reports", value: stats?.totalReports ?? 0, icon: Flag, testId: "stat-pending-reports" },
-    { label: "Total Signatures", value: stats?.totalSignatures ?? 0, icon: FileSignature, testId: "stat-total-signatures" },
+    { label: "Total Petitions", value: stats?.totalPetitions ?? 0, icon: FileSignature, testId: "stat-total-petitions" },
   ];
 
   function openEditDialog(place: Place) {

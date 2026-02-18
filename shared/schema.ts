@@ -112,9 +112,23 @@ export const reviews = pgTable("reviews", {
   createdAt: timestamp("created_at").defaultNow(),
 });
 
+// Petitions
+export const petitions = pgTable("petitions", {
+  id: serial("id").primaryKey(),
+  title: text("title").notNull(),
+  description: text("description").notNull(),
+  goalSignatures: integer("goal_signatures").default(1000),
+  createdBy: integer("created_by").references(() => users.id).notNull(),
+  creatorName: text("creator_name"),
+  status: text("status").default("active"),
+  imageUrl: text("image_url"),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
 // Petition signatures
 export const signatures = pgTable("signatures", {
   id: serial("id").primaryKey(),
+  petitionId: integer("petition_id").references(() => petitions.id).notNull(),
   userId: integer("user_id").references(() => users.id).notNull(),
   displayName: text("display_name"),
   city: text("city"),
@@ -122,12 +136,13 @@ export const signatures = pgTable("signatures", {
   shareConsent: boolean("share_consent").default(false),
   signedAt: timestamp("signed_at").defaultNow(),
 }, (table) => [
-  uniqueIndex("signatures_user_unique").on(table.userId),
+  uniqueIndex("signatures_user_petition_unique").on(table.userId, table.petitionId),
 ]);
 
 // Petition updates
 export const petitionUpdates = pgTable("petition_updates", {
   id: serial("id").primaryKey(),
+  petitionId: integer("petition_id").references(() => petitions.id).notNull(),
   title: text("title").notNull(),
   content: text("content").notNull(),
   author: text("author"),
@@ -288,6 +303,7 @@ export const insertAccessibilityFeatureSchema = createInsertSchema(accessibility
 export const insertPlaceMediaSchema = createInsertSchema(placeMedia).omit({ id: true, createdAt: true });
 export const insertPlaceTipSchema = createInsertSchema(placeTips).omit({ id: true, createdAt: true, helpfulCount: true, userId: true });
 export const insertReviewSchema = createInsertSchema(reviews).omit({ id: true, createdAt: true, helpfulCount: true });
+export const insertPetitionSchema = createInsertSchema(petitions).omit({ id: true, createdAt: true, createdBy: true, status: true });
 export const insertSignatureSchema = createInsertSchema(signatures).omit({ id: true, signedAt: true, userId: true });
 export const insertPetitionUpdateSchema = createInsertSchema(petitionUpdates).omit({ id: true, createdAt: true });
 export const insertEventSchema = createInsertSchema(events).omit({ id: true, createdAt: true });
@@ -344,6 +360,9 @@ export type InsertPlaceTip = z.infer<typeof insertPlaceTipSchema>;
 
 export type Review = typeof reviews.$inferSelect;
 export type InsertReview = z.infer<typeof insertReviewSchema>;
+
+export type Petition = typeof petitions.$inferSelect;
+export type InsertPetition = z.infer<typeof insertPetitionSchema>;
 
 export type Signature = typeof signatures.$inferSelect;
 export type InsertSignature = z.infer<typeof insertSignatureSchema>;

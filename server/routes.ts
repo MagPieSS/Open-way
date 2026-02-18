@@ -814,38 +814,92 @@ export async function registerRoutes(
     res.json({ success: true });
   });
 
-  // Petition
-  app.get(api.petition.count.path, async (req, res) => {
-    const total = await storage.getPetitionCount();
+  // ==================== PETITION ROUTES ====================
+
+  // List all petitions
+  app.get(api.petitions.list.path, async (req, res) => {
+    try {
+      const allPetitions = await storage.getPetitions();
+      res.json(allPetitions);
+    } catch (err) {
+      console.error("[PRODUCTION] Failed to load petitions:", err);
+      res.status(500).json({ message: "Failed to load petitions" });
+    }
+  });
+
+  // Get single petition
+  app.get(api.petitions.get.path, async (req, res) => {
+    try {
+      const petition = await storage.getPetition(Number(req.params.id));
+      if (!petition) return res.status(404).json({ message: "Petition not found" });
+      res.json(petition);
+    } catch (err) {
+      console.error("[PRODUCTION] Failed to load petition:", err);
+      res.status(500).json({ message: "Failed to load petition" });
+    }
+  });
+
+  // Create petition (requires auth + CSRF)
+  app.post(api.petitions.create.path, requireAuth, validateCsrf, async (req, res) => {
+    try {
+      const input = api.petitions.create.input.parse(req.body);
+      const petition = await storage.createPetition({
+        title: sanitizeString(input.title, 200),
+        description: sanitizeString(input.description, 5000),
+        goalSignatures: input.goalSignatures,
+        creatorName: input.creatorName ? sanitizeString(input.creatorName, 100) : undefined,
+        imageUrl: input.imageUrl,
+        createdBy: req.session.userId!,
+      });
+      res.status(201).json(petition);
+    } catch (err) {
+      if (err instanceof z.ZodError) {
+        return res.status(400).json({ message: err.errors[0].message });
+      }
+      throw err;
+    }
+  });
+
+  // Get signature count for a petition
+  app.get(api.petitions.count.path, async (req, res) => {
+    const petitionId = Number(req.params.id);
+    const total = await storage.getPetitionCount(petitionId);
     res.json({ total });
   });
 
-  // Check if current user has signed the petition
-  app.get("/api/petition/status", requireAuth, async (req, res) => {
-    const hasSigned = await storage.hasUserSigned(req.session.userId!);
+  // Check if user signed a specific petition (requires auth)
+  app.get(api.petitions.status.path, requireAuth, async (req, res) => {
+    const petitionId = Number(req.params.id);
+    const hasSigned = await storage.hasUserSigned(req.session.userId!, petitionId);
     res.json({ hasSigned });
   });
 
-  // Sign petition (requires authentication, one signature per user)
-  app.post(api.petition.sign.path, requireAuth, validateCsrf, authRateLimiter, async (req, res) => {
+  // Sign a specific petition (requires auth + CSRF + rate limit)
+  app.post(api.petitions.sign.path, requireAuth, validateCsrf, authRateLimiter, async (req, res) => {
     try {
-      // Check if user has already signed
-      const hasSigned = await storage.hasUserSigned(req.session.userId!);
+      const petitionId = Number(req.params.id);
+
+      const petition = await storage.getPetition(petitionId);
+      if (!petition) {
+        return res.status(404).json({ message: "Petition not found" });
+      }
+
+      const hasSigned = await storage.hasUserSigned(req.session.userId!, petitionId);
       if (hasSigned) {
         return res.status(400).json({ message: "You have already signed this petition" });
       }
 
-      const input = api.petition.sign.input.parse(req.body);
-      // Sanitize input and link to user
+      const input = api.petitions.sign.input.parse(req.body);
       const sanitizedInput = {
+        petitionId,
         displayName: input.displayName ? sanitizeString(input.displayName, 100) : undefined,
         city: input.city ? sanitizeString(input.city, 100) : undefined,
         message: input.message ? sanitizeString(input.message, 500) : undefined,
         shareConsent: input.shareConsent,
-        userId: req.session.userId!, // Link signature to user account (guaranteed by requireAuth)
+        userId: req.session.userId!,
       };
       await storage.createSignature(sanitizedInput);
-      const total = await storage.getPetitionCount();
+      const total = await storage.getPetitionCount(petitionId);
       res.json({ total, hasSigned: true });
     } catch (err) {
       if (err instanceof z.ZodError) {
@@ -855,21 +909,46 @@ export async function registerRoutes(
     }
   });
 
-  app.get(api.petition.signatures.path, async (req, res) => {
-    const signatures = await storage.getPublicSignatures();
-    res.json(signatures);
+  // Get public signatures for a petition
+  app.get(api.petitions.signatures.path, async (req, res) => {
+    const petitionId = Number(req.params.id);
+    const limit = req.query.limit ? Number(req.query.limit) : undefined;
+    let sigs = await storage.getPublicSignatures(petitionId);
+    if (limit && limit > 0) {
+      sigs = sigs.slice(0, limit);
+    }
+    res.json(sigs);
   });
 
-  app.get(api.petition.updates.path, async (req, res) => {
-    const updates = await storage.getPetitionUpdates();
+  // Get updates for a petition
+  app.get(api.petitions.updates.path, async (req, res) => {
+    const petitionId = Number(req.params.id);
+    const updates = await storage.getPetitionUpdates(petitionId);
     res.json(updates);
   });
 
-  // Petition Updates (admin only)
-  app.post(api.petitionUpdates.create.path, requireAdmin, validateCsrf, async (req, res) => {
+  // Create update for petition (requires admin OR petition owner + CSRF)
+  app.post(api.petitionUpdates.create.path, requireAuth, validateCsrf, async (req, res) => {
     try {
+      const petitionId = Number(req.params.id);
+      const petition = await storage.getPetition(petitionId);
+      if (!petition) {
+        return res.status(404).json({ message: "Petition not found" });
+      }
+
+      const user = await storage.getUserById(req.session.userId!);
+      const isOwner = petition.createdBy === req.session.userId;
+      const isAdmin = user?.isAdmin === true;
+
+      if (!isOwner && !isAdmin) {
+        return res.status(403).json({ message: "Only the petition owner or an admin can post updates" });
+      }
+
       const input = api.petitionUpdates.create.input.parse(req.body);
-      const update = await storage.createPetitionUpdate(input);
+      const update = await storage.createPetitionUpdate({
+        ...input,
+        petitionId,
+      });
       res.status(201).json(update);
     } catch (err) {
       if (err instanceof z.ZodError) {
@@ -1419,13 +1498,13 @@ export async function registerRoutes(
   // Admin: Dashboard stats
   app.get("/api/admin/stats", requireAdmin, async (req, res) => {
     try {
-      const [allUsers, allPlaces, allReviews, allMedia, pendingReports, allSignatures] = await Promise.all([
+      const [allUsers, allPlaces, allReviews, allMedia, pendingReports, allPetitions] = await Promise.all([
         storage.getAllUsers(),
         storage.getPlaces(),
         storage.getReviews(),
         storage.getAllPlaceMedia(),
         storage.getPendingReports(),
-        storage.getSignatures(),
+        storage.getPetitions(),
       ]);
 
       res.json({
@@ -1434,7 +1513,7 @@ export async function registerRoutes(
         totalReviews: allReviews.length,
         totalMedia: allMedia.length,
         totalReports: pendingReports.length,
-        totalSignatures: allSignatures.length,
+        totalPetitions: allPetitions.length,
       });
     } catch (err: any) {
       res.status(500).json({ message: "Failed to fetch admin stats" });

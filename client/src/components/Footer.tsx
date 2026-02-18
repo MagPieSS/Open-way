@@ -33,7 +33,7 @@ export function Footer() {
               <ul className="space-y-2">
                 <li><Link href="/places" className="text-muted-foreground hover:text-primary transition-colors" data-testid="link-footer-places">Places</Link></li>
                 <li><Link href="/reviews" className="text-muted-foreground hover:text-primary transition-colors" data-testid="link-footer-community">Community</Link></li>
-                <li><Link href="/petition" className="text-muted-foreground hover:text-primary transition-colors" data-testid="link-footer-petition">Petition</Link></li>
+                <li><Link href="/petitions" className="text-muted-foreground hover:text-primary transition-colors" data-testid="link-footer-petition">Petitions</Link></li>
                 <li><Link href="/about" className="text-muted-foreground hover:text-primary transition-colors" data-testid="link-footer-about">About Us</Link></li>
               </ul>
             </div>
@@ -43,7 +43,7 @@ export function Footer() {
               <h4 className="font-bold mb-4 text-foreground">Take Action</h4>
               <ul className="space-y-2">
                 <li><Link href="/submit" className="text-muted-foreground hover:text-primary transition-colors" data-testid="link-footer-submit">Submit a Review</Link></li>
-                <li><Link href="/petition" className="text-muted-foreground hover:text-primary transition-colors" data-testid="link-footer-sign">Sign the Petition</Link></li>
+                <li><Link href="/petitions" className="text-muted-foreground hover:text-primary transition-colors" data-testid="link-footer-sign">Sign a Petition</Link></li>
                 <li><Link href="/settings" className="text-muted-foreground hover:text-primary transition-colors" data-testid="link-footer-settings">Accessibility Settings</Link></li>
               </ul>
             </div>

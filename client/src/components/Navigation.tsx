@@ -36,7 +36,7 @@ export function Navigation() {
     {
       label: "Get Involved",
       items: [
-        { href: "/petition", label: "Petition", icon: Megaphone },
+        { href: "/petitions", label: "Petitions", icon: Megaphone },
         { href: "/events", label: "Events", icon: Calendar },
       ],
     },
