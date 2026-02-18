@@ -1462,6 +1462,7 @@ async function seedDatabase() {
         { name: 'Parks', slug: 'parks', icon: 'Trees', description: 'Parks and outdoor spaces' },
         { name: 'Restaurants', slug: 'restaurants', icon: 'UtensilsCrossed', description: 'Dining establishments' },
         { name: 'Healthcare', slug: 'healthcare', icon: 'Heart', description: 'Medical facilities' },
+        { name: 'Entertainment', slug: 'entertainment', icon: 'Theater', description: 'Entertainment venues' },
       ];
 
       for (const cat of categoryData) {
