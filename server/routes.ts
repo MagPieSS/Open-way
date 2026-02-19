@@ -22,6 +22,7 @@ import {
 } from "./auth";
 import { authRateLimiter, apiRateLimiter, validateCsrf } from "./index";
 import { registerObjectStorageRoutes } from "./integrations/object_storage";
+import { geocodeAddress } from "./geocode";
 
 // Middleware to check if user is authenticated
 function requireAuth(req: Request, res: Response, next: NextFunction) {
@@ -534,6 +535,13 @@ export async function registerRoutes(
   app.post(api.places.create.path, requireAuth, validateCsrf, async (req, res) => {
     try {
       const input = api.places.create.input.parse(req.body);
+      if (input.address && input.latitude == null && input.longitude == null) {
+        const coords = await geocodeAddress(input.address);
+        if (coords) {
+          (input as any).latitude = coords.latitude;
+          (input as any).longitude = coords.longitude;
+        }
+      }
       const place = await storage.createPlace(input);
       res.status(201).json(place);
     } catch (err) {
@@ -1391,6 +1399,14 @@ export async function registerRoutes(
       if (typeof req.body.latitude === "number") updates.latitude = req.body.latitude;
       if (typeof req.body.longitude === "number") updates.longitude = req.body.longitude;
 
+      if (updates.address && typeof req.body.latitude !== "number" && typeof req.body.longitude !== "number") {
+        const coords = await geocodeAddress(updates.address);
+        if (coords) {
+          updates.latitude = coords.latitude;
+          updates.longitude = coords.longitude;
+        }
+      }
+
       const updated = await storage.updatePlace(id, updates);
       res.json(updated);
     } catch (err: any) {
@@ -2051,6 +2067,22 @@ async function migrateProductionData() {
     for (const review of junkReviews) {
       await db.delete(reviewsTable).where(eq(reviewsTable.id, review.id));
       console.log(`Removed junk review id=${review.id}: "${review.content}"`);
+    }
+
+    const placesNeedingCoords = places.filter(p => p.address && (p.latitude === null || p.longitude === null));
+    if (placesNeedingCoords.length > 0) {
+      console.log(`[geocode] Backfilling coordinates for ${placesNeedingCoords.length} places...`);
+      let geocoded = 0;
+      for (const place of placesNeedingCoords) {
+        const coords = await geocodeAddress(place.address!);
+        if (coords) {
+          await storage.updatePlace(place.id, { latitude: coords.latitude, longitude: coords.longitude });
+          geocoded++;
+          console.log(`[geocode] ${place.name}: ${coords.latitude}, ${coords.longitude}`);
+        }
+        await new Promise(resolve => setTimeout(resolve, 1100));
+      }
+      console.log(`[geocode] Backfilled ${geocoded}/${placesNeedingCoords.length} places`);
     }
 
   } catch (error) {
