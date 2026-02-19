@@ -1,7 +1,7 @@
 import { useState, useRef } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { insertPlaceSchema, insertReviewSchema, ACCESSIBILITY_STATUS, type Category } from "@shared/schema";
+import { insertPlaceSchema, insertReviewSchema, ACCESSIBILITY_STATUS, PLACE_CATEGORIES } from "@shared/schema";
 import { useCreatePlace } from "@/hooks/use-places";
 import { useCreateReview } from "@/hooks/use-reviews";
 import { usePlaces } from "@/hooks/use-places";
@@ -9,7 +9,6 @@ import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/hooks/use-auth";
 import { useUpload } from "@/hooks/use-upload";
 import { useLocation } from "wouter";
-import { useQuery } from "@tanstack/react-query";
 import { Loader2, MapPin, MessageSquare, Check, Upload, X, ImageIcon, LogIn } from "lucide-react";
 import { useSettings } from "@/hooks/use-settings";
 import { Button } from "@/components/ui/button";
@@ -96,10 +95,6 @@ function PlaceForm({ textSize }: { textSize: string }) {
   const [uploadedImageUrl, setUploadedImageUrl] = useState<string | null>(null);
   const [imagePreview, setImagePreview] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
-
-  const { data: categories, isLoading: isCategoriesLoading } = useQuery<Category[]>({
-    queryKey: ['/api/categories'],
-  });
 
   const { uploadFile, isUploading, progress } = useUpload({
     onSuccess: (response) => {
@@ -190,24 +185,18 @@ function PlaceForm({ textSize }: { textSize: string }) {
 
       <div>
         <label className="block font-bold mb-2">Category</label>
-        {isCategoriesLoading ? (
-          <div className="flex items-center gap-2 text-muted-foreground p-4">
-            <Loader2 className="w-4 h-4 animate-spin" /> Loading categories...
-          </div>
-        ) : (
-          <select
-            {...form.register("category")}
-            className="w-full p-4 rounded-md border-2 border-border bg-background focus:ring-2 focus:ring-primary focus:border-transparent outline-none transition-all appearance-none"
-            data-testid="select-place-category"
-          >
-            <option value="">Select a category...</option>
-            {categories?.map((cat) => (
-              <option key={cat.id} value={cat.slug}>
-                {cat.name}
-              </option>
-            ))}
-          </select>
-        )}
+        <select
+          {...form.register("category")}
+          className="w-full p-4 rounded-md border-2 border-border bg-background focus:ring-2 focus:ring-primary focus:border-transparent outline-none transition-all appearance-none"
+          data-testid="select-place-category"
+        >
+          <option value="">Select a category...</option>
+          {PLACE_CATEGORIES.map((cat) => (
+            <option key={cat.slug} value={cat.slug}>
+              {cat.name}
+            </option>
+          ))}
+        </select>
         {form.formState.errors.category && <p className="text-destructive text-sm mt-1">{form.formState.errors.category.message}</p>}
       </div>
 
