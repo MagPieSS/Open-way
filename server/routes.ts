@@ -6,7 +6,7 @@ import { api } from "@shared/routes";
 import { z } from "zod";
 import { eq } from "drizzle-orm";
 import { randomBytes } from "crypto";
-import { ACCESSIBILITY_STATUS, ACCESSIBILITY_FEATURE_TYPES, insertUserSchema, loginSchema, forgotPasswordSchema, resetPasswordSchema, blogPosts as blogPostsTable, reviews as reviewsTable } from "@shared/schema";
+import { ACCESSIBILITY_STATUS, ACCESSIBILITY_FEATURE_TYPES, insertUserSchema, loginSchema, forgotPasswordSchema, resetPasswordSchema, blogPosts as blogPostsTable, reviews as reviewsTable, places as placesTable, communityPosts as communityPostsTable } from "@shared/schema";
 import { 
   registerUser, 
   loginUser, 
@@ -2016,23 +2016,243 @@ async function migrateProductionData() {
       console.log(`Migrated ${updated} place image URLs to local paths`);
     }
 
-    const placeNames = places.map(p => p.name);
-    if (!placeNames.includes('Parkway Central Library')) {
-      await storage.createPlace({
+    const placeCorrections: Record<string, { accessibilityStatus?: string; description?: string; name?: string }> = {
+      'Philadelphia Museum of Art': {
+        accessibilityStatus: 'Not Accessible',
+        description: 'World-class art museum with limited accessibility. Many galleries lack elevator access, historic staircases present barriers.',
+      },
+      'Free Library of Philadelphia - Main Branch': {
+        accessibilityStatus: 'Partially Accessible',
+        description: 'Historic research library with some accessibility features. Elevator access available but not to all areas.',
+      },
+      'SEPTA - Market-Frankford Station': {
+        name: 'SEPTA Train Stations',
+        accessibilityStatus: 'Partially Accessible',
+        description: 'Major transit system with mixed accessibility. Some stations have elevators, but many older stations lack full accessibility.',
+      },
+    };
+
+    for (const place of places) {
+      const correction = placeCorrections[place.name] || placeCorrections[place.name.trim()];
+      if (correction) {
+        const updates: Record<string, any> = {};
+        if (correction.accessibilityStatus && place.accessibilityStatus !== correction.accessibilityStatus) {
+          updates.accessibilityStatus = correction.accessibilityStatus;
+        }
+        if (correction.description && place.description !== correction.description) {
+          updates.description = correction.description;
+        }
+        if (correction.name && place.name !== correction.name) {
+          updates.name = correction.name;
+        }
+        if (Object.keys(updates).length > 0) {
+          await storage.updatePlace(place.id, updates);
+          console.log(`[sync] Updated ${place.name}: ${Object.keys(updates).join(', ')}`);
+        }
+      }
+    }
+
+    const placeNames = places.map(p => p.name.trim());
+
+    const missingPlaces: Array<{
+      name: string; category: string; accessibilityStatus: string; description: string;
+      imageUrl: string; address: string; latitude: number; longitude: number;
+      phone?: string; website?: string; hours?: string; isFeatured?: boolean;
+    }> = [
+      {
         name: 'Parkway Central Library',
         category: 'libraries',
         accessibilityStatus: 'Not Accessible',
         description: 'Historic Beaux-Arts building with significant accessibility barriers. Multiple levels without elevator access, heavy entrance doors, and limited accessible seating.',
         imageUrl: '/images/places/parkway-library.jpg',
         address: '1901 Vine Street, Philadelphia, PA 19103',
-        latitude: 39.9543,
-        longitude: -75.1658,
-        phone: '(215) 686-5322',
-        website: 'https://libwww.freelibrary.org',
-        hours: 'Mon-Fri 9am-6pm, Sat 10am-5pm',
-        isFeatured: false,
-      });
-      console.log('Added missing Parkway Central Library place');
+        latitude: 39.9599, longitude: -75.1716,
+        phone: '(215) 686-5322', website: 'https://libwww.freelibrary.org',
+        hours: 'Mon-Fri 9am-6pm, Sat 10am-5pm', isFeatured: false,
+      },
+      {
+        name: "Bartram's Garden",
+        category: 'parks',
+        accessibilityStatus: 'Partially Accessible',
+        description: "It has wide areas to roam but some paths are made of stone so it might be difficult to navigate. Bathrooms are wide but don't have automatic doors. Audio descriptions are available for visitors who are blind or have low vision.",
+        imageUrl: '/objects/uploads/f2df3afd-2473-469c-b586-7ae1e3e6a709',
+        address: '5400 Lindbergh Blvd, Philadelphia, PA 19143',
+        latitude: 39.933342, longitude: -75.215546,
+      },
+      {
+        name: "Philadelphia's Magic Gardens",
+        category: 'parks',
+        accessibilityStatus: 'Partially Accessible',
+        description: 'Offers wheelchair access to the indoor galleries and main ground-level areas. However, the outdoor sculpture garden features uneven, narrow, and stepped, multi-level paths that are not fully accessible. Free sensory bags, touch tours, and loans of manual wheelchairs/rollators are available. A wheelchair-accessible entrance is located on South Street. There is a wheelchair-accessible, single-stall, gender-neutral restroom in the back gallery.',
+        imageUrl: '/objects/uploads/fbf4c3b0-e334-4218-934d-41fcad56b70b',
+        address: '1020 South St, Philadelphia, PA 19147',
+        latitude: 39.94277, longitude: -75.15941,
+      },
+      {
+        name: "Talula's Garden",
+        category: 'restaurants',
+        accessibilityStatus: 'Accessible',
+        description: 'Highly rated farm-to-table restaurant with accessible dining areas and garden seating. Offers seasonal menus in a relaxed but refined setting',
+        imageUrl: '/objects/uploads/b76e60b9-eff5-43ef-81ab-f3bd14ce4bd7',
+        address: '210 W Washington Square, Philadelphia, PA 19106',
+        latitude: 39.94728, longitude: -75.15363,
+      },
+      {
+        name: 'The Dandelion',
+        category: 'restaurants',
+        accessibilityStatus: 'Partially Accessible',
+        description: 'Features a wheelchair-accessible entrance and restrooms, but it lacks an elevator for its multi-level, stair-filled layout. Guests with mobility concerns should specifically request a ground-floor table when making reservations.',
+        imageUrl: '/objects/uploads/8cfcbfb8-d166-4eb2-8d32-beb452387073',
+        address: '124 S 18th St, Philadelphia, PA 19103',
+        latitude: 39.951015, longitude: -75.17074,
+      },
+      {
+        name: "Grandma's Philly",
+        category: 'restaurants',
+        accessibilityStatus: 'Partially Accessible',
+        description: 'Has wheelchair accessibility however there are no other accessibility features',
+        imageUrl: '/objects/uploads/41d13ff2-fcce-4529-997c-009439af005e',
+        address: '1304 Walnut St, Philadelphia, PA 19107',
+        latitude: 39.94903, longitude: -75.16241,
+      },
+      {
+        name: 'Opera Philadelphia',
+        category: 'entertainment',
+        accessibilityStatus: 'Accessible',
+        description: 'Offers wheelchair-accessible seating, assistive listening devices, captions (supertitles), and accessible programs at performances in the Academy of Music.',
+        imageUrl: '/objects/uploads/2ba02358-85ed-468a-b409-5592abad1224',
+        address: '1420 Locust St, Philadelphia, PA 19102',
+        latitude: 39.9477, longitude: -75.1651,
+      },
+      {
+        name: 'The Met Philadelphia',
+        category: 'entertainment',
+        accessibilityStatus: 'Accessible',
+        description: 'Concert and event venue — all floor levels are wheelchair-accessible by elevator, with accessible entrances and parking.',
+        imageUrl: '/objects/uploads/85c928ec-79e0-4153-9b4a-0316d3343f24',
+        address: '858 N Broad St, Philadelphia, PA 19130',
+        latitude: 39.966045, longitude: -75.16063,
+      },
+      {
+        name: 'The Trestle Inn',
+        category: 'entertainment',
+        accessibilityStatus: 'Accessible',
+        description: 'Classic craft cocktail bar with accessible walk ways and bathrooms.',
+        imageUrl: '/objects/uploads/113554d8-450d-4bfa-993c-7e09e57fd4c3',
+        address: '339 N 11th St, Philadelphia, PA 19107',
+        latitude: 39.95875, longitude: -75.15655,
+      },
+      {
+        name: 'El Vez',
+        category: 'restaurants',
+        accessibilityStatus: 'Partially Accessible',
+        description: 'Popular Mexican-inspired restaurant and bar. Has wide isles for physical accommodations but there are no other accessibility features',
+        imageUrl: '/objects/uploads/765dec84-fcbf-4b91-9fa6-6ae9ea446c74',
+        address: '121 S 13th St, Philadelphia, PA 19107',
+        latitude: 39.949703, longitude: -75.161896,
+      },
+      {
+        name: "Saad's Halal Restaurant",
+        category: 'restaurants',
+        accessibilityStatus: 'Accessible',
+        description: 'Reported to be physically accessible, including wheelchair-accessible seating and space inside the restaurant. Multiple online listings note that the venue has accessible seating and is suitable for dine-in visitors with mobility needs. Serves halal dishes and even a halal Philly cheesesteak.',
+        imageUrl: '/objects/uploads/84e5ad1f-5110-4ede-bea3-3c624e4c7cd6',
+        address: '4500 Walnut St, Philadelphia, PA 19139',
+        latitude: 39.955414, longitude: -75.21161,
+      },
+    ];
+
+    let placesAdded = 0;
+    for (const mp of missingPlaces) {
+      if (!placeNames.includes(mp.name)) {
+        await storage.createPlace(mp);
+        placesAdded++;
+        console.log(`[sync] Added place: ${mp.name}`);
+      }
+    }
+    if (placesAdded > 0) {
+      console.log(`[sync] Added ${placesAdded} missing places`);
+    }
+
+    const allReviews = await db.select().from(reviewsTable);
+    const junkReviews = allReviews.filter((r: { id: number; content: string | null; rating: number | null; authorName: string | null }) =>
+      r.content === 'attempt to add tip' || (!r.rating && !r.authorName && (r.content?.length ?? 0) < 20)
+    );
+    for (const review of junkReviews) {
+      await db.delete(reviewsTable).where(eq(reviewsTable.id, review.id));
+      console.log(`[sync] Removed junk review id=${review.id}: "${review.content}"`);
+    }
+
+    const reviewContents = allReviews.map(r => r.content);
+    const missingReviews: Array<{ placeId: number; content: string; authorName: string; rating: number }> = [
+      {
+        placeId: 2, // Free Library
+        content: 'Staff was amazing and helpful! It was beautiful and super wheelchair friendly!',
+        authorName: 'Sumayah R.',
+        rating: 5,
+      },
+      {
+        placeId: 7, // Reading Terminal Market
+        content: 'Great! Very disability friendly and super fun!',
+        authorName: 'Rose Q.',
+        rating: 5,
+      },
+      {
+        placeId: 1, // Philadelphia Museum of Art
+        content: 'Not physical disability friendly at all!',
+        authorName: 'Leon K.',
+        rating: 1,
+      },
+      {
+        placeId: 1, // Philadelphia Museum of Art
+        content: 'This place is awesome!!',
+        authorName: '',
+        rating: 5,
+      },
+    ];
+
+    let reviewsAdded = 0;
+    for (const mr of missingReviews) {
+      if (!reviewContents.includes(mr.content)) {
+        await db.insert(reviewsTable).values(mr);
+        reviewsAdded++;
+        console.log(`[sync] Added review by ${mr.authorName || 'anonymous'} for place ${mr.placeId}`);
+      }
+    }
+
+    const refreshedPlaces = await storage.getPlaces();
+    const grandmasPhilly = refreshedPlaces.find(p => p.name === "Grandma's Philly");
+    if (grandmasPhilly) {
+      const grandmasReviewContent = 'Amazing food and staff! Make sure to call ahead of time if you can just to ensure they have room for accommodations.';
+      const existingReviews = await db.select().from(reviewsTable);
+      if (!existingReviews.some(r => r.content === grandmasReviewContent)) {
+        await db.insert(reviewsTable).values({
+          placeId: grandmasPhilly.id,
+          content: grandmasReviewContent,
+          authorName: '',
+          rating: 5,
+        });
+        reviewsAdded++;
+        console.log(`[sync] Added review for Grandma's Philly`);
+      }
+    }
+
+    if (reviewsAdded > 0) {
+      console.log(`[sync] Added ${reviewsAdded} missing reviews`);
+    }
+
+    const existingPosts = await db.select().from(communityPostsTable);
+    const targetPostContent = 'Hey! Do you know any wheelchair accessible places to go eat?';
+    const existingPost = existingPosts.find(p => p.content === targetPostContent);
+    if (!existingPost) {
+      const wrongPost = existingPosts.find(p => p.content === 'what do you think about accessibility?');
+      if (wrongPost) {
+        await db.update(communityPostsTable).set({
+          content: targetPostContent,
+          authorName: 'Allison Gregg',
+        }).where(eq(communityPostsTable.id, wrongPost.id));
+        console.log(`[sync] Updated community post to match dev`);
+      }
     }
 
     const blogImageMap: Record<string, string> = {
@@ -2060,16 +2280,8 @@ async function migrateProductionData() {
       console.log(`Removed test blog post: "${post.title}"`);
     }
 
-    const allReviews = await db.select().from(reviewsTable);
-    const junkReviews = allReviews.filter((r: { id: number; content: string | null; rating: number | null; authorName: string | null }) =>
-      r.content === 'attempt to add tip' || (!r.rating && !r.authorName && (r.content?.length ?? 0) < 20)
-    );
-    for (const review of junkReviews) {
-      await db.delete(reviewsTable).where(eq(reviewsTable.id, review.id));
-      console.log(`Removed junk review id=${review.id}: "${review.content}"`);
-    }
-
-    const placesNeedingCoords = places.filter(p => p.address && (p.latitude === null || p.longitude === null));
+    const refreshedPlaces2 = await storage.getPlaces();
+    const placesNeedingCoords = refreshedPlaces2.filter(p => p.address && (p.latitude === null || p.longitude === null));
     if (placesNeedingCoords.length > 0) {
       console.log(`[geocode] Backfilling coordinates for ${placesNeedingCoords.length} places...`);
       let geocoded = 0;
