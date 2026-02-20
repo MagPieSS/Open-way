@@ -6,7 +6,7 @@ import { api } from "@shared/routes";
 import { z } from "zod";
 import { eq } from "drizzle-orm";
 import { randomBytes } from "crypto";
-import { ACCESSIBILITY_STATUS, ACCESSIBILITY_FEATURE_TYPES, insertUserSchema, loginSchema, forgotPasswordSchema, resetPasswordSchema, blogPosts as blogPostsTable, reviews as reviewsTable, places as placesTable, communityPosts as communityPostsTable } from "@shared/schema";
+import { ACCESSIBILITY_STATUS, ACCESSIBILITY_FEATURE_TYPES, insertUserSchema, loginSchema, forgotPasswordSchema, resetPasswordSchema, blogPosts as blogPostsTable, reviews as reviewsTable, places as placesTable, communityPosts as communityPostsTable, users } from "@shared/schema";
 import { 
   registerUser, 
   loginUser, 
@@ -2252,6 +2252,41 @@ async function migrateProductionData() {
           authorName: 'Allison Gregg',
         }).where(eq(communityPostsTable.id, wrongPost.id));
         console.log(`[sync] Updated community post to match dev`);
+      }
+    }
+
+    const allUsers = await db.select({ id: users.id }).from(users).limit(1);
+    if (allUsers.length === 0) {
+      console.log('[sync] No users found, skipping community post seeding');
+    }
+    const seedUserId = allUsers[0]?.id;
+
+    const seedPosts = [
+      { content: 'Just visited the Philadelphia Museum of Art — the ramp entrance on the north side is great, but the restrooms on the second floor still need work. Has anyone else noticed this?', authorName: 'Marcus Thompson' },
+      { content: 'PSA: SEPTA just added audio announcements on the Broad Street Line! It makes such a difference for riders who are blind or low vision.', authorName: 'Jamie Rivera' },
+      { content: 'Looking for recommendations for accessible playgrounds in the Philly area. My daughter uses a power wheelchair and we want to find inclusive parks. Any favorites?', authorName: 'Danielle Park' },
+      { content: 'Had an amazing experience at Reading Terminal Market today. The aisles are wide enough for my scooter and the vendors were all super helpful. Highly recommend!', authorName: 'Robert Chen' },
+      { content: 'Does anyone know if the new Comcast Center building has braille signage? Planning a visit next week and want to be prepared.', authorName: 'Samira Okafor' },
+      { content: 'Shoutout to the staff at the Free Library of Philadelphia — they helped me set up screen reader software on their public computers. True accessibility champions!', authorName: 'Tyler Washington' },
+      { content: 'Frustrated that so many restaurant patios in Center City have steps and no ramps. We need to keep pushing for change. Anyone interested in starting a letter-writing campaign?', authorName: 'Nina Gonzalez' },
+      { content: 'Took my service dog to Rittenhouse Square today and had zero issues. The park paths are smooth and well-maintained. Great spot for everyone!', authorName: 'Chris Adler' },
+    ];
+
+    let postsAdded = 0;
+    if (seedUserId) {
+      for (const post of seedPosts) {
+        const exists = existingPosts.find(p => p.content === post.content);
+        if (!exists) {
+          await db.insert(communityPostsTable).values({
+            userId: seedUserId,
+            content: post.content,
+            authorName: post.authorName,
+          });
+          postsAdded++;
+        }
+      }
+      if (postsAdded > 0) {
+        console.log(`[sync] Added ${postsAdded} community posts`);
       }
     }
 

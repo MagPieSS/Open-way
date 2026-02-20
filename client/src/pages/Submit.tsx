@@ -9,7 +9,7 @@ import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/hooks/use-auth";
 import { useUpload } from "@/hooks/use-upload";
 import { useLocation } from "wouter";
-import { Loader2, MapPin, MessageSquare, Check, Upload, X, ImageIcon, LogIn } from "lucide-react";
+import { Loader2, MapPin, MessageSquare, Check, Upload, X, ImageIcon, LogIn, Star } from "lucide-react";
 import { useSettings } from "@/hooks/use-settings";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -334,22 +334,64 @@ function PlaceForm({ textSize }: { textSize: string }) {
   );
 }
 
+function StarRating({ value, onChange }: { value: number; onChange: (rating: number) => void }) {
+  const [hovered, setHovered] = useState(0);
+
+  return (
+    <div className="flex items-center gap-1" data-testid="star-rating-picker">
+      {[1, 2, 3, 4, 5].map((star) => (
+        <button
+          key={star}
+          type="button"
+          onClick={() => onChange(star)}
+          onMouseEnter={() => setHovered(star)}
+          onMouseLeave={() => setHovered(0)}
+          className="p-1 transition-transform hover:scale-110 focus:outline-none focus:ring-2 focus:ring-primary rounded"
+          aria-label={`Rate ${star} star${star > 1 ? "s" : ""}`}
+          data-testid={`star-rating-${star}`}
+        >
+          <Star
+            className={`w-8 h-8 transition-colors ${
+              star <= (hovered || value)
+                ? "text-yellow-500 fill-yellow-500"
+                : "text-muted-foreground/30"
+            }`}
+          />
+        </button>
+      ))}
+      {value > 0 && (
+        <span className="ml-2 text-sm text-muted-foreground" data-testid="text-rating-label">
+          {value === 1 ? "Poor" : value === 2 ? "Fair" : value === 3 ? "Good" : value === 4 ? "Very Good" : "Excellent"}
+        </span>
+      )}
+    </div>
+  );
+}
+
 function ReviewForm({ textSize, preselectedPlaceId }: { textSize: string, preselectedPlaceId: string | null }) {
   const { toast } = useToast();
   const [, setLocation] = useLocation();
   const createReview = useCreateReview();
   const { data: places } = usePlaces();
 
-  const form = useForm<z.infer<typeof insertReviewSchema>>({
-    resolver: zodResolver(insertReviewSchema.extend({ placeId: z.coerce.number() })),
+  const reviewSchema = insertReviewSchema.extend({
+    placeId: z.coerce.number(),
+    rating: z.number().min(1, "Please select a star rating").max(5),
+  });
+
+  const form = useForm<z.infer<typeof reviewSchema>>({
+    resolver: zodResolver(reviewSchema),
     defaultValues: {
       placeId: preselectedPlaceId ? Number(preselectedPlaceId) : undefined,
       content: "",
+      rating: 0,
       imageUrl: "",
     },
   });
 
-  const onSubmit = (data: z.infer<typeof insertReviewSchema>) => {
+  const rating = form.watch("rating") || 0;
+
+  const onSubmit = (data: z.infer<typeof reviewSchema>) => {
     createReview.mutate(data, {
       onSuccess: () => {
         toast({
@@ -385,6 +427,12 @@ function ReviewForm({ textSize, preselectedPlaceId }: { textSize: string, presel
           ))}
         </select>
         {form.formState.errors.placeId && <p className="text-destructive text-sm mt-1">{form.formState.errors.placeId.message}</p>}
+      </div>
+
+      <div>
+        <label className="block font-bold mb-2">Your Rating</label>
+        <StarRating value={rating} onChange={(val) => form.setValue("rating", val, { shouldValidate: true })} />
+        {form.formState.errors.rating && <p className="text-destructive text-sm mt-1">{form.formState.errors.rating.message}</p>}
       </div>
 
       <div>
