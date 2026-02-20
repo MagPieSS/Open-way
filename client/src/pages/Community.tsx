@@ -6,7 +6,7 @@ import { useToast } from "@/hooks/use-toast";
 import { Textarea } from "@/components/ui/textarea";
 import { 
   MessageSquare, User, Quote,
-  Filter, BarChart3
+  BarChart3, Reply, ChevronDown, ChevronUp, Send
 } from "lucide-react";
 import { format } from "date-fns";
 import { SectionLabel } from "@/components/SectionLabel";
@@ -29,6 +29,181 @@ const SORT_OPTIONS = [
   { label: "Oldest", value: "oldest" },
 ];
 
+function CommentItem({ 
+  comment, 
+  textSize 
+}: { 
+  comment: CommunityPost; 
+  textSize: string;
+}) {
+  return (
+    <div className="flex gap-3 py-3" data-testid={`comment-${comment.id}`}>
+      <div className="w-7 h-7 rounded-full bg-secondary flex items-center justify-center flex-shrink-0 mt-0.5">
+        <User className="w-3.5 h-3.5 text-muted-foreground" />
+      </div>
+      <div className="flex-1 min-w-0">
+        <div className="flex items-center gap-2 mb-1">
+          <span className="font-semibold text-xs text-foreground" data-testid={`text-comment-author-${comment.id}`}>
+            {comment.authorName || "Community Member"}
+          </span>
+          <span className="text-[10px] text-muted-foreground">
+            {format(new Date(comment.createdAt || new Date()), "MMM d, yyyy")}
+          </span>
+        </div>
+        <p className={`text-muted-foreground text-sm leading-relaxed`} data-testid={`text-comment-content-${comment.id}`}>
+          {comment.content}
+        </p>
+      </div>
+    </div>
+  );
+}
+
+function PostCard({ 
+  post, 
+  replies, 
+  textSize, 
+  user,
+  onReply
+}: { 
+  post: CommunityPost; 
+  replies: CommunityPost[];
+  textSize: string;
+  user: any;
+  onReply: (parentId: number, content: string) => Promise<void>;
+}) {
+  const [showReplies, setShowReplies] = useState(false);
+  const [replyOpen, setReplyOpen] = useState(false);
+  const [replyContent, setReplyContent] = useState("");
+  const [isSubmitting, setIsSubmitting] = useState(false);
+
+  const handleSubmitReply = async () => {
+    if (!replyContent.trim()) return;
+    setIsSubmitting(true);
+    try {
+      await onReply(post.id, replyContent);
+      setReplyContent("");
+      setReplyOpen(false);
+      setShowReplies(true);
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  return (
+    <Card
+      className="hover-elevate transition-all"
+      data-testid={`card-community-post-${post.id}`}
+    >
+      <CardContent className="p-6">
+        <div className="flex items-start justify-between gap-4 mb-4">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-full bg-accent/10 flex items-center justify-center">
+              <User className="w-5 h-5 text-accent" />
+            </div>
+            <div>
+              <h3 className="font-bold text-sm" data-testid={`text-author-${post.id}`}>
+                {post.authorName || "Community Member"}
+              </h3>
+              <p className="text-xs text-muted-foreground">
+                {format(new Date(post.createdAt || new Date()), "MMMM d, yyyy")}
+              </p>
+            </div>
+          </div>
+          <Badge variant="secondary" className="text-[10px]">Discussion</Badge>
+        </div>
+
+        <div className="relative mb-4">
+          <Quote className="w-6 h-6 text-primary/5 absolute -top-1 -left-2" />
+          <p className={`relative z-10 text-muted-foreground leading-relaxed text-${textSize}`}>
+            {post.content}
+          </p>
+        </div>
+
+        <div className="flex items-center justify-between pt-4 border-t border-border">
+          <div className="flex items-center gap-3">
+            <button
+              onClick={() => {
+                if (replies.length > 0) setShowReplies(!showReplies);
+                setReplyOpen(!replyOpen);
+              }}
+              className="flex items-center gap-1.5 text-xs text-muted-foreground transition-colors hover:text-primary"
+              data-testid={`button-reply-${post.id}`}
+            >
+              <Reply className="w-3.5 h-3.5" />
+              Reply
+            </button>
+            {replies.length > 0 && (
+              <button
+                onClick={() => setShowReplies(!showReplies)}
+                className="flex items-center gap-1 text-xs text-primary font-medium transition-colors hover:text-primary/80"
+                data-testid={`button-toggle-comments-${post.id}`}
+              >
+                {showReplies ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
+                {replies.length} {replies.length === 1 ? "comment" : "comments"}
+              </button>
+            )}
+          </div>
+          <ReportButton
+            contentType="community_post"
+            contentId={post.id}
+          />
+        </div>
+
+        {showReplies && replies.length > 0 && (
+          <div className="mt-4 pl-4 border-l-2 border-primary/10 space-y-0 divide-y divide-border" data-testid={`comments-list-${post.id}`}>
+            {replies.map((reply) => (
+              <CommentItem key={reply.id} comment={reply} textSize={textSize} />
+            ))}
+          </div>
+        )}
+
+        {replyOpen && (
+          <div className="mt-4 pt-4 border-t border-border" data-testid={`reply-form-${post.id}`}>
+            {user ? (
+              <div className="flex gap-3">
+                <div className="w-7 h-7 rounded-full bg-primary/10 flex items-center justify-center flex-shrink-0 mt-1">
+                  <User className="w-3.5 h-3.5 text-primary" />
+                </div>
+                <div className="flex-1">
+                  <Textarea
+                    placeholder="Write a comment..."
+                    value={replyContent}
+                    onChange={(e) => setReplyContent(e.target.value)}
+                    className="min-h-[60px] text-sm mb-2"
+                    data-testid={`input-reply-${post.id}`}
+                  />
+                  <div className="flex justify-end gap-2">
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => { setReplyOpen(false); setReplyContent(""); }}
+                      data-testid={`button-cancel-reply-${post.id}`}
+                    >
+                      Cancel
+                    </Button>
+                    <Button
+                      size="sm"
+                      onClick={handleSubmitReply}
+                      disabled={isSubmitting || !replyContent.trim()}
+                      data-testid={`button-submit-reply-${post.id}`}
+                    >
+                      {isSubmitting ? "Posting..." : <><Send className="w-3.5 h-3.5 mr-1.5" /> Comment</>}
+                    </Button>
+                  </div>
+                </div>
+              </div>
+            ) : (
+              <p className="text-sm text-muted-foreground text-center py-2">
+                Please <a href="/login" className="text-primary underline">sign in</a> to comment.
+              </p>
+            )}
+          </div>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
 export default function Community() {
   const queryClient = useQueryClient();
   const { toast } = useToast();
@@ -43,29 +218,59 @@ export default function Community() {
   const [sortBy, setSortBy] = useState("newest");
 
   const postMutation = useMutation({
-    mutationFn: async (newPost: { content: string }) => {
+    mutationFn: async (newPost: { content: string; parentId?: number }) => {
       return apiRequest("POST", "/api/community/posts", newPost);
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/community/posts"] });
-      setPostContent("");
-      toast({ title: "Post created successfully!" });
     },
     onError: () => {
       toast({ variant: "destructive", title: "Failed to post. Please log in." });
     },
   });
 
-  const sortedPosts = useMemo(() => {
+  const handleReply = async (parentId: number, content: string) => {
+    try {
+      await postMutation.mutateAsync({ content, parentId });
+      toast({ title: "Comment posted!" });
+    } catch {
+      toast({ variant: "destructive", title: "Failed to post comment. Please try again." });
+    }
+  };
+
+  const topLevelPosts = useMemo(() => {
     if (!communityPosts) return [];
-    const sorted = [...communityPosts];
+    return communityPosts.filter(p => !p.parentId);
+  }, [communityPosts]);
+
+  const repliesByParent = useMemo(() => {
+    if (!communityPosts) return new Map<number, CommunityPost[]>();
+    const map = new Map<number, CommunityPost[]>();
+    for (const post of communityPosts) {
+      if (post.parentId) {
+        const existing = map.get(post.parentId) || [];
+        existing.push(post);
+        map.set(post.parentId, existing);
+      }
+    }
+    Array.from(map.entries()).forEach(([_key, replies]) => {
+      replies.sort((a: CommunityPost, b: CommunityPost) => new Date(a.createdAt || 0).getTime() - new Date(b.createdAt || 0).getTime());
+    });
+    return map;
+  }, [communityPosts]);
+
+  const sortedPosts = useMemo(() => {
+    const sorted = [...topLevelPosts];
     if (sortBy === "newest") {
       sorted.sort((a, b) => new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime());
     } else {
       sorted.sort((a, b) => new Date(a.createdAt || 0).getTime() - new Date(b.createdAt || 0).getTime());
     }
     return sorted;
-  }, [communityPosts, sortBy]);
+  }, [topLevelPosts, sortBy]);
+
+  const topLevelCount = topLevelPosts.length;
+  const totalComments = (communityPosts?.length || 0) - topLevelCount;
 
   return (
     <div className="min-h-screen bg-background">
@@ -96,7 +301,14 @@ export default function Community() {
               data-testid="input-post-content"
             />
             <Button 
-              onClick={() => postMutation.mutate({ content: postContent })}
+              onClick={() => {
+                postMutation.mutate({ content: postContent }, {
+                  onSuccess: () => {
+                    setPostContent("");
+                    toast({ title: "Post created successfully!" });
+                  }
+                });
+              }}
               disabled={postMutation.isPending || !postContent.trim()}
               className="w-full sm:w-auto"
               data-testid="button-submit-post"
@@ -110,7 +322,12 @@ export default function Community() {
           <div className="flex items-center gap-2">
             <BarChart3 className="w-4 h-4 text-primary" />
             <span className="text-sm font-semibold text-foreground" data-testid="text-post-count">
-              {communityPosts?.length || 0} {(communityPosts?.length || 0) === 1 ? "Post" : "Posts"}
+              {topLevelCount} {topLevelCount === 1 ? "Post" : "Posts"}
+              {totalComments > 0 && (
+                <span className="text-muted-foreground font-normal ml-1">
+                  ({totalComments} {totalComments === 1 ? "comment" : "comments"})
+                </span>
+              )}
             </span>
           </div>
           <div className="flex items-center gap-2">
@@ -158,48 +375,14 @@ export default function Community() {
         ) : (
           <div className="space-y-4">
             {sortedPosts.map((post) => (
-              <Card
+              <PostCard
                 key={post.id}
-                className="hover-elevate transition-all"
-                data-testid={`card-community-post-${post.id}`}
-              >
-                <CardContent className="p-6">
-                  <div className="flex items-start justify-between gap-4 mb-4">
-                    <div className="flex items-center gap-3">
-                      <div className="w-10 h-10 rounded-full bg-accent/10 flex items-center justify-center">
-                        <User className="w-5 h-5 text-accent" />
-                      </div>
-                      <div>
-                        <h3 className="font-bold text-sm" data-testid={`text-author-${post.id}`}>
-                          {post.authorName || "Community Member"}
-                        </h3>
-                        <p className="text-xs text-muted-foreground">
-                          {format(new Date(post.createdAt || new Date()), "MMMM d, yyyy")}
-                        </p>
-                      </div>
-                    </div>
-                    <Badge variant="secondary" className="text-[10px]">Discussion</Badge>
-                  </div>
-
-                  <div className="relative mb-4">
-                    <Quote className="w-6 h-6 text-primary/5 absolute -top-1 -left-2" />
-                    <p className={`relative z-10 text-muted-foreground leading-relaxed text-${textSize}`}>
-                      {post.content}
-                    </p>
-                  </div>
-
-                  <div className="flex items-center justify-between pt-4 border-t border-border">
-                    <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                      <MessageSquare className="w-3 h-3" />
-                      General Discussion
-                    </div>
-                    <ReportButton
-                      contentType="community_post"
-                      contentId={post.id}
-                    />
-                  </div>
-                </CardContent>
-              </Card>
+                post={post}
+                replies={repliesByParent.get(post.id) || []}
+                textSize={textSize}
+                user={user}
+                onReply={handleReply}
+              />
             ))}
           </div>
         )}
