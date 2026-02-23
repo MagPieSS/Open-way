@@ -844,7 +844,7 @@ export async function registerRoutes(
       if (petition.status !== "active") {
         const userId = req.session?.userId;
         const isOwner = userId && petition.createdBy === userId;
-        const isAdmin = userId ? (await storage.getUser(userId))?.isAdmin : false;
+        const isAdmin = userId ? (await storage.getUserById(userId))?.isAdmin : false;
         if (!isOwner && !isAdmin) {
           return res.status(404).json({ message: "Petition not found" });
         }
@@ -999,15 +999,33 @@ export async function registerRoutes(
   });
 
   app.get(api.events.get.path, async (req, res) => {
-    const event = await storage.getEvent(Number(req.params.id));
-    if (!event) return res.status(404).json({ message: "Event not found" });
-    res.json(event);
+    try {
+      const event = await storage.getEvent(Number(req.params.id));
+      if (!event) return res.status(404).json({ message: "Event not found" });
+
+      if (event.status !== "active") {
+        const userId = req.session?.userId;
+        const isOwner = userId && event.createdBy === userId;
+        const isAdmin = userId ? (await storage.getUserById(userId))?.isAdmin : false;
+        if (!isOwner && !isAdmin) {
+          return res.status(404).json({ message: "Event not found" });
+        }
+      }
+
+      res.json(event);
+    } catch (err) {
+      console.error("[PRODUCTION] Failed to load event:", err);
+      res.status(500).json({ message: "Failed to load event" });
+    }
   });
 
   app.post(api.events.create.path, requireAuth, validateCsrf, async (req, res) => {
     try {
       const input = api.events.create.input.parse(req.body);
-      const event = await storage.createEvent(input);
+      const event = await storage.createEvent({
+        ...input,
+        createdBy: req.session.userId!,
+      });
       res.status(201).json(event);
     } catch (err) {
       if (err instanceof z.ZodError) {
@@ -1561,16 +1579,18 @@ export async function registerRoutes(
   // Admin: Dashboard stats
   app.get("/api/admin/stats", requireAdmin, async (req, res) => {
     try {
-      const [allUsers, allPlaces, allReviews, allMedia, pendingReports, allPetitions] = await Promise.all([
+      const [allUsers, allPlaces, allReviews, allMedia, pendingReports, allPetitions, allEvents] = await Promise.all([
         storage.getAllUsers(),
         storage.getPlaces(),
         storage.getReviews(),
         storage.getAllPlaceMedia(),
         storage.getPendingReports(),
         storage.getAllPetitions(),
+        storage.getAllEvents(),
       ]);
 
       const pendingPetitions = allPetitions.filter(p => p.status === "pending");
+      const pendingEvents = allEvents.filter(e => e.status === "pending");
 
       res.json({
         totalUsers: allUsers.length,
@@ -1580,6 +1600,8 @@ export async function registerRoutes(
         totalReports: pendingReports.length,
         totalPetitions: allPetitions.length,
         pendingPetitions: pendingPetitions.length,
+        totalEvents: allEvents.length,
+        pendingEvents: pendingEvents.length,
       });
     } catch (err: any) {
       res.status(500).json({ message: "Failed to fetch admin stats" });
@@ -1621,6 +1643,38 @@ export async function registerRoutes(
       res.json(updated);
     } catch (err: any) {
       res.status(500).json({ message: "Failed to reject petition" });
+    }
+  });
+
+  // Admin: Get all events (including pending)
+  app.get("/api/admin/events", requireAdmin, async (req, res) => {
+    try {
+      const allEvents = await storage.getAllEvents();
+      res.json(allEvents);
+    } catch (err: any) {
+      res.status(500).json({ message: "Failed to fetch events" });
+    }
+  });
+
+  // Admin: Approve event
+  app.patch("/api/admin/events/:id/approve", requireAdmin, validateCsrf, async (req, res) => {
+    try {
+      const updated = await storage.updateEventStatus(Number(req.params.id), "active");
+      if (!updated) return res.status(404).json({ message: "Event not found" });
+      res.json(updated);
+    } catch (err: any) {
+      res.status(500).json({ message: "Failed to approve event" });
+    }
+  });
+
+  // Admin: Reject event
+  app.patch("/api/admin/events/:id/reject", requireAdmin, validateCsrf, async (req, res) => {
+    try {
+      const updated = await storage.updateEventStatus(Number(req.params.id), "rejected");
+      if (!updated) return res.status(404).json({ message: "Event not found" });
+      res.json(updated);
+    } catch (err: any) {
+      res.status(500).json({ message: "Failed to reject event" });
     }
   });
 

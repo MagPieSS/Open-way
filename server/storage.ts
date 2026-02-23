@@ -91,10 +91,12 @@ export interface IStorage {
 
   // Events
   getEvents(): Promise<Event[]>;
+  getAllEvents(): Promise<Event[]>;
   getUpcomingEvents(): Promise<Event[]>;
   getFeaturedEvents(): Promise<Event[]>;
   getEvent(id: number): Promise<Event | undefined>;
-  createEvent(event: InsertEvent): Promise<Event>;
+  createEvent(event: InsertEvent & { createdBy?: number }): Promise<Event>;
+  updateEventStatus(id: number, status: string): Promise<Event | undefined>;
 
   // Resources
   getResources(): Promise<Resource[]>;
@@ -420,15 +422,19 @@ export class DatabaseStorage implements IStorage {
 
   // Events
   async getEvents(): Promise<Event[]> {
+    return await db.select().from(events).where(eq(events.status, "active")).orderBy(events.date);
+  }
+
+  async getAllEvents(): Promise<Event[]> {
     return await db.select().from(events).orderBy(events.date);
   }
 
   async getUpcomingEvents(): Promise<Event[]> {
-    return await db.select().from(events).where(sql`${events.date} >= datetime('now')`).orderBy(events.date);
+    return await db.select().from(events).where(and(eq(events.status, "active"), sql`${events.date} >= NOW()`)).orderBy(events.date);
   }
 
   async getFeaturedEvents(): Promise<Event[]> {
-    return await db.select().from(events).where(eq(events.isFeatured, true)).orderBy(events.date);
+    return await db.select().from(events).where(and(eq(events.isFeatured, true), eq(events.status, "active"))).orderBy(events.date);
   }
 
   async getEvent(id: number): Promise<Event | undefined> {
@@ -436,9 +442,14 @@ export class DatabaseStorage implements IStorage {
     return event;
   }
 
-  async createEvent(event: InsertEvent): Promise<Event> {
-    const [newEvent] = await db.insert(events).values(event).returning();
+  async createEvent(event: InsertEvent & { createdBy?: number }): Promise<Event> {
+    const [newEvent] = await db.insert(events).values({ ...event, status: "pending" }).returning();
     return newEvent;
+  }
+
+  async updateEventStatus(id: number, status: string): Promise<Event | undefined> {
+    const [updated] = await db.update(events).set({ status }).where(eq(events.id, id)).returning();
+    return updated;
   }
 
   // Resources

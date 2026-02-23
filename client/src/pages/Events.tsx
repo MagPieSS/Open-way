@@ -121,7 +121,7 @@ export default function Events() {
       });
       setSelectedFile(null);
       setImagePreview(null);
-      toast({ title: "Event submitted successfully!" });
+      toast({ title: "Event submitted!", description: "Your event is pending admin review. It will be publicly visible once approved." });
     },
     onError: (err: Error) => {
       toast({ title: "Failed to submit event", description: err.message, variant: "destructive" });

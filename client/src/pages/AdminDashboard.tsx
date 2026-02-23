@@ -16,10 +16,10 @@ import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from "@/components/ui/select";
 import {
   Shield, Trash2, ImageIcon, Loader2, Users, MapPin, Star, Camera, Flag, FileSignature,
-  Edit, Ban, CheckCircle, XCircle, MessageSquare, Eye
+  Edit, Ban, CheckCircle, XCircle, MessageSquare, Eye, CalendarDays
 } from "lucide-react";
 import { format } from "date-fns";
-import type { Place, Review, CommunityPost, PlaceMedia, Report, Signature, Petition } from "@shared/schema";
+import type { Place, Review, CommunityPost, PlaceMedia, Report, Signature, Petition, Event } from "@shared/schema";
 
 interface AdminStats {
   totalUsers: number;
@@ -29,6 +29,8 @@ interface AdminStats {
   totalReports: number;
   totalPetitions: number;
   pendingPetitions: number;
+  totalEvents: number;
+  pendingEvents: number;
 }
 
 interface PetitionWithCount extends Petition {
@@ -157,6 +159,35 @@ export default function AdminDashboard() {
       toast({ title: "Petition rejected", description: "The petition has been rejected." });
     },
     onError: () => toast({ title: "Error", description: "Failed to reject petition", variant: "destructive" }),
+  });
+
+  const { data: adminEvents, isLoading: eventsLoading } = useQuery<Event[]>({
+    queryKey: ["/api/admin/events"],
+    enabled: !!user?.isAdmin,
+  });
+
+  const approveEventMutation = useMutation({
+    mutationFn: async (id: number) => {
+      await apiRequest("PATCH", `/api/admin/events/${id}/approve`);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/admin/events"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/admin/stats"] });
+      toast({ title: "Event approved", description: "The event is now publicly visible." });
+    },
+    onError: () => toast({ title: "Error", description: "Failed to approve event", variant: "destructive" }),
+  });
+
+  const rejectEventMutation = useMutation({
+    mutationFn: async (id: number) => {
+      await apiRequest("PATCH", `/api/admin/events/${id}/reject`);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/admin/events"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/admin/stats"] });
+      toast({ title: "Event rejected", description: "The event has been rejected." });
+    },
+    onError: () => toast({ title: "Error", description: "Failed to reject event", variant: "destructive" }),
   });
 
   const deleteMediaMutation = useMutation({
@@ -320,6 +351,8 @@ export default function AdminDashboard() {
     { label: "Pending Reports", value: stats?.totalReports ?? 0, icon: Flag, testId: "stat-pending-reports" },
     { label: "Total Petitions", value: stats?.totalPetitions ?? 0, icon: FileSignature, testId: "stat-total-petitions" },
     { label: "Pending Petitions", value: stats?.pendingPetitions ?? 0, icon: FileSignature, testId: "stat-pending-petitions" },
+    { label: "Total Events", value: stats?.totalEvents ?? 0, icon: CalendarDays, testId: "stat-total-events" },
+    { label: "Pending Events", value: stats?.pendingEvents ?? 0, icon: CalendarDays, testId: "stat-pending-events" },
   ];
 
   function openEditDialog(place: Place) {
@@ -373,6 +406,7 @@ export default function AdminDashboard() {
               <TabsTrigger value="places" data-testid="tab-places">Places</TabsTrigger>
               <TabsTrigger value="users" data-testid="tab-users">Users</TabsTrigger>
               <TabsTrigger value="petitions" data-testid="tab-petitions">Petitions</TabsTrigger>
+              <TabsTrigger value="events" data-testid="tab-events">Events</TabsTrigger>
               <TabsTrigger value="reports" data-testid="tab-reports">Reports</TabsTrigger>
             </TabsList>
 
@@ -838,6 +872,87 @@ export default function AdminDashboard() {
                   )}
                 </div>
               </div>
+            </TabsContent>
+
+            <TabsContent value="events" data-testid="tab-content-events">
+              {eventsLoading ? (
+                <div className="flex items-center justify-center py-12">
+                  <Loader2 className="w-8 h-8 animate-spin text-muted-foreground" />
+                </div>
+              ) : !adminEvents || adminEvents.length === 0 ? (
+                <div className="text-center py-12 bg-secondary/50 rounded-md border-2 border-dashed border-border">
+                  <CalendarDays className="w-10 h-10 text-muted-foreground/30 mx-auto mb-3" />
+                  <p className="text-muted-foreground">No events found</p>
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  {adminEvents.map((event) => (
+                    <Card key={event.id} data-testid={`card-event-${event.id}`} className={event.status === "pending" ? "border-yellow-400/50 bg-yellow-50/30 dark:bg-yellow-900/10" : ""}>
+                      <CardContent className="pt-4">
+                        <div className="flex items-start justify-between gap-4 flex-wrap">
+                          <div className="flex-1 min-w-0 space-y-1">
+                            <div className="flex items-center gap-2 flex-wrap">
+                              <span className="font-semibold" data-testid={`text-event-title-${event.id}`}>
+                                {event.title}
+                              </span>
+                              <Badge
+                                variant={event.status === "active" ? "default" : event.status === "pending" ? "secondary" : "destructive"}
+                                data-testid={`badge-event-status-${event.id}`}
+                              >
+                                {event.status === "active" ? "Active" : event.status === "pending" ? "Pending Review" : "Rejected"}
+                              </Badge>
+                            </div>
+                            <p className="text-sm text-muted-foreground line-clamp-2">{event.description}</p>
+                            <div className="flex items-center gap-4 text-xs text-muted-foreground">
+                              {event.date && <span>{format(new Date(event.date), "MMM d, yyyy 'at' h:mm a")}</span>}
+                              {event.location && <span>{event.location}</span>}
+                              {event.category && <span>{event.category}</span>}
+                            </div>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            {event.status === "pending" && (
+                              <>
+                                <Button
+                                  variant="default"
+                                  size="sm"
+                                  onClick={() => approveEventMutation.mutate(event.id)}
+                                  disabled={approveEventMutation.isPending}
+                                  data-testid={`button-approve-event-${event.id}`}
+                                >
+                                  <CheckCircle className="w-3.5 h-3.5 mr-1.5" />
+                                  Approve
+                                </Button>
+                                <Button
+                                  variant="destructive"
+                                  size="sm"
+                                  onClick={() => rejectEventMutation.mutate(event.id)}
+                                  disabled={rejectEventMutation.isPending}
+                                  data-testid={`button-reject-event-${event.id}`}
+                                >
+                                  <XCircle className="w-3.5 h-3.5 mr-1.5" />
+                                  Reject
+                                </Button>
+                              </>
+                            )}
+                            {event.status === "rejected" && (
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                onClick={() => approveEventMutation.mutate(event.id)}
+                                disabled={approveEventMutation.isPending}
+                                data-testid={`button-approve-event-${event.id}`}
+                              >
+                                <CheckCircle className="w-3.5 h-3.5 mr-1.5" />
+                                Approve
+                              </Button>
+                            )}
+                          </div>
+                        </div>
+                      </CardContent>
+                    </Card>
+                  ))}
+                </div>
+              )}
             </TabsContent>
 
             <TabsContent value="reports" data-testid="tab-content-reports">

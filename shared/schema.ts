@@ -162,6 +162,8 @@ export const events = pgTable("events", {
   imageUrl: text("image_url"),
   registrationUrl: text("registration_url"),
   isFeatured: boolean("is_featured").default(false),
+  status: text("status").default("active"),
+  createdBy: integer("created_by").references(() => users.id),
   createdAt: timestamp("created_at").defaultNow(),
 });
 
