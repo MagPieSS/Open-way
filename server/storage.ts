@@ -72,8 +72,10 @@ export interface IStorage {
 
   // Petitions
   getPetitions(): Promise<Petition[]>;
+  getAllPetitions(): Promise<Petition[]>;
   getPetition(id: number): Promise<Petition | undefined>;
   createPetition(petition: InsertPetition & { createdBy: number }): Promise<Petition>;
+  updatePetitionStatus(id: number, status: string): Promise<Petition | undefined>;
 
   // Signatures
   getSignatures(petitionId: number): Promise<Signature[]>;
@@ -355,6 +357,10 @@ export class DatabaseStorage implements IStorage {
 
   // Petitions
   async getPetitions(): Promise<Petition[]> {
+    return await db.select().from(petitions).where(eq(petitions.status, "active")).orderBy(desc(petitions.createdAt));
+  }
+
+  async getAllPetitions(): Promise<Petition[]> {
     return await db.select().from(petitions).orderBy(desc(petitions.createdAt));
   }
 
@@ -364,8 +370,13 @@ export class DatabaseStorage implements IStorage {
   }
 
   async createPetition(petition: InsertPetition & { createdBy: number }): Promise<Petition> {
-    const [newPetition] = await db.insert(petitions).values(petition).returning();
+    const [newPetition] = await db.insert(petitions).values({ ...petition, status: "pending" }).returning();
     return newPetition;
+  }
+
+  async updatePetitionStatus(id: number, status: string): Promise<Petition | undefined> {
+    const [updated] = await db.update(petitions).set({ status }).where(eq(petitions.id, id)).returning();
+    return updated;
   }
 
   // Signatures

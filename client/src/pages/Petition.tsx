@@ -3,7 +3,7 @@ import { usePetitions, usePetition, usePetitionCount, useSignPetition, usePetiti
 import { useAuth } from "@/hooks/use-auth";
 import { Link, useRoute } from "wouter";
 import { useSettings } from "@/hooks/use-settings";
-import { PenTool, Heart, Target, Users, TrendingUp, Share2, Trophy, Star, Clock, Copy, Check, Calendar, User, MapPin, Megaphone, ArrowRight, Sparkles, Quote, BarChart3, ArrowLeft, Plus, Eye } from "lucide-react";
+import { PenTool, Heart, Target, Users, TrendingUp, Share2, Trophy, Star, Clock, Copy, Check, Calendar, User, MapPin, Megaphone, ArrowRight, Sparkles, Quote, BarChart3, ArrowLeft, Plus, Eye, XCircle } from "lucide-react";
 import { SiX, SiFacebook } from "react-icons/si";
 import { motion, AnimatePresence } from "framer-motion";
 import { useToast } from "@/hooks/use-toast";
@@ -536,7 +536,7 @@ function CreatePetitionDialog() {
       },
       {
         onSuccess: () => {
-          toast({ title: "Petition created!", description: "Your petition is now live." });
+          toast({ title: "Petition submitted!", description: "Your petition is pending admin review. It will go live once approved." });
           setOpen(false);
           setFormData({ title: '', description: '', goalSignatures: 1000, creatorName: '' });
         },
@@ -658,6 +658,12 @@ function PetitionCard({ petition }: { petition: PetitionType }) {
             </h3>
             {petition.status === 'active' && (
               <Badge variant="secondary">Active</Badge>
+            )}
+            {petition.status === 'pending' && (
+              <Badge variant="outline" className="border-yellow-500 text-yellow-700 dark:text-yellow-400">Pending Review</Badge>
+            )}
+            {petition.status === 'rejected' && (
+              <Badge variant="destructive">Rejected</Badge>
             )}
           </div>
 
@@ -856,6 +862,24 @@ export function PetitionDetail() {
   return (
     <div className="min-h-screen bg-background">
       <ConfettiEffect active={showConfetti} />
+
+      {petition.status === "pending" && (
+        <div className="bg-yellow-50 dark:bg-yellow-900/20 border-b border-yellow-200 dark:border-yellow-800 px-4 py-3">
+          <div className="max-w-4xl mx-auto flex items-center gap-3 text-yellow-800 dark:text-yellow-200">
+            <Clock className="w-5 h-5 shrink-0" />
+            <p className="text-sm font-medium">This petition is pending admin review. It will be publicly visible once approved.</p>
+          </div>
+        </div>
+      )}
+
+      {petition.status === "rejected" && (
+        <div className="bg-red-50 dark:bg-red-900/20 border-b border-red-200 dark:border-red-800 px-4 py-3">
+          <div className="max-w-4xl mx-auto flex items-center gap-3 text-red-800 dark:text-red-200">
+            <XCircle className="w-5 h-5 shrink-0" />
+            <p className="text-sm font-medium">This petition has been rejected by an admin and is not publicly visible.</p>
+          </div>
+        </div>
+      )}
       
       <section className="bg-gradient-to-br from-primary to-primary/80 text-white py-16 px-4">
         <div className="max-w-4xl mx-auto text-center">

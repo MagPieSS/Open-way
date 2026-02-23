@@ -19,7 +19,7 @@ import {
   Edit, Ban, CheckCircle, XCircle, MessageSquare, Eye
 } from "lucide-react";
 import { format } from "date-fns";
-import type { Place, Review, CommunityPost, PlaceMedia, Report, Signature } from "@shared/schema";
+import type { Place, Review, CommunityPost, PlaceMedia, Report, Signature, Petition } from "@shared/schema";
 
 interface AdminStats {
   totalUsers: number;
@@ -28,6 +28,11 @@ interface AdminStats {
   totalMedia: number;
   totalReports: number;
   totalPetitions: number;
+  pendingPetitions: number;
+}
+
+interface PetitionWithCount extends Petition {
+  signatureCount: number;
 }
 
 interface PlaceMediaWithName extends PlaceMedia {
@@ -123,6 +128,35 @@ export default function AdminDashboard() {
   const { data: reportsData, isLoading: reportsLoading } = useQuery<ReportWithDetails[]>({
     queryKey: ["/api/admin/reports"],
     enabled: !!user?.isAdmin,
+  });
+
+  const { data: adminPetitions, isLoading: petitionsLoading } = useQuery<PetitionWithCount[]>({
+    queryKey: ["/api/admin/petitions"],
+    enabled: !!user?.isAdmin,
+  });
+
+  const approvePetitionMutation = useMutation({
+    mutationFn: async (id: number) => {
+      await apiRequest("PATCH", `/api/admin/petitions/${id}/approve`);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/admin/petitions"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/admin/stats"] });
+      toast({ title: "Petition approved", description: "The petition is now live." });
+    },
+    onError: () => toast({ title: "Error", description: "Failed to approve petition", variant: "destructive" }),
+  });
+
+  const rejectPetitionMutation = useMutation({
+    mutationFn: async (id: number) => {
+      await apiRequest("PATCH", `/api/admin/petitions/${id}/reject`);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/admin/petitions"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/admin/stats"] });
+      toast({ title: "Petition rejected", description: "The petition has been rejected." });
+    },
+    onError: () => toast({ title: "Error", description: "Failed to reject petition", variant: "destructive" }),
   });
 
   const deleteMediaMutation = useMutation({
@@ -285,6 +319,7 @@ export default function AdminDashboard() {
     { label: "Total Photos", value: stats?.totalMedia ?? 0, icon: Camera, testId: "stat-total-photos" },
     { label: "Pending Reports", value: stats?.totalReports ?? 0, icon: Flag, testId: "stat-pending-reports" },
     { label: "Total Petitions", value: stats?.totalPetitions ?? 0, icon: FileSignature, testId: "stat-total-petitions" },
+    { label: "Pending Petitions", value: stats?.pendingPetitions ?? 0, icon: FileSignature, testId: "stat-pending-petitions" },
   ];
 
   function openEditDialog(place: Place) {
@@ -666,55 +701,143 @@ export default function AdminDashboard() {
             </TabsContent>
 
             <TabsContent value="petitions" data-testid="tab-content-petitions">
-              {signaturesLoading ? (
-                <div className="flex items-center justify-center py-12">
-                  <Loader2 className="w-8 h-8 animate-spin text-muted-foreground" />
-                </div>
-              ) : !signaturesData || (Array.isArray(signaturesData) && signaturesData.length === 0) ? (
-                <div className="text-center py-12 bg-secondary/50 rounded-md border-2 border-dashed border-border">
-                  <FileSignature className="w-10 h-10 text-muted-foreground/30 mx-auto mb-3" />
-                  <p className="text-muted-foreground" data-testid="text-no-signatures">No signatures found</p>
-                </div>
-              ) : (
-                <div className="space-y-3">
-                  {(Array.isArray(signaturesData) ? signaturesData : []).map((sig) => (
-                    <Card key={sig.id} data-testid={`card-signature-${sig.id}`}>
-                      <CardContent className="pt-4">
-                        <div className="flex items-start justify-between gap-4 flex-wrap">
-                          <div className="flex-1 min-w-0 space-y-1">
-                            <div className="flex items-center gap-2 flex-wrap">
-                              <span className="font-medium" data-testid={`text-sig-name-${sig.id}`}>
-                                {sig.displayName || "Anonymous"}
-                              </span>
-                              {sig.city && (
-                                <span className="text-sm text-muted-foreground" data-testid={`text-sig-city-${sig.id}`}>
-                                  from {sig.city}
-                                </span>
-                              )}
+              <div className="space-y-6">
+                <div>
+                  <h3 className="font-semibold text-lg mb-3">Petition Management</h3>
+                  {petitionsLoading ? (
+                    <div className="flex items-center justify-center py-12">
+                      <Loader2 className="w-8 h-8 animate-spin text-muted-foreground" />
+                    </div>
+                  ) : !adminPetitions || adminPetitions.length === 0 ? (
+                    <div className="text-center py-12 bg-secondary/50 rounded-md border-2 border-dashed border-border">
+                      <FileSignature className="w-10 h-10 text-muted-foreground/30 mx-auto mb-3" />
+                      <p className="text-muted-foreground">No petitions found</p>
+                    </div>
+                  ) : (
+                    <div className="space-y-3">
+                      {adminPetitions.map((petition) => (
+                        <Card key={petition.id} data-testid={`card-petition-${petition.id}`} className={petition.status === "pending" ? "border-yellow-400/50 bg-yellow-50/30 dark:bg-yellow-900/10" : ""}>
+                          <CardContent className="pt-4">
+                            <div className="flex items-start justify-between gap-4 flex-wrap">
+                              <div className="flex-1 min-w-0 space-y-1">
+                                <div className="flex items-center gap-2 flex-wrap">
+                                  <span className="font-semibold" data-testid={`text-petition-title-${petition.id}`}>
+                                    {petition.title}
+                                  </span>
+                                  <Badge
+                                    variant={petition.status === "active" ? "default" : petition.status === "pending" ? "secondary" : "destructive"}
+                                    data-testid={`badge-petition-status-${petition.id}`}
+                                  >
+                                    {petition.status === "active" ? "Active" : petition.status === "pending" ? "Pending Review" : "Rejected"}
+                                  </Badge>
+                                </div>
+                                <p className="text-sm text-muted-foreground line-clamp-2">{petition.description}</p>
+                                <div className="flex items-center gap-4 text-xs text-muted-foreground">
+                                  <span>{petition.signatureCount} signature{petition.signatureCount !== 1 ? "s" : ""}</span>
+                                  <span>Goal: {petition.goalSignatures}</span>
+                                  {petition.creatorName && <span>By: {petition.creatorName}</span>}
+                                  {petition.createdAt && <span>{format(new Date(petition.createdAt), "MMM d, yyyy")}</span>}
+                                </div>
+                              </div>
+                              <div className="flex items-center gap-2">
+                                {petition.status === "pending" && (
+                                  <>
+                                    <Button
+                                      variant="default"
+                                      size="sm"
+                                      onClick={() => approvePetitionMutation.mutate(petition.id)}
+                                      disabled={approvePetitionMutation.isPending}
+                                      data-testid={`button-approve-petition-${petition.id}`}
+                                    >
+                                      <CheckCircle className="w-3.5 h-3.5 mr-1.5" />
+                                      Approve
+                                    </Button>
+                                    <Button
+                                      variant="destructive"
+                                      size="sm"
+                                      onClick={() => rejectPetitionMutation.mutate(petition.id)}
+                                      disabled={rejectPetitionMutation.isPending}
+                                      data-testid={`button-reject-petition-${petition.id}`}
+                                    >
+                                      <XCircle className="w-3.5 h-3.5 mr-1.5" />
+                                      Reject
+                                    </Button>
+                                  </>
+                                )}
+                                {petition.status === "rejected" && (
+                                  <Button
+                                    variant="outline"
+                                    size="sm"
+                                    onClick={() => approvePetitionMutation.mutate(petition.id)}
+                                    disabled={approvePetitionMutation.isPending}
+                                    data-testid={`button-approve-petition-${petition.id}`}
+                                  >
+                                    <CheckCircle className="w-3.5 h-3.5 mr-1.5" />
+                                    Approve
+                                  </Button>
+                                )}
+                              </div>
                             </div>
-                            {sig.message && (
-                              <p className="text-sm line-clamp-2" data-testid={`text-sig-message-${sig.id}`}>{sig.message}</p>
-                            )}
-                            {sig.signedAt && (
-                              <p className="text-xs text-muted-foreground">{format(new Date(sig.signedAt), "MMM d, yyyy")}</p>
-                            )}
-                          </div>
-                          <Button
-                            variant="destructive"
-                            size="sm"
-                            onClick={() => deleteSignatureMutation.mutate(sig.id)}
-                            disabled={deleteSignatureMutation.isPending}
-                            data-testid={`button-delete-signature-${sig.id}`}
-                          >
-                            <Trash2 className="w-3.5 h-3.5 mr-1.5" />
-                            Remove
-                          </Button>
-                        </div>
-                      </CardContent>
-                    </Card>
-                  ))}
+                          </CardContent>
+                        </Card>
+                      ))}
+                    </div>
+                  )}
                 </div>
-              )}
+
+                <div>
+                  <h3 className="font-semibold text-lg mb-3">Signatures</h3>
+                  {signaturesLoading ? (
+                    <div className="flex items-center justify-center py-12">
+                      <Loader2 className="w-8 h-8 animate-spin text-muted-foreground" />
+                    </div>
+                  ) : !signaturesData || (Array.isArray(signaturesData) && signaturesData.length === 0) ? (
+                    <div className="text-center py-12 bg-secondary/50 rounded-md border-2 border-dashed border-border">
+                      <FileSignature className="w-10 h-10 text-muted-foreground/30 mx-auto mb-3" />
+                      <p className="text-muted-foreground" data-testid="text-no-signatures">No signatures found</p>
+                    </div>
+                  ) : (
+                    <div className="space-y-3">
+                      {(Array.isArray(signaturesData) ? signaturesData : []).map((sig) => (
+                        <Card key={sig.id} data-testid={`card-signature-${sig.id}`}>
+                          <CardContent className="pt-4">
+                            <div className="flex items-start justify-between gap-4 flex-wrap">
+                              <div className="flex-1 min-w-0 space-y-1">
+                                <div className="flex items-center gap-2 flex-wrap">
+                                  <span className="font-medium" data-testid={`text-sig-name-${sig.id}`}>
+                                    {sig.displayName || "Anonymous"}
+                                  </span>
+                                  {sig.city && (
+                                    <span className="text-sm text-muted-foreground" data-testid={`text-sig-city-${sig.id}`}>
+                                      from {sig.city}
+                                    </span>
+                                  )}
+                                </div>
+                                {sig.message && (
+                                  <p className="text-sm line-clamp-2" data-testid={`text-sig-message-${sig.id}`}>{sig.message}</p>
+                                )}
+                                {sig.signedAt && (
+                                  <p className="text-xs text-muted-foreground">{format(new Date(sig.signedAt), "MMM d, yyyy")}</p>
+                                )}
+                              </div>
+                              <Button
+                                variant="destructive"
+                                size="sm"
+                                onClick={() => deleteSignatureMutation.mutate(sig.id)}
+                                disabled={deleteSignatureMutation.isPending}
+                                data-testid={`button-delete-signature-${sig.id}`}
+                              >
+                                <Trash2 className="w-3.5 h-3.5 mr-1.5" />
+                                Remove
+                              </Button>
+                            </div>
+                          </CardContent>
+                        </Card>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </div>
             </TabsContent>
 
             <TabsContent value="reports" data-testid="tab-content-reports">

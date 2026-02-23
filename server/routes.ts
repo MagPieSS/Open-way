@@ -840,6 +840,16 @@ export async function registerRoutes(
     try {
       const petition = await storage.getPetition(Number(req.params.id));
       if (!petition) return res.status(404).json({ message: "Petition not found" });
+
+      if (petition.status !== "active") {
+        const userId = req.session?.userId;
+        const isOwner = userId && petition.createdBy === userId;
+        const isAdmin = userId ? (await storage.getUser(userId))?.isAdmin : false;
+        if (!isOwner && !isAdmin) {
+          return res.status(404).json({ message: "Petition not found" });
+        }
+      }
+
       res.json(petition);
     } catch (err) {
       console.error("[PRODUCTION] Failed to load petition:", err);
@@ -1557,8 +1567,10 @@ export async function registerRoutes(
         storage.getReviews(),
         storage.getAllPlaceMedia(),
         storage.getPendingReports(),
-        storage.getPetitions(),
+        storage.getAllPetitions(),
       ]);
+
+      const pendingPetitions = allPetitions.filter(p => p.status === "pending");
 
       res.json({
         totalUsers: allUsers.length,
@@ -1567,9 +1579,48 @@ export async function registerRoutes(
         totalMedia: allMedia.length,
         totalReports: pendingReports.length,
         totalPetitions: allPetitions.length,
+        pendingPetitions: pendingPetitions.length,
       });
     } catch (err: any) {
       res.status(500).json({ message: "Failed to fetch admin stats" });
+    }
+  });
+
+  // Admin: Get all petitions (including pending)
+  app.get("/api/admin/petitions", requireAdmin, async (req, res) => {
+    try {
+      const allPetitions = await storage.getAllPetitions();
+      const petitionsWithCounts = await Promise.all(
+        allPetitions.map(async (p) => {
+          const count = await storage.getPetitionCount(p.id);
+          return { ...p, signatureCount: count };
+        })
+      );
+      res.json(petitionsWithCounts);
+    } catch (err: any) {
+      res.status(500).json({ message: "Failed to fetch petitions" });
+    }
+  });
+
+  // Admin: Approve petition
+  app.patch("/api/admin/petitions/:id/approve", requireAdmin, validateCsrf, async (req, res) => {
+    try {
+      const updated = await storage.updatePetitionStatus(Number(req.params.id), "active");
+      if (!updated) return res.status(404).json({ message: "Petition not found" });
+      res.json(updated);
+    } catch (err: any) {
+      res.status(500).json({ message: "Failed to approve petition" });
+    }
+  });
+
+  // Admin: Reject petition
+  app.patch("/api/admin/petitions/:id/reject", requireAdmin, validateCsrf, async (req, res) => {
+    try {
+      const updated = await storage.updatePetitionStatus(Number(req.params.id), "rejected");
+      if (!updated) return res.status(404).json({ message: "Petition not found" });
+      res.json(updated);
+    } catch (err: any) {
+      res.status(500).json({ message: "Failed to reject petition" });
     }
   });
 
