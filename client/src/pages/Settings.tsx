@@ -1,7 +1,7 @@
 import { useSettings, type FontFamily, type LineSpacing } from "@/hooks/use-settings";
 import { useAuth } from "@/hooks/use-auth";
-import { Moon, Sun, Type, Eye, Zap, BookOpen, AlignJustify, Link2, Focus, Shield, Loader2, Copy, Check } from "lucide-react";
-import { useState } from "react";
+import { Moon, Sun, Type, Eye, Zap, BookOpen, AlignJustify, Link2, Focus, Shield, Loader2, Copy, Check, Volume2 } from "lucide-react";
+import { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/hooks/use-toast";
 
@@ -14,12 +14,16 @@ export default function Settings() {
     fontFamily, setFontFamily,
     lineSpacing, setLineSpacing,
     linkUnderlines, toggleLinkUnderlines,
-    enhancedFocus, toggleEnhancedFocus
+    enhancedFocus, toggleEnhancedFocus,
+    readAloudEnabled, toggleReadAloud,
+    readAloudVoice, setReadAloudVoice,
+    readAloudSpeed, setReadAloudSpeed
   } = useSettings();
   
   const { user, setup2FA, confirm2FA, disable2FA, regenerateBackupCodes } = useAuth();
   const { toast } = useToast();
   
+  const [availableVoices, setAvailableVoices] = useState<SpeechSynthesisVoice[]>([]);
   const [twoFactorStep, setTwoFactorStep] = useState<'idle' | 'setup' | 'verify' | 'backup'>('idle');
   const [qrCode, setQrCode] = useState<string>('');
   const [backupCodes, setBackupCodes] = useState<string[]>([]);
@@ -97,6 +101,38 @@ export default function Settings() {
   const copyAllBackupCodes = async () => {
     await navigator.clipboard.writeText(backupCodes.join('\n'));
     toast({ title: "Copied", description: "All backup codes copied to clipboard" });
+  };
+
+  useEffect(() => {
+    const loadVoices = () => {
+      const voices = window.speechSynthesis?.getVoices() || [];
+      setAvailableVoices(voices);
+    };
+    loadVoices();
+    window.speechSynthesis?.addEventListener("voiceschanged", loadVoices);
+    return () => {
+      window.speechSynthesis?.removeEventListener("voiceschanged", loadVoices);
+    };
+  }, []);
+
+  const previewVoice = () => {
+    window.speechSynthesis?.cancel();
+    const utterance = new SpeechSynthesisUtterance("This is how the read aloud feature will sound.");
+    utterance.rate = readAloudSpeed;
+    if (readAloudVoice) {
+      const voice = availableVoices.find((v) => v.name === readAloudVoice);
+      if (voice) utterance.voice = voice;
+    }
+    window.speechSynthesis?.speak(utterance);
+  };
+
+  const speedLabels: Record<string, string> = {
+    "0.5": "Very Slow",
+    "0.75": "Slow",
+    "1": "Normal",
+    "1.25": "Fast",
+    "1.5": "Very Fast",
+    "2": "Maximum",
   };
 
   const ToggleSwitch = ({ checked, onToggle, testId }: { checked: boolean; onToggle: () => void; testId: string }) => (
@@ -305,6 +341,74 @@ export default function Settings() {
               </div>
             </div>
             <ToggleSwitch checked={enhancedFocus} onToggle={toggleEnhancedFocus} testId="toggle-enhanced-focus" />
+          </div>
+
+          {/* Read Aloud */}
+          <div className="bg-card p-6 rounded-2xl border border-border shadow-sm card-hover-glow">
+            <div className="flex items-center justify-between flex-wrap gap-4 mb-4">
+              <div className="flex items-center gap-4">
+                <div className="p-3 bg-gradient-to-br from-teal-100 to-teal-200 dark:from-teal-900/30 dark:to-teal-800/30 rounded-xl">
+                  <Volume2 className="w-6 h-6 text-teal-600" />
+                </div>
+                <div>
+                  <h3 className="font-bold text-lg">Read Aloud</h3>
+                  <p className="text-sm text-muted-foreground">Have page content read to you</p>
+                </div>
+              </div>
+              <ToggleSwitch checked={readAloudEnabled} onToggle={toggleReadAloud} testId="toggle-read-aloud" />
+            </div>
+
+            {readAloudEnabled && (
+              <div className="space-y-4 pt-2 border-t border-border">
+                <div className="mt-4">
+                  <label className="block text-sm font-medium mb-2">Voice</label>
+                  <select
+                    value={readAloudVoice}
+                    onChange={(e) => setReadAloudVoice(e.target.value)}
+                    className="w-full px-3 py-2 rounded-lg border border-border bg-background text-foreground text-sm"
+                    data-testid="select-read-aloud-voice"
+                  >
+                    <option value="">Default Voice</option>
+                    {availableVoices.map((voice) => (
+                      <option key={voice.name} value={voice.name}>
+                        {voice.name} ({voice.lang})
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium mb-2">
+                    Speed: {speedLabels[String(readAloudSpeed)] || `${readAloudSpeed}x`}
+                  </label>
+                  <div className="flex items-center gap-3">
+                    <span className="text-xs text-muted-foreground">0.5x</span>
+                    <input
+                      type="range"
+                      min="0.5"
+                      max="2"
+                      step="0.25"
+                      value={readAloudSpeed}
+                      onChange={(e) => setReadAloudSpeed(parseFloat(e.target.value))}
+                      className="flex-1 accent-primary"
+                      data-testid="slider-read-aloud-speed"
+                    />
+                    <span className="text-xs text-muted-foreground">2x</span>
+                  </div>
+                </div>
+
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={previewVoice}
+                  className="gap-2"
+                  data-testid="button-preview-voice"
+                >
+                  <Volume2 className="w-4 h-4" />
+                  Preview Voice
+                </Button>
+              </div>
+            )}
           </div>
 
           {/* Reduced Motion */}

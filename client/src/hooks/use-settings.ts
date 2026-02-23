@@ -13,6 +13,9 @@ interface SettingsState {
   lineSpacing: LineSpacing;
   linkUnderlines: boolean;
   enhancedFocus: boolean;
+  readAloudEnabled: boolean;
+  readAloudVoice: string;
+  readAloudSpeed: number;
   setTheme: (theme: 'light' | 'dark') => void;
   toggleHighContrast: () => void;
   setTextSize: (size: 'sm' | 'base' | 'lg' | 'xl') => void;
@@ -21,6 +24,9 @@ interface SettingsState {
   setLineSpacing: (spacing: LineSpacing) => void;
   toggleLinkUnderlines: () => void;
   toggleEnhancedFocus: () => void;
+  toggleReadAloud: () => void;
+  setReadAloudVoice: (voice: string) => void;
+  setReadAloudSpeed: (speed: number) => void;
 }
 
 const applyTextSize = (size: 'sm' | 'base' | 'lg' | 'xl') => {
@@ -61,6 +67,9 @@ export const useSettings = create<SettingsState>()(
       lineSpacing: 'normal',
       linkUnderlines: false,
       enhancedFocus: false,
+      readAloudEnabled: false,
+      readAloudVoice: '',
+      readAloudSpeed: 1,
       
       setTheme: (theme) => {
         set({ theme });
@@ -103,6 +112,17 @@ export const useSettings = create<SettingsState>()(
         applyEnhancedFocus(newValue);
         return { enhancedFocus: newValue };
       }),
+      
+      toggleReadAloud: () => set((state) => {
+        if (state.readAloudEnabled) {
+          window.speechSynthesis?.cancel();
+        }
+        return { readAloudEnabled: !state.readAloudEnabled };
+      }),
+      
+      setReadAloudVoice: (readAloudVoice) => set({ readAloudVoice }),
+      
+      setReadAloudSpeed: (readAloudSpeed) => set({ readAloudSpeed }),
     }),
     {
       name: 'open-way-settings',

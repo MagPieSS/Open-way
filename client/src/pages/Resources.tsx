@@ -1,4 +1,5 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useRef } from "react";
+import { ReadAloudButton } from "@/components/ReadAloudButton";
 import { useQuery } from "@tanstack/react-query";
 import { SectionLabel } from "@/components/SectionLabel";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -53,7 +54,7 @@ const CATEGORIES = [
 ];
 
 export default function Resources() {
-// ... existing code ...
+  const contentRef = useRef<HTMLDivElement>(null);
   const [searchTerm, setSearchTerm] = useState("");
   const [categoryFilter, setCategoryFilter] = useState("All");
 
@@ -197,6 +198,9 @@ export default function Resources() {
               <p className="text-muted-foreground text-lg">
                 Find accessibility services, organizations, and support in Philadelphia
               </p>
+              <div className="mt-3">
+                <ReadAloudButton contentRef={contentRef} />
+              </div>
             </div>
 
             <div className="relative w-full md:w-96">
@@ -236,7 +240,7 @@ export default function Resources() {
         </div>
       </section>
 
-      <section className="py-12 px-4">
+      <section className="py-12 px-4" ref={contentRef}>
         <div className="max-w-7xl mx-auto">
           {isLoading ? (
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">

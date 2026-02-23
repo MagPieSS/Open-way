@@ -14,8 +14,9 @@ import { format } from "date-fns";
 import { AccessibilityMap } from "@/components/AccessibilityMap";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/hooks/use-toast";
-import { useState } from "react";
+import { useState, useRef } from "react";
 import { apiRequest } from "@/lib/queryClient";
+import { ReadAloudButton } from "@/components/ReadAloudButton";
 import { Pencil, Trash2 } from "lucide-react";
 import { ReportButton } from "@/components/ReportButton";
 import { useUpload } from "@/hooks/use-upload";
@@ -117,6 +118,7 @@ export default function PlaceDetail() {
   const { toast } = useToast();
   const { user } = useAuth();
   const queryClient = useQueryClient();
+  const contentRef = useRef<HTMLDivElement>(null);
   const [hoveredImage, setHoveredImage] = useState<number | null>(null);
   const [editingReviewId, setEditingReviewId] = useState<number | null>(null);
   const [editingTipId, setEditingTipId] = useState<number | null>(null);
@@ -432,7 +434,7 @@ export default function PlaceDetail() {
         </Link>
       </div>
 
-      <div className="max-w-4xl mx-auto px-4 sm:px-6 -mt-20 relative z-10">
+      <div className="max-w-4xl mx-auto px-4 sm:px-6 -mt-20 relative z-10" ref={contentRef}>
         <div className="bg-card rounded-3xl p-6 md:p-10 shadow-xl border border-border">
           {/* Header */}
           <div className="flex flex-col md:flex-row md:items-start md:justify-between gap-6 mb-8">
@@ -500,6 +502,7 @@ export default function PlaceDetail() {
               >
                 <Share2 className="w-4 h-4" /> Share
               </Button>
+              <ReadAloudButton contentRef={contentRef} />
             </div>
           </div>
 

@@ -1,5 +1,6 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useRef } from "react";
 import { useMutation, useQueryClient, useQuery } from "@tanstack/react-query";
+import { ReadAloudButton } from "@/components/ReadAloudButton";
 import { useSettings } from "@/hooks/use-settings";
 import { apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
@@ -209,6 +210,7 @@ export default function Community() {
   const { toast } = useToast();
   const { user } = useAuth();
   const { textSize } = useSettings();
+  const contentRef = useRef<HTMLDivElement>(null);
 
   const { data: communityPosts, isLoading } = useQuery<CommunityPost[]>({
     queryKey: ["/api/community/posts"],
@@ -278,13 +280,14 @@ export default function Community() {
         <div className="max-w-7xl mx-auto text-center">
           <SectionLabel>Community</SectionLabel>
           <h1 className="font-display font-bold text-4xl mt-2 mb-4">Community Voices</h1>
-          <p className="text-muted-foreground text-lg max-w-2xl mx-auto">
+          <p className="text-muted-foreground text-lg max-w-2xl mx-auto mb-4">
             Share your experiences and discuss accessibility improvements across the city.
           </p>
+          <ReadAloudButton contentRef={contentRef} />
         </div>
       </section>
 
-      <div className="max-w-3xl mx-auto px-4 py-8">
+      <div className="max-w-3xl mx-auto px-4 py-8" ref={contentRef}>
         <Card className="mb-8 border-primary/20" data-testid="card-new-post">
           <CardHeader>
             <CardTitle className="text-xl flex items-center gap-2">
