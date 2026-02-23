@@ -6,6 +6,7 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import { Navigation } from "@/components/Navigation";
 import { Footer } from "@/components/Footer";
 import { Breadcrumbs } from "@/components/Breadcrumbs";
+import { ReadAloudProvider } from "@/components/ReadAloudProvider";
 import { useSettings } from "@/hooks/use-settings";
 import { useEffect } from "react";
 
@@ -87,6 +88,7 @@ function AppContent() {
         </main>
       </div>
       <Footer />
+      <ReadAloudProvider />
     </div>
   );
 }
