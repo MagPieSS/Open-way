@@ -6,7 +6,7 @@ import { api } from "@shared/routes";
 import { z } from "zod";
 import { eq } from "drizzle-orm";
 import { randomBytes } from "crypto";
-import { ACCESSIBILITY_STATUS, ACCESSIBILITY_FEATURE_TYPES, insertUserSchema, loginSchema, forgotPasswordSchema, resetPasswordSchema, blogPosts as blogPostsTable, reviews as reviewsTable, places as placesTable, communityPosts as communityPostsTable, users } from "@shared/schema";
+import { ACCESSIBILITY_STATUS, ACCESSIBILITY_FEATURE_TYPES, insertUserSchema, loginSchema, forgotPasswordSchema, resetPasswordSchema, blogPosts as blogPostsTable, reviews as reviewsTable, places as placesTable, communityPosts as communityPostsTable, placeMedia as placeMediaTable, users } from "@shared/schema";
 import { 
   registerUser, 
   loginUser, 
@@ -1468,11 +1468,48 @@ export async function registerRoutes(
     }
   });
 
-  // Admin: Get all reports
+  // Admin: Get all reports with reported content details
   app.get("/api/admin/reports", requireAdmin, async (req, res) => {
     try {
       const allReports = await storage.getReports();
-      res.json(allReports);
+
+      const enriched = await Promise.all(allReports.map(async (report) => {
+        let reportedContent: any = null;
+        let placeName: string | null = null;
+        let reporterEmail: string | null = null;
+
+        try {
+          if (report.contentType === "photo") {
+            const [media] = await db.select().from(placeMediaTable).where(eq(placeMediaTable.id, report.contentId));
+            if (media) {
+              const [place] = await db.select({ name: placesTable.name }).from(placesTable).where(eq(placesTable.id, media.placeId));
+              reportedContent = { url: media.url, caption: media.caption, uploadedBy: media.uploadedBy };
+              placeName = place?.name ?? null;
+            }
+          } else if (report.contentType === "review") {
+            const [review] = await db.select().from(reviewsTable).where(eq(reviewsTable.id, report.contentId));
+            if (review) {
+              const [place] = await db.select({ name: placesTable.name }).from(placesTable).where(eq(placesTable.id, review.placeId));
+              reportedContent = { content: review.content, authorName: review.authorName, rating: review.rating };
+              placeName = place?.name ?? null;
+            }
+          } else if (report.contentType === "community_post") {
+            const [post] = await db.select().from(communityPostsTable).where(eq(communityPostsTable.id, report.contentId));
+            if (post) {
+              reportedContent = { content: post.content, authorName: post.authorName };
+            }
+          }
+        } catch {}
+
+        try {
+          const [reporter] = await db.select({ email: users.email }).from(users).where(eq(users.id, report.reporterId));
+          reporterEmail = reporter?.email ?? null;
+        } catch {}
+
+        return { ...report, reportedContent, placeName, reporterEmail };
+      }));
+
+      res.json(enriched);
     } catch (err: any) {
       res.status(500).json({ message: "Failed to fetch reports" });
     }

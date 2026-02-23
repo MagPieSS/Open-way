@@ -44,6 +44,15 @@ interface CommunityPostWithAuthor extends CommunityPost {
 
 interface ReportWithDetails extends Report {
   reporterEmail?: string;
+  placeName?: string | null;
+  reportedContent?: {
+    url?: string;
+    caption?: string | null;
+    uploadedBy?: string | null;
+    content?: string;
+    authorName?: string | null;
+    rating?: number | null;
+  } | null;
 }
 
 interface UserRecord {
@@ -722,26 +731,93 @@ export default function AdminDashboard() {
                 <div className="space-y-3">
                   {reportsData.map((report) => (
                     <Card key={report.id} data-testid={`card-report-${report.id}`}>
-                      <CardContent className="pt-4">
-                        <div className="flex items-start justify-between gap-4 flex-wrap">
-                          <div className="flex-1 min-w-0 space-y-2">
-                            <div className="flex items-center gap-2 flex-wrap">
-                              <Badge variant="outline" data-testid={`badge-report-type-${report.id}`}>
-                                {report.contentType}
-                              </Badge>
-                              {getReportStatusBadge(report.status)}
-                            </div>
-                            <p className="text-sm" data-testid={`text-report-reason-${report.id}`}>{report.reason}</p>
-                            <div className="flex items-center gap-3 text-xs text-muted-foreground flex-wrap">
-                              {(report as ReportWithDetails).reporterEmail && (
-                                <span data-testid={`text-report-reporter-${report.id}`}>
-                                  Reporter: {(report as ReportWithDetails).reporterEmail}
-                                </span>
-                              )}
-                              {report.createdAt && (
-                                <span>{format(new Date(report.createdAt), "MMM d, yyyy")}</span>
-                              )}
-                            </div>
+                      <CardContent className="pt-4 space-y-3">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <Badge variant="outline" data-testid={`badge-report-type-${report.id}`}>
+                            {report.contentType === "community_post" ? "Community Post" : report.contentType === "photo" ? "Photo" : "Review"}
+                          </Badge>
+                          {getReportStatusBadge(report.status)}
+                          {report.placeName && (
+                            <span className="text-xs text-muted-foreground flex items-center gap-1">
+                              <MapPin className="w-3 h-3" />
+                              {report.placeName}
+                            </span>
+                          )}
+                        </div>
+
+                        {report.reportedContent && (
+                          <div className="rounded-md border border-border bg-muted/40 p-3" data-testid={`reported-content-${report.id}`}>
+                            <p className="text-[11px] uppercase tracking-wider text-muted-foreground font-medium mb-2">Reported Content</p>
+                            {report.contentType === "photo" && report.reportedContent.url && (
+                              <div className="space-y-2">
+                                <div className="relative w-full max-w-xs h-40 rounded overflow-hidden bg-muted">
+                                  <img
+                                    src={report.reportedContent.url}
+                                    alt={report.reportedContent.caption || "Reported photo"}
+                                    className="w-full h-full object-cover"
+                                    onError={(e) => {
+                                      (e.target as HTMLImageElement).style.display = "none";
+                                    }}
+                                  />
+                                </div>
+                                {report.reportedContent.caption && (
+                                  <p className="text-sm text-foreground">{report.reportedContent.caption}</p>
+                                )}
+                                {report.reportedContent.uploadedBy && (
+                                  <p className="text-xs text-muted-foreground">Uploaded by: {report.reportedContent.uploadedBy}</p>
+                                )}
+                              </div>
+                            )}
+                            {report.contentType === "review" && report.reportedContent.content && (
+                              <div className="space-y-1">
+                                {report.reportedContent.rating != null && (
+                                  <div className="flex items-center gap-1">
+                                    {[...Array(5)].map((_, i) => (
+                                      <Star
+                                        key={i}
+                                        className={`w-3.5 h-3.5 ${i < (report.reportedContent?.rating ?? 0) ? "text-yellow-500 fill-yellow-500" : "text-muted-foreground/30"}`}
+                                      />
+                                    ))}
+                                  </div>
+                                )}
+                                <p className="text-sm text-foreground">{report.reportedContent.content}</p>
+                                {report.reportedContent.authorName && (
+                                  <p className="text-xs text-muted-foreground">By: {report.reportedContent.authorName}</p>
+                                )}
+                              </div>
+                            )}
+                            {report.contentType === "community_post" && report.reportedContent.content && (
+                              <div className="space-y-1">
+                                <p className="text-sm text-foreground">{report.reportedContent.content}</p>
+                                {report.reportedContent.authorName && (
+                                  <p className="text-xs text-muted-foreground">By: {report.reportedContent.authorName}</p>
+                                )}
+                              </div>
+                            )}
+                          </div>
+                        )}
+
+                        {!report.reportedContent && (
+                          <div className="rounded-md border border-dashed border-border bg-muted/20 p-3 text-sm text-muted-foreground italic" data-testid={`reported-content-deleted-${report.id}`}>
+                            The reported content has been removed or is no longer available.
+                          </div>
+                        )}
+
+                        <div className="space-y-1">
+                          <p className="text-[11px] uppercase tracking-wider text-muted-foreground font-medium">Report Reason</p>
+                          <p className="text-sm" data-testid={`text-report-reason-${report.id}`}>{report.reason}</p>
+                        </div>
+
+                        <div className="flex items-center justify-between gap-4 flex-wrap pt-1 border-t border-border">
+                          <div className="flex items-center gap-3 text-xs text-muted-foreground flex-wrap">
+                            {report.reporterEmail && (
+                              <span data-testid={`text-report-reporter-${report.id}`}>
+                                Reporter: {report.reporterEmail}
+                              </span>
+                            )}
+                            {report.createdAt && (
+                              <span>{format(new Date(report.createdAt), "MMM d, yyyy")}</span>
+                            )}
                           </div>
                           <div className="flex items-center gap-2 flex-wrap">
                             {report.status === "pending" && (
