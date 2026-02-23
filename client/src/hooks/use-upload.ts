@@ -57,55 +57,7 @@ export function useUpload(options: UseUploadOptions = {}) {
   const [progress, setProgress] = useState(0);
 
   /**
-   * Request a presigned URL from the backend.
-   * IMPORTANT: Send JSON metadata, NOT the file itself.
-   */
-  const requestUploadUrl = useCallback(
-    async (file: File): Promise<UploadResponse> => {
-      const response = await fetch("/api/uploads/request-url", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          name: file.name,
-          size: file.size,
-          contentType: file.type || "application/octet-stream",
-        }),
-      });
-
-      if (!response.ok) {
-        const errorData = await response.json().catch(() => ({}));
-        throw new Error(errorData.error || "Failed to get upload URL");
-      }
-
-      return response.json();
-    },
-    []
-  );
-
-  /**
-   * Upload a file directly to the presigned URL.
-   */
-  const uploadToPresignedUrl = useCallback(
-    async (file: File, uploadURL: string): Promise<void> => {
-      const response = await fetch(uploadURL, {
-        method: "PUT",
-        body: file,
-        headers: {
-          "Content-Type": file.type || "application/octet-stream",
-        },
-      });
-
-      if (!response.ok) {
-        throw new Error("Failed to upload file to storage");
-      }
-    },
-    []
-  );
-
-  /**
-   * Upload a file using the presigned URL flow.
+   * Upload a file via server-side proxy (avoids CORS issues with presigned URLs).
    *
    * @param file - The file to upload
    * @returns The upload response containing the object path
@@ -117,15 +69,29 @@ export function useUpload(options: UseUploadOptions = {}) {
       setProgress(0);
 
       try {
-        // Step 1: Request presigned URL (send metadata as JSON)
         setProgress(10);
-        const uploadResponse = await requestUploadUrl(file);
+        const response = await fetch("/api/uploads/proxy", {
+          method: "POST",
+          credentials: "include",
+          headers: {
+            "Content-Type": file.type || "application/octet-stream",
+          },
+          body: file,
+        });
 
-        // Step 2: Upload file directly to presigned URL
-        setProgress(30);
-        await uploadToPresignedUrl(file, uploadResponse.uploadURL);
+        if (!response.ok) {
+          const errorData = await response.json().catch(() => ({}));
+          console.error("[upload] Proxy upload failed:", response.status, errorData);
+          throw new Error(errorData.error || `Upload failed (${response.status})`);
+        }
 
+        const data = await response.json();
         setProgress(100);
+        const uploadResponse: UploadResponse = {
+          uploadURL: "",
+          objectPath: data.objectPath,
+          metadata: { name: file.name, size: file.size, contentType: file.type || "application/octet-stream" },
+        };
         options.onSuccess?.(uploadResponse);
         return uploadResponse;
       } catch (err) {
@@ -137,7 +103,7 @@ export function useUpload(options: UseUploadOptions = {}) {
         setIsUploading(false);
       }
     },
-    [requestUploadUrl, uploadToPresignedUrl, options]
+    [options]
   );
 
   /**
@@ -164,6 +130,7 @@ export function useUpload(options: UseUploadOptions = {}) {
       // Use the actual file properties to request a per-file presigned URL
       const response = await fetch("/api/uploads/request-url", {
         method: "POST",
+        credentials: "include",
         headers: {
           "Content-Type": "application/json",
         },

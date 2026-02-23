@@ -119,13 +119,16 @@ app.use(
   })
 );
 
-app.use(
+app.use((req, res, next) => {
+  if (req.path === "/api/uploads/proxy") {
+    return next();
+  }
   express.json({
     verify: (req, _res, buf) => {
       req.rawBody = buf;
     },
-  }),
-);
+  })(req, res, next);
+});
 
 app.use(express.urlencoded({ extended: false }));
 
