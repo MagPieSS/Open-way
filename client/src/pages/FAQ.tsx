@@ -1,6 +1,6 @@
-import { useState, useMemo, useRef } from "react";
+import { useState, useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { ReadAloudButton } from "@/components/ReadAloudButton";
+
 import { SectionLabel } from "@/components/SectionLabel";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -42,7 +42,7 @@ const CATEGORIES = [
 ];
 
 export default function FAQ() {
-  const contentRef = useRef<HTMLDivElement>(null);
+
   const [searchTerm, setSearchTerm] = useState("");
   const [selectedCategory, setSelectedCategory] = useState("All");
 
@@ -110,9 +110,6 @@ export default function FAQ() {
               <p className="text-muted-foreground text-lg">
                 Find answers to common questions about Open Way
               </p>
-              <div className="mt-3">
-                <ReadAloudButton contentRef={contentRef} />
-              </div>
             </div>
 
             <div className="relative w-full md:w-96">
@@ -158,7 +155,7 @@ export default function FAQ() {
         </div>
       </section>
 
-      <section className="py-12 px-4" ref={contentRef}>
+      <section className="py-12 px-4">
         <div className="max-w-4xl mx-auto">
           {isLoading ? (
             <div className="space-y-4">

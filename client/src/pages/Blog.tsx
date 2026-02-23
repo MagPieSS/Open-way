@@ -1,6 +1,6 @@
-import { useState, useMemo, useRef } from "react";
+import { useState, useMemo } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
-import { ReadAloudButton } from "@/components/ReadAloudButton";
+
 import { SectionLabel } from "@/components/SectionLabel";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -46,7 +46,7 @@ const SORT_OPTIONS = [
 ];
 
 export default function Blog() {
-  const contentRef = useRef<HTMLDivElement>(null);
+
   const [categoryFilter, setCategoryFilter] = useState("All");
   const [sortBy, setSortBy] = useState("newest");
   const [selectedPost, setSelectedPost] = useState<BlogPost | null>(null);
@@ -191,9 +191,6 @@ export default function Blog() {
           <p className="text-muted-foreground text-lg max-w-2xl mx-auto mb-4">
             Stay informed with the latest accessibility news, community stories, and advocacy updates
           </p>
-          <div className="mb-4">
-            <ReadAloudButton contentRef={contentRef} />
-          </div>
           {user && (
             <Dialog open={showCreateDialog} onOpenChange={setShowCreateDialog}>
               <DialogTrigger asChild>
@@ -322,7 +319,7 @@ export default function Blog() {
         </div>
       </section>
 
-      <section className="py-12 px-4" ref={contentRef}>
+      <section className="py-12 px-4">
         <div className="max-w-7xl mx-auto">
           {isLoading ? (
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
