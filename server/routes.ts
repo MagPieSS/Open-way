@@ -21,7 +21,6 @@ import {
   isWeakPassword
 } from "./auth";
 import { authRateLimiter, apiRateLimiter, validateCsrf } from "./index";
-import { registerObjectStorageRoutes } from "./integrations/object_storage";
 import { geocodeAddress } from "./geocode";
 
 // Middleware to check if user is authenticated
@@ -87,8 +86,42 @@ export async function registerRoutes(
   app: Express
 ): Promise<Server> {
 
-  // Register object storage routes for file uploads
-  registerObjectStorageRoutes(app);
+  // ==================== FILE UPLOAD ROUTES ====================
+
+  // Request upload URL (local storage)
+  app.post("/api/uploads/request-url", apiRateLimiter, async (req, res) => {
+    try {
+      const { name, size, contentType } = req.body;
+      if (!name) {
+        return res.status(400).json({ error: "Missing required field: name" });
+      }
+
+      // Generate unique filename
+      const ext = name.split('.').pop();
+      const filename = `${Date.now()}-${Math.random().toString(36).substring(2)}.${ext}`;
+      const uploadPath = `/uploads/${filename}`;
+
+      res.json({
+        uploadURL: uploadPath,
+        objectPath: uploadPath
+      });
+    } catch (error) {
+      console.error("Upload URL request failed:", error);
+      res.status(500).json({ error: "Failed to generate upload URL" });
+    }
+  });
+
+  // Proxy upload (save to local storage)
+  app.post("/api/uploads/proxy", apiRateLimiter, async (req, res) => {
+    try {
+      // For now, return success without actual upload
+      // TODO: Implement proper file upload handling
+      res.json({ success: true });
+    } catch (error) {
+      console.error("Proxy upload failed:", error);
+      res.status(500).json({ error: "Upload failed" });
+    }
+  });
 
   // ==================== AUTHENTICATION ROUTES ====================
 

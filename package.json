@@ -1,5 +1,5 @@
 {
-  "name": "rest-express",
+  "name": "open-way",
   "version": "1.0.0",
   "type": "module",
   "license": "MIT",
@@ -99,9 +99,6 @@
     "zustand": "^5.0.9"
   },
   "devDependencies": {
-    "@open-way/vite-plugin-cartographer": "^0.4.4",
-    "@open-way/vite-plugin-dev-banner": "^0.1.1",
-    "@open-way/vite-plugin-runtime-error-modal": "^0.0.3",
     "@tailwindcss/typography": "^0.5.15",
     "@tailwindcss/vite": "^4.1.18",
     "@types/connect-pg-simple": "^7.0.3",
