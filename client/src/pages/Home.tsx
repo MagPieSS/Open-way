@@ -406,7 +406,15 @@ export default function Home() {
   );
 }
 
-function FeatureCard({ icon: Icon, title, description, color, link }: any) {
+interface FeatureCardProps {
+  icon: React.ComponentType<{ className?: string }>;
+  title: string;
+  description: string;
+  color: string;
+  link: string;
+}
+
+function FeatureCard({ icon: Icon, title, description, color, link }: FeatureCardProps) {
   const { textSize } = useSettings();
   
   return (

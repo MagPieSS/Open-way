@@ -80,7 +80,7 @@ export function useUpload(options: UseUploadOptions = {}) {
         });
 
         if (!response.ok) {
-          const errorData = await response.json().catch(() => ({}));
+          const errorData = await response.json().catch(() => ({ error: "Upload failed" }));
           console.error("[upload] Proxy upload failed:", response.status, errorData);
           throw new Error(errorData.error || `Upload failed (${response.status})`);
         }

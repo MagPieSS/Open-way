@@ -111,7 +111,7 @@ export default function SavedPlaces() {
           ) : error ? (
             <div className="text-center py-16">
               <p className="text-destructive mb-4">Failed to load saved places</p>
-              <Button variant="outline" onClick={() => window.location.reload()}>
+              <Button variant="outline" onClick={() => queryClient.invalidateQueries({ queryKey: ["/api/saved-places"] })}>
                 Try Again
               </Button>
             </div>

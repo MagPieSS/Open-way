@@ -5,7 +5,7 @@ import { z } from "zod";
 
 async function handleResponse<T>(res: Response, schema: z.ZodSchema<T>): Promise<T> {
   if (!res.ok) {
-    const errorData = await res.json().catch(() => ({}));
+    const errorData = await res.json().catch(() => ({ message: "API request failed" }));
     throw new Error(errorData.message || 'API request failed');
   }
   const data = await res.json();

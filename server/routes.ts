@@ -534,12 +534,12 @@ export async function registerRoutes(
 
   app.post(api.places.create.path, requireAuth, validateCsrf, async (req, res) => {
     try {
-      const input = api.places.create.input.parse(req.body);
+      let input = api.places.create.input.parse(req.body);
       if (input.address && input.latitude == null && input.longitude == null) {
         const coords = await geocodeAddress(input.address);
         if (coords) {
-          (input as any).latitude = coords.latitude;
-          (input as any).longitude = coords.longitude;
+          input.latitude = coords.latitude;
+          input.longitude = coords.longitude;
         }
       }
       const place = await storage.createPlace(input);
@@ -624,9 +624,10 @@ export async function registerRoutes(
       });
       
       res.status(201).json(media);
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error("[PRODUCTION] Failed to create place media:", err);
-      res.status(400).json({ message: err.message || "Failed to upload image" });
+      const message = err instanceof Error ? err.message : "Failed to upload image";
+      res.status(400).json({ message });
     }
   });
 

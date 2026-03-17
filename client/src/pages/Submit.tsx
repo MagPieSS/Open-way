@@ -14,10 +14,11 @@ import { useSettings } from "@/hooks/use-settings";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import * as z from "zod";
-import { Link } from "wouter";
+import { Link, useSearch } from "wouter";
 
 export default function Submit() {
-  const queryParams = new URLSearchParams(window.location.search);
+  const search = useSearch();
+  const queryParams = new URLSearchParams(search);
   const preselectedPlaceId = queryParams.get("placeId");
   const [mode, setMode] = useState<'place' | 'review'>(preselectedPlaceId ? 'review' : 'place');
   const { user, isLoading: isAuthLoading } = useAuth();

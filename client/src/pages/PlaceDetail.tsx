@@ -101,7 +101,7 @@ export default function PlaceDetail() {
   const params = useParams();
   const id = Number(params.id);
   const { data: place, isLoading: isLoadingPlace } = usePlace(id);
-  const { data: reviews, isLoading: isLoadingReviews } = useQuery<any[]>({
+  const { data: reviews, isLoading: isLoadingReviews, error: reviewsError } = useQuery<any[]>({
     queryKey: ["/api/places", id, "place-reviews"],
     queryFn: async () => {
       const res = await fetch(`/api/places/${id}/place-reviews`);
@@ -110,9 +110,9 @@ export default function PlaceDetail() {
     },
     enabled: !!id,
   });
-  const { data: media, isLoading: isLoadingMedia } = useMedia(id);
-  const { data: features, isLoading: isLoadingFeatures } = useFeatures(id);
-  const { data: tips, isLoading: isLoadingTips } = useTips(id);
+  const { data: media, isLoading: isLoadingMedia, error: mediaError } = useMedia(id);
+  const { data: features, isLoading: isLoadingFeatures, error: featuresError } = useFeatures(id);
+  const { data: tips, isLoading: isLoadingTips, error: tipsError } = useTips(id);
   const { data: allPlaces } = usePlaces();
   const { textSize } = useSettings();
   const { toast } = useToast();
