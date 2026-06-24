@@ -57,6 +57,11 @@ export const places = pgTable("places", {
   phone: text("phone"),
   website: text("website"),
   hours: text("hours"),
+  // Data trust and provenance
+  accessibilitySource: text("accessibility_source"),
+  verificationStatus: text("verification_status").default("community"),
+  submittedBy: integer("submitted_by").references(() => users.id),
+  lastCheckedAt: timestamp("last_checked_at"),
   // Engagement
   isFeatured: boolean("is_featured").default(false),
   viewCount: integer("view_count").default(0),
@@ -300,7 +305,16 @@ export const loginSchema = z.object({
 
 export const insertSavedPlaceSchema = createInsertSchema(savedPlaces).omit({ id: true, savedAt: true });
 export const insertCategorySchema = createInsertSchema(categories).omit({ id: true });
-export const insertPlaceSchema = createInsertSchema(places).omit({ id: true, updatedAt: true, createdAt: true, viewCount: true, reviewCount: true });
+export const insertPlaceSchema = createInsertSchema(places).omit({
+  id: true,
+  updatedAt: true,
+  createdAt: true,
+  viewCount: true,
+  reviewCount: true,
+  submittedBy: true,
+  verificationStatus: true,
+  lastCheckedAt: true,
+});
 export const insertAccessibilityFeatureSchema = createInsertSchema(accessibilityFeatures).omit({ id: true });
 export const insertPlaceMediaSchema = createInsertSchema(placeMedia).omit({ id: true, createdAt: true });
 export const insertPlaceTipSchema = createInsertSchema(placeTips).omit({ id: true, createdAt: true, helpfulCount: true, userId: true });

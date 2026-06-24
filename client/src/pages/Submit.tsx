@@ -1,7 +1,7 @@
 import { useState, useRef } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { insertPlaceSchema, insertReviewSchema, ACCESSIBILITY_STATUS, PLACE_CATEGORIES } from "@shared/schema";
+import { insertPlaceSchema, insertReviewSchema, ACCESSIBILITY_STATUS, ACCESSIBILITY_FEATURE_TYPES, PLACE_CATEGORIES } from "@shared/schema";
 import { useCreatePlace } from "@/hooks/use-places";
 import { useCreateReview } from "@/hooks/use-reviews";
 import { usePlaces } from "@/hooks/use-places";
@@ -15,6 +15,30 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import * as z from "zod";
 import { Link, useSearch } from "wouter";
+
+const ACCESSIBILITY_SOURCE_OPTIONS = [
+  "Personal visit",
+  "Venue website",
+  "Phone call with venue",
+  "Community report",
+  "Public agency data",
+];
+
+const FEATURE_CHECKLIST = [
+  { type: ACCESSIBILITY_FEATURE_TYPES.RAMP, label: "Wheelchair ramp" },
+  { type: ACCESSIBILITY_FEATURE_TYPES.ELEVATOR, label: "Elevator access" },
+  { type: ACCESSIBILITY_FEATURE_TYPES.ACCESSIBLE_RESTROOM, label: "Accessible restroom" },
+  { type: ACCESSIBILITY_FEATURE_TYPES.ACCESSIBLE_PARKING, label: "Accessible parking" },
+  { type: ACCESSIBILITY_FEATURE_TYPES.WHEELCHAIR_RENTAL, label: "Wheelchair rental" },
+  { type: ACCESSIBILITY_FEATURE_TYPES.BRAILLE_SIGNAGE, label: "Braille signage" },
+  { type: ACCESSIBILITY_FEATURE_TYPES.AUDIO_GUIDE, label: "Audio guide" },
+  { type: ACCESSIBILITY_FEATURE_TYPES.HEARING_LOOP, label: "Hearing loop" },
+  { type: ACCESSIBILITY_FEATURE_TYPES.SIGN_LANGUAGE, label: "Sign language services" },
+  { type: ACCESSIBILITY_FEATURE_TYPES.LARGE_PRINT, label: "Large print materials" },
+  { type: ACCESSIBILITY_FEATURE_TYPES.SERVICE_ANIMAL_FRIENDLY, label: "Service animal friendly" },
+  { type: ACCESSIBILITY_FEATURE_TYPES.QUIET_HOURS, label: "Quiet hours" },
+  { type: ACCESSIBILITY_FEATURE_TYPES.SENSORY_ROOM, label: "Sensory room" },
+];
 
 export default function Submit() {
   const search = useSearch();
@@ -95,6 +119,7 @@ function PlaceForm({ textSize }: { textSize: string }) {
   const createPlace = useCreatePlace();
   const [uploadedImageUrl, setUploadedImageUrl] = useState<string | null>(null);
   const [imagePreview, setImagePreview] = useState<string | null>(null);
+  const [featureSelections, setFeatureSelections] = useState<Record<string, { description: string }>>({});
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const { uploadFile, isUploading, progress } = useUpload({
@@ -123,6 +148,7 @@ function PlaceForm({ textSize }: { textSize: string }) {
       description: "",
       imageUrl: "",
       address: "",
+      accessibilitySource: ACCESSIBILITY_SOURCE_OPTIONS[0],
     },
   });
 
@@ -148,9 +174,16 @@ function PlaceForm({ textSize }: { textSize: string }) {
   };
 
   const onSubmit = (data: z.infer<typeof insertPlaceSchema>) => {
+    const accessibilityFeatures = Object.entries(featureSelections).map(([featureType, value]) => ({
+      featureType,
+      available: true,
+      description: value.description.trim() || undefined,
+    }));
+
     const submitData = {
       ...data,
       imageUrl: uploadedImageUrl || data.imageUrl || undefined,
+      accessibilityFeatures,
     };
 
     createPlace.mutate(submitData, {
@@ -169,6 +202,24 @@ function PlaceForm({ textSize }: { textSize: string }) {
         });
       },
     });
+  };
+
+  const toggleFeature = (featureType: string) => {
+    setFeatureSelections((current) => {
+      if (current[featureType]) {
+        const next = { ...current };
+        delete next[featureType];
+        return next;
+      }
+      return { ...current, [featureType]: { description: "" } };
+    });
+  };
+
+  const updateFeatureDescription = (featureType: string, description: string) => {
+    setFeatureSelections((current) => ({
+      ...current,
+      [featureType]: { description },
+    }));
   };
 
   return (
@@ -234,6 +285,54 @@ function PlaceForm({ textSize }: { textSize: string }) {
               }`}>{status}</span>
             </label>
           ))}
+        </div>
+      </div>
+
+      <div>
+        <label className="block font-bold mb-2">Information Source</label>
+        <select
+          {...form.register("accessibilitySource")}
+          className="w-full p-4 rounded-md border-2 border-border bg-background focus:ring-2 focus:ring-primary focus:border-transparent outline-none transition-all appearance-none"
+          data-testid="select-accessibility-source"
+        >
+          {ACCESSIBILITY_SOURCE_OPTIONS.map((source) => (
+            <option key={source} value={source}>
+              {source}
+            </option>
+          ))}
+        </select>
+      </div>
+
+      <div>
+        <label className="block font-bold mb-2">Structured Accessibility Details</label>
+        <div className="grid gap-3">
+          {FEATURE_CHECKLIST.map((feature) => {
+            const selected = Boolean(featureSelections[feature.type]);
+            return (
+              <div key={feature.type} className="rounded-md border-2 border-border bg-background p-4">
+                <label className="flex items-center gap-3 font-semibold">
+                  <input
+                    type="checkbox"
+                    checked={selected}
+                    onChange={() => toggleFeature(feature.type)}
+                    className="h-5 w-5 accent-primary"
+                    data-testid={`checkbox-feature-${feature.type}`}
+                  />
+                  {feature.label}
+                </label>
+                {selected && (
+                  <textarea
+                    value={featureSelections[feature.type]?.description || ""}
+                    onChange={(e) => updateFeatureDescription(feature.type, e.target.value)}
+                    rows={2}
+                    className="mt-3 w-full p-3 rounded-md border border-border bg-card focus:ring-2 focus:ring-primary focus:border-transparent outline-none transition-all"
+                    placeholder="Optional note, location, limitation, or condition"
+                    data-testid={`input-feature-note-${feature.type}`}
+                  />
+                )}
+              </div>
+            );
+          })}
         </div>
       </div>
 

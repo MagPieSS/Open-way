@@ -70,6 +70,16 @@ export function decryptBackupCodes(encryptedCodes: string[]): string[] {
   return encryptedCodes.map(code => decryptSecret(code));
 }
 
+function parseStoredBackupCodes(storedCodes: string | null | undefined): string[] {
+  if (!storedCodes) return [];
+  try {
+    const parsed = JSON.parse(storedCodes);
+    return Array.isArray(parsed) ? parsed.filter((code): code is string => typeof code === "string") : [];
+  } catch {
+    return [];
+  }
+}
+
 // Common weak passwords to reject
 const COMMON_PASSWORDS = new Set([
   "password", "12345678", "password1", "password123", "qwerty123",
@@ -219,7 +229,7 @@ export async function verifyTwoFactor(
   }
 
   // Try backup code (backup codes are also encrypted)
-  const backupValid = await verifyEncryptedBackupCode(userId, code.toUpperCase(), user.backupCodes || []);
+  const backupValid = await verifyEncryptedBackupCode(userId, code.toUpperCase(), parseStoredBackupCodes(user.backupCodes));
   if (backupValid) {
     await storage.updateUserLastLogin(user.id);
     return { success: true };
@@ -307,7 +317,7 @@ export async function confirm2FA(
   }
 
   // Enable 2FA (keep encrypted secret)
-  await storage.updateUser2FA(userId, true, user.twoFactorSecret, user.backupCodes || []);
+  await storage.updateUser2FA(userId, true, user.twoFactorSecret, parseStoredBackupCodes(user.backupCodes));
 
   return { success: true };
 }

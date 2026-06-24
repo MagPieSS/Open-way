@@ -7,8 +7,18 @@ import {
   insertContactSubmissionSchema, insertActivityLogSchema, insertPartnerSchema,
   places, reviews, signatures, categories, accessibilityFeatures,
   placeMedia, placeTips, petitions, petitionUpdates, events, resources,
-  blogPosts, faqEntries, contactSubmissions, activityLog, partners
+  blogPosts, faqEntries, contactSubmissions, activityLog, partners,
+  ACCESSIBILITY_FEATURE_TYPES
 } from './schema';
+
+const accessibilityFeatureContributionSchema = z.object({
+  featureType: z.string().refine(
+    (value) => Object.values(ACCESSIBILITY_FEATURE_TYPES).includes(value as typeof ACCESSIBILITY_FEATURE_TYPES[keyof typeof ACCESSIBILITY_FEATURE_TYPES]),
+    "Unknown accessibility feature"
+  ),
+  available: z.boolean().default(true),
+  description: z.string().max(500).optional(),
+});
 
 export const errorSchemas = {
   validation: z.object({
@@ -85,7 +95,9 @@ export const api = {
     create: {
       method: 'POST' as const,
       path: '/api/places',
-      input: insertPlaceSchema,
+      input: insertPlaceSchema.extend({
+        accessibilityFeatures: z.array(accessibilityFeatureContributionSchema).max(20).optional(),
+      }),
       responses: {
         201: z.custom<typeof places.$inferSelect>(),
         400: errorSchemas.validation,

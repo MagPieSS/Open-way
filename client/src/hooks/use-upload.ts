@@ -1,5 +1,6 @@
 import { useState, useCallback } from "react";
 import type { UppyFile } from "@uppy/core";
+import { fetchCsrfToken } from "@/lib/queryClient";
 
 interface UploadMetadata {
   name: string;
@@ -70,11 +71,13 @@ export function useUpload(options: UseUploadOptions = {}) {
 
       try {
         setProgress(10);
+        const csrfToken = await fetchCsrfToken();
         const response = await fetch("/api/uploads/proxy", {
           method: "POST",
           credentials: "include",
           headers: {
             "Content-Type": file.type || "application/octet-stream",
+            ...(csrfToken ? { "X-CSRF-Token": csrfToken } : {}),
           },
           body: file,
         });
@@ -127,12 +130,14 @@ export function useUpload(options: UseUploadOptions = {}) {
       url: string;
       headers?: Record<string, string>;
     }> => {
+      const csrfToken = await fetchCsrfToken();
       // Use the actual file properties to request a per-file presigned URL
       const response = await fetch("/api/uploads/request-url", {
         method: "POST",
         credentials: "include",
         headers: {
           "Content-Type": "application/json",
+          ...(csrfToken ? { "X-CSRF-Token": csrfToken } : {}),
         },
         body: JSON.stringify({
           name: file.name,
@@ -149,7 +154,10 @@ export function useUpload(options: UseUploadOptions = {}) {
       return {
         method: "PUT",
         url: data.uploadURL,
-        headers: { "Content-Type": file.type || "application/octet-stream" },
+        headers: {
+          "Content-Type": file.type || "application/octet-stream",
+          ...(csrfToken ? { "X-CSRF-Token": csrfToken } : {}),
+        },
       };
     },
     []
@@ -163,4 +171,3 @@ export function useUpload(options: UseUploadOptions = {}) {
     progress,
   };
 }
-

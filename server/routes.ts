@@ -1,5 +1,7 @@
-import type { Express, Request, Response, NextFunction } from "express";
+import express, { type Express, type Request, type Response, type NextFunction } from "express";
 import type { Server } from "http";
+import path from "path";
+import { mkdir, writeFile } from "fs/promises";
 import { storage } from "./storage";
 import { db } from "./db";
 import { api } from "@shared/routes";
@@ -22,6 +24,54 @@ import {
 } from "./auth";
 import { authRateLimiter, apiRateLimiter, validateCsrf } from "./index";
 import { geocodeAddress } from "./geocode";
+import { sendPasswordResetEmail } from "./email";
+
+const MAX_UPLOAD_SIZE_BYTES = 10 * 1024 * 1024;
+const ALLOWED_UPLOAD_TYPES: Record<string, string> = {
+  "image/jpeg": "jpg",
+  "image/png": "png",
+  "image/webp": "webp",
+  "image/gif": "gif",
+};
+
+function getUploadContentType(req: Request): string {
+  return String(req.headers["content-type"] || "").split(";")[0].trim().toLowerCase();
+}
+
+function createUploadFilename(contentType: string): string {
+  const extension = ALLOWED_UPLOAD_TYPES[contentType];
+  return `${Date.now()}-${randomBytes(12).toString("hex")}.${extension}`;
+}
+
+function isSafeUploadFilename(filename: string, contentType: string): boolean {
+  const expectedExtension = ALLOWED_UPLOAD_TYPES[contentType];
+  if (!expectedExtension) return false;
+  const escapedExtension = expectedExtension.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  return new RegExp(`^\\d+-[a-f0-9]{24}\\.${escapedExtension}$`).test(filename);
+}
+
+async function saveUploadBuffer(buffer: Buffer, contentType: string, requestedFilename?: string): Promise<string> {
+  if (!ALLOWED_UPLOAD_TYPES[contentType]) {
+    throw new Error("Unsupported image type. Use JPG, PNG, WebP, or GIF.");
+  }
+  if (buffer.length === 0) {
+    throw new Error("No file data received");
+  }
+  if (buffer.length > MAX_UPLOAD_SIZE_BYTES) {
+    throw new Error("File is too large. Maximum size is 10MB.");
+  }
+
+  const uploadDir = path.resolve(process.cwd(), "uploads");
+  await mkdir(uploadDir, { recursive: true });
+
+  const filename = requestedFilename && isSafeUploadFilename(requestedFilename, contentType)
+    ? requestedFilename
+    : createUploadFilename(contentType);
+  const absolutePath = path.join(uploadDir, filename);
+  await writeFile(absolutePath, buffer, { flag: "wx" });
+
+  return `/uploads/${filename}`;
+}
 
 // Middleware to check if user is authenticated
 function requireAuth(req: Request, res: Response, next: NextFunction) {
@@ -89,16 +139,22 @@ export async function registerRoutes(
   // ==================== FILE UPLOAD ROUTES ====================
 
   // Request upload URL (local storage)
-  app.post("/api/uploads/request-url", apiRateLimiter, async (req, res) => {
+  app.post("/api/uploads/request-url", requireAuth, validateCsrf, apiRateLimiter, async (req, res) => {
     try {
       const { name, size, contentType } = req.body;
       if (!name) {
         return res.status(400).json({ error: "Missing required field: name" });
       }
+      const normalizedContentType = String(contentType || "").split(";")[0].trim().toLowerCase();
+      if (!ALLOWED_UPLOAD_TYPES[normalizedContentType]) {
+        return res.status(400).json({ error: "Unsupported image type. Use JPG, PNG, WebP, or GIF." });
+      }
+      if (Number(size) > MAX_UPLOAD_SIZE_BYTES) {
+        return res.status(400).json({ error: "File is too large. Maximum size is 10MB." });
+      }
 
       // Generate unique filename
-      const ext = name.split('.').pop();
-      const filename = `${Date.now()}-${Math.random().toString(36).substring(2)}.${ext}`;
+      const filename = createUploadFilename(normalizedContentType);
       const uploadPath = `/uploads/${filename}`;
 
       res.json({
@@ -112,16 +168,47 @@ export async function registerRoutes(
   });
 
   // Proxy upload (save to local storage)
-  app.post("/api/uploads/proxy", apiRateLimiter, async (req, res) => {
-    try {
-      // For now, return success without actual upload
-      // TODO: Implement proper file upload handling
-      res.json({ success: true });
-    } catch (error) {
-      console.error("Proxy upload failed:", error);
-      res.status(500).json({ error: "Upload failed" });
+  app.post(
+    "/api/uploads/proxy",
+    requireAuth,
+    validateCsrf,
+    apiRateLimiter,
+    express.raw({ type: () => true, limit: MAX_UPLOAD_SIZE_BYTES }),
+    async (req, res) => {
+      try {
+        const contentType = getUploadContentType(req);
+        const objectPath = await saveUploadBuffer(req.body as Buffer, contentType);
+        res.json({ success: true, objectPath });
+      } catch (error) {
+        console.error("Proxy upload failed:", error);
+        const message = error instanceof Error ? error.message : "Upload failed";
+        res.status(400).json({ error: message });
+      }
     }
-  });
+  );
+
+  app.put(
+    "/uploads/:filename",
+    requireAuth,
+    validateCsrf,
+    apiRateLimiter,
+    express.raw({ type: () => true, limit: MAX_UPLOAD_SIZE_BYTES }),
+    async (req, res) => {
+      try {
+        const contentType = getUploadContentType(req);
+        const filename = req.params.filename;
+        if (!isSafeUploadFilename(filename, contentType)) {
+          return res.status(400).json({ error: "Invalid upload target" });
+        }
+        const objectPath = await saveUploadBuffer(req.body as Buffer, contentType, filename);
+        res.json({ success: true, objectPath });
+      } catch (error) {
+        console.error("Direct upload failed:", error);
+        const message = error instanceof Error ? error.message : "Upload failed";
+        res.status(400).json({ error: message });
+      }
+    }
+  );
 
   // ==================== AUTHENTICATION ROUTES ====================
 
@@ -267,14 +354,10 @@ export async function registerRoutes(
         // Build reset URL
         const resetUrl = `${req.protocol}://${req.get("host")}/reset-password?token=${token}`;
 
-        // TODO: Send email when email service is configured
-        // For now, log the reset link to console for testing
-        console.log("=".repeat(60));
-        console.log("PASSWORD RESET REQUESTED");
-        console.log(`Email: ${email}`);
-        console.log(`Reset Link: ${resetUrl}`);
-        console.log(`Expires: ${expiresAt.toISOString()}`);
-        console.log("=".repeat(60));
+        const emailResult = await sendPasswordResetEmail({ to: email, resetUrl, expiresAt });
+        if (!emailResult.sent) {
+          console.warn(`Password reset email not sent via ${emailResult.provider}: ${emailResult.error}`);
+        }
       }
 
       // Always return success (prevents email enumeration attacks)
@@ -567,7 +650,19 @@ export async function registerRoutes(
 
   app.post(api.places.create.path, requireAuth, validateCsrf, async (req, res) => {
     try {
-      let input = api.places.create.input.parse(req.body);
+      const parsedInput = api.places.create.input.parse(req.body);
+      const { accessibilityFeatures = [], ...placeInput } = parsedInput;
+      let input = {
+        ...placeInput,
+        name: sanitizeString(placeInput.name, 200),
+        description: sanitizeString(placeInput.description, 2000),
+        accessibilitySource: placeInput.accessibilitySource
+          ? sanitizeString(placeInput.accessibilitySource, 200)
+          : "Community submission",
+        submittedBy: req.session.userId!,
+        verificationStatus: "community",
+        lastCheckedAt: new Date(),
+      };
       if (input.address && input.latitude == null && input.longitude == null) {
         const coords = await geocodeAddress(input.address);
         if (coords) {
@@ -576,6 +671,15 @@ export async function registerRoutes(
         }
       }
       const place = await storage.createPlace(input);
+      for (const feature of accessibilityFeatures) {
+        await storage.createAccessibilityFeature({
+          placeId: place.id,
+          featureType: feature.featureType,
+          available: feature.available,
+          description: feature.description ? sanitizeString(feature.description, 500) : undefined,
+          verifiedAt: null,
+        });
+      }
       res.status(201).json(place);
     } catch (err) {
       if (err instanceof z.ZodError) {
@@ -1712,8 +1816,11 @@ export async function registerRoutes(
     }
   });
 
-  // Seed Data
-  await seedDatabase();
+  if (process.env.OPENWAY_SEED_ON_STARTUP === "true") {
+    await seedDatabase();
+  } else {
+    console.log("[startup] Skipping seed/sync; set OPENWAY_SEED_ON_STARTUP=true to run it intentionally.");
+  }
 
   return httpServer;
 }

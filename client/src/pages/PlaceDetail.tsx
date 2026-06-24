@@ -449,6 +449,26 @@ export default function PlaceDetail() {
                 <StatusIcon className="w-5 h-5" />
                 {place.accessibilityStatus}
               </div>
+              {(place.accessibilitySource || place.lastCheckedAt || place.verificationStatus) && (
+                <div className="mt-3 flex flex-wrap items-center gap-2 text-sm text-muted-foreground" data-testid="place-data-provenance">
+                  {place.verificationStatus && (
+                    <span className="rounded-md bg-secondary px-2 py-1 font-medium">
+                      {place.verificationStatus === "community" ? "Community submitted" : place.verificationStatus}
+                    </span>
+                  )}
+                  {place.accessibilitySource && (
+                    <span className="rounded-md bg-secondary px-2 py-1">
+                      Source: {place.accessibilitySource}
+                    </span>
+                  )}
+                  {place.lastCheckedAt && (
+                    <span className="rounded-md bg-secondary px-2 py-1 flex items-center gap-1">
+                      <Calendar className="w-3.5 h-3.5" />
+                      Checked {format(new Date(place.lastCheckedAt), "MMM d, yyyy")}
+                    </span>
+                  )}
+                </div>
+              )}
             </div>
 
             {/* Action Buttons */}

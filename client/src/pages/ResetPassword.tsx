@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { Link, useSearch } from "wouter";
+import { Link, useLocation, useSearch } from "wouter";
 import { useToast } from "@/hooks/use-toast";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -10,6 +10,7 @@ import { apiRequest } from "@/lib/queryClient";
 
 export default function ResetPassword() {
   const [, setLocation] = useLocation();
+  const search = useSearch();
   const { toast } = useToast();
   
   const [token, setToken] = useState("");
@@ -21,7 +22,6 @@ export default function ResetPassword() {
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    const search = useSearch();
     const params = new URLSearchParams(search);
     const tokenParam = params.get("token");
     if (tokenParam) {
@@ -29,7 +29,7 @@ export default function ResetPassword() {
     } else {
       setError("Invalid reset link. Please request a new password reset.");
     }
-  }, []);
+  }, [search]);
 
   const validatePassword = (pwd: string): string | null => {
     if (pwd.length < 8) {
