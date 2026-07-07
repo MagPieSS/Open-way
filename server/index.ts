@@ -1,5 +1,5 @@
 import express, { type Request, Response, NextFunction } from "express";
-import session from "express-session";
+import session, { MemoryStore } from "express-session";
 import helmet from "helmet";
 import rateLimit from "express-rate-limit";
 import connectPgSimple from "connect-pg-simple";
@@ -95,13 +95,19 @@ export const apiRateLimiter = rateLimit({
 
 app.use("/api", apiRateLimiter);
 
-// Session setup with PostgreSQL store
-const PgSession = connectPgSimple(session);
-const sessionStore = new PgSession({
-  pool: pool,
-  tableName: "session",
-  createTableIfMissing: true,
-});
+// Session setup with PostgreSQL store when available, otherwise use memory for local development
+let sessionStore: any;
+if (pool) {
+  const PgSession = connectPgSimple(session);
+  sessionStore = new PgSession({
+    pool,
+    tableName: "session",
+    createTableIfMissing: true,
+  });
+} else {
+  sessionStore = new MemoryStore();
+  console.log("[session] Using in-memory session store because no PostgreSQL database is configured.");
+}
 
 app.use(
   session({
