@@ -6,6 +6,8 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import { Navigation } from "@/components/Navigation";
 import { Footer } from "@/components/Footer";
 import { Breadcrumbs } from "@/components/Breadcrumbs";
+import { ErrorBoundary } from "@/components/ErrorBoundary";
+import { VerifyEmailBanner } from "@/components/VerifyEmailBanner";
 import { ReadAloudProvider } from "@/components/ReadAloudProvider";
 import { useSettings } from "@/hooks/use-settings";
 import { useEffect } from "react";
@@ -27,6 +29,7 @@ import Login from "@/pages/Login";
 import Register from "@/pages/Register";
 import ForgotPassword from "@/pages/ForgotPassword";
 import ResetPassword from "@/pages/ResetPassword";
+import VerifyEmail from "@/pages/VerifyEmail";
 import SavedPlaces from "@/pages/SavedPlaces";
 import Profile from "@/pages/Profile";
 import AdminDashboard from "@/pages/AdminDashboard";
@@ -54,6 +57,7 @@ function Router() {
       <Route path="/register" component={Register} />
       <Route path="/forgot-password" component={ForgotPassword} />
       <Route path="/reset-password" component={ResetPassword} />
+      <Route path="/verify-email" component={VerifyEmail} />
       <Route path="/saved" component={SavedPlaces} />
       <Route path="/profile" component={Profile} />
       <Route path="/admin/dashboard" component={AdminDashboard} />
@@ -82,9 +86,12 @@ function AppContent() {
     <div className="flex flex-col min-h-screen">
       <Navigation />
       <div className="pt-16">
+        <VerifyEmailBanner />
         <Breadcrumbs />
         <main className="flex-grow">
-          <Router />
+          <ErrorBoundary>
+            <Router />
+          </ErrorBoundary>
         </main>
       </div>
       <Footer />

@@ -101,9 +101,11 @@ export function AccessibilityMap({ places, className = "", onMarkerClick, center
   const tileAttribution = '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>';
 
   return (
-    <div 
+    <div
       className={`w-full h-full min-h-[400px] rounded-xl overflow-hidden border border-border ${className}`}
       data-testid="accessibility-map"
+      role="region"
+      aria-label={`Map showing ${placesWithCoords.length} accessible place${placesWithCoords.length === 1 ? "" : "s"}`}
     >
       <MapContainer
         center={center || PHILADELPHIA_CENTER}
@@ -124,6 +126,8 @@ export function AccessibilityMap({ places, className = "", onMarkerClick, center
               key={place.id}
               position={[place.latitude!, place.longitude!]}
               icon={createMarkerIcon(place.accessibilityStatus)}
+              alt={`${place.name}, ${statusConfig.text}`}
+              keyboard={true}
               eventHandlers={{
                 click: () => onMarkerClick?.(place),
               }}
@@ -143,13 +147,12 @@ export function AccessibilityMap({ places, className = "", onMarkerClick, center
                     <StatusIcon className="w-4 h-4" />
                     <span className="text-sm font-semibold">{statusConfig.text}</span>
                   </div>
-                  <Link href={`/places/${place.id}`}>
-                    <button 
-                      className="w-full py-2 px-3 rounded-lg text-sm font-semibold flex items-center justify-center gap-1.5 bg-primary text-primary-foreground hover:bg-primary/90 transition-colors"
-                      data-testid={`popup-button-view-${place.id}`}
-                    >
-                      View Details <ExternalLink className="w-3.5 h-3.5" />
-                    </button>
+                  <Link
+                    href={`/places/${place.id}`}
+                    className="w-full py-2 px-3 rounded-lg text-sm font-semibold flex items-center justify-center gap-1.5 bg-primary text-primary-foreground hover:bg-primary/90 transition-colors"
+                    data-testid={`popup-button-view-${place.id}`}
+                  >
+                    View Details <ExternalLink className="w-3.5 h-3.5" />
                   </Link>
                 </div>
               </Popup>

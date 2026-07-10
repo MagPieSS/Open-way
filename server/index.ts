@@ -1,6 +1,7 @@
 import express, { type Request, Response, NextFunction } from "express";
 import session, { MemoryStore } from "express-session";
 import helmet from "helmet";
+import cors from "cors";
 import rateLimit from "express-rate-limit";
 import connectPgSimple from "connect-pg-simple";
 import { registerRoutes } from "./routes";
@@ -75,6 +76,25 @@ app.use(
   })
 );
 
+// CORS: same-origin by default. Set ALLOWED_ORIGINS (comma-separated) to allow the API to be
+// called from other origins (e.g. a separately-hosted frontend); credentialed requests from
+// origins not on that list are rejected.
+const allowedOrigins = (process.env.ALLOWED_ORIGINS || "")
+  .split(",")
+  .map((o) => o.trim())
+  .filter(Boolean);
+
+app.use(
+  cors({
+    origin: (origin, callback) => {
+      if (!origin) return callback(null, true); // same-origin / non-browser requests
+      if (allowedOrigins.includes(origin)) return callback(null, true);
+      return callback(null, false);
+    },
+    credentials: true,
+  })
+);
+
 // Rate limiting for auth endpoints
 export const authRateLimiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
@@ -91,6 +111,17 @@ export const apiRateLimiter = rateLimit({
   message: { message: "Too many requests. Please slow down." },
   standardHeaders: true,
   legacyHeaders: false,
+});
+
+// Per-user (not per-IP) limiter for review submission, to slow down spam from a single account
+// regardless of IP rotation. Falls back to IP if somehow unauthenticated (route still requires auth).
+export const reviewRateLimiter = rateLimit({
+  windowMs: 10 * 60 * 1000, // 10 minutes
+  max: 5,
+  message: { message: "You're submitting reviews too quickly. Please wait a bit before posting another." },
+  standardHeaders: true,
+  legacyHeaders: false,
+  keyGenerator: (req) => (req.session?.userId ? `user:${req.session.userId}` : req.ip || "unknown"),
 });
 
 app.use("/api", apiRateLimiter);
@@ -139,7 +170,7 @@ app.use((req, res, next) => {
 app.use(express.urlencoded({ extended: false }));
 
 // Serve static uploads
-app.use("/uploads", express.static(path.resolve(process.cwd(), "uploads")));
+app.use("/uploads", express.static(path.resolve(process.cwd(), "uploads"), { maxAge: "1d" }));
 
 // Serve stock images from attached_assets folder
 const assetsPath = path.resolve(process.cwd(), "attached_assets");
@@ -230,8 +261,9 @@ app.use((req, res, next) => {
     const duration = Date.now() - start;
     if (path.startsWith("/api")) {
       let logLine = `${req.method} ${path} ${res.statusCode} in ${duration}ms`;
-      // Don't log sensitive auth responses
-      if (capturedJsonResponse && !path.includes("/auth/")) {
+      // Don't log response bodies for routes that carry PII (auth, admin, uploads)
+      const isSensitiveRoute = path.includes("/auth/") || path.includes("/admin/") || path.includes("/uploads");
+      if (capturedJsonResponse && !isSensitiveRoute) {
         logLine += ` :: ${JSON.stringify(capturedJsonResponse)}`;
       }
 
@@ -282,4 +314,24 @@ app.use((req, res, next) => {
       log(`serving on port ${port}`);
     },
   );
+
+  // Graceful shutdown: stop accepting new connections and let in-flight requests finish
+  // before closing the DB pool, instead of dropping everything on SIGTERM/SIGINT.
+  let shuttingDown = false;
+  const shutdown = (signal: string) => {
+    if (shuttingDown) return;
+    shuttingDown = true;
+    log(`Received ${signal}, shutting down gracefully...`);
+    httpServer.close(async () => {
+      if (pool) {
+        await pool.end().catch((err) => log(`Error closing DB pool: ${err}`, "error"));
+      }
+      log("Shutdown complete.");
+      process.exit(0);
+    });
+    // Force-exit if connections don't drain in time
+    setTimeout(() => process.exit(1), 10_000).unref();
+  };
+  process.on("SIGTERM", () => shutdown("SIGTERM"));
+  process.on("SIGINT", () => shutdown("SIGINT"));
 })();

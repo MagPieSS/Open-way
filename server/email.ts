@@ -4,10 +4,82 @@ interface PasswordResetEmailInput {
   expiresAt: Date;
 }
 
+interface VerificationEmailInput {
+  to: string;
+  verifyUrl: string;
+  expiresAt: Date;
+}
+
 interface EmailResult {
   sent: boolean;
   provider: "resend" | "development" | "unconfigured";
   error?: string;
+}
+
+async function sendViaResendGeneric(input: {
+  to: string;
+  subject: string;
+  text: string;
+  html: string;
+}): Promise<EmailResult> {
+  const apiKey = process.env.RESEND_API_KEY;
+  const from = process.env.RESET_EMAIL_FROM;
+
+  if (!apiKey || !from) {
+    return { sent: false, provider: "unconfigured", error: "Resend email is not configured" };
+  }
+
+  const response = await fetch("https://api.resend.com/emails", {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${apiKey}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ from, to: input.to, subject: input.subject, text: input.text, html: input.html }),
+  });
+
+  if (!response.ok) {
+    const detail = await response.text().catch(() => response.statusText);
+    return { sent: false, provider: "resend", error: detail || response.statusText };
+  }
+
+  return { sent: true, provider: "resend" };
+}
+
+export async function sendVerificationEmail(input: VerificationEmailInput): Promise<EmailResult> {
+  const subject = "Verify your Open Way email address";
+  const text = [
+    "Welcome to Open Way! Please verify your email address to finish setting up your account.",
+    "",
+    `Verify your email here: ${input.verifyUrl}`,
+    "",
+    `This link expires at ${input.expiresAt.toISOString()}.`,
+    "",
+    "If you did not create this account, you can ignore this email.",
+  ].join("\n");
+  const html = `
+    <p>Welcome to Open Way! Please verify your email address to finish setting up your account.</p>
+    <p><a href="${input.verifyUrl}">Verify your email</a></p>
+    <p>This link expires at ${input.expiresAt.toISOString()}.</p>
+    <p>If you did not create this account, you can ignore this email.</p>
+  `;
+
+  if (process.env.RESEND_API_KEY && process.env.RESET_EMAIL_FROM) {
+    return sendViaResendGeneric({ to: input.to, subject, text, html });
+  }
+
+  if (process.env.NODE_ENV !== "production") {
+    console.log("=".repeat(60));
+    console.log("EMAIL VERIFICATION REQUESTED");
+    console.log(`Email: ${input.to}`);
+    console.log(`Verify Link: ${input.verifyUrl}`);
+    console.log(`Expires: ${input.expiresAt.toISOString()}`);
+    console.log("Configure RESEND_API_KEY and RESET_EMAIL_FROM to send real email.");
+    console.log("=".repeat(60));
+    return { sent: false, provider: "development", error: "Email provider not configured" };
+  }
+
+  return { sent: false, provider: "unconfigured", error: "Email provider not configured" };
 }
 
 function getBaseEmailText(resetUrl: string, expiresAt: Date): string {

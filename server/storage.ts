@@ -3,7 +3,7 @@ import {
   places, reviews, signatures, categories, accessibilityFeatures,
   placeMedia, placeTips, petitions, petitionUpdates, events, resources,
   blogPosts, faqEntries, contactSubmissions, activityLog, partners,
-  users, savedPlaces, communityPosts, passwordResetTokens, reports,
+  users, savedPlaces, communityPosts, passwordResetTokens, reports, emailVerificationTokens,
   type Place, type InsertPlace,
   type Review, type InsertReview,
   type Petition, type InsertPetition,
@@ -24,8 +24,10 @@ import {
   type CommunityPost, type InsertCommunityPost,
   type PasswordResetToken, type InsertPasswordResetToken,
   type Report, type InsertReport,
+  type EmailVerificationToken, type InsertEmailVerificationToken,
 } from "@shared/schema";
-import { eq, desc, sql, and, inArray } from "drizzle-orm";
+import { eq, desc, sql, and, inArray, gte, lt } from "drizzle-orm";
+import { isAccountLocked, shouldLockAccount, LOCKOUT_DURATION_MS } from "./account-lockout";
 
 export interface IStorage {
   // Categories
@@ -139,7 +141,13 @@ export interface IStorage {
   updateUserDisplayName(id: number, displayName: string): Promise<User | undefined>;
   updateUserPassword(id: number, passwordHash: string): Promise<void>;
   updateUser2FA(id: number, enabled: boolean, secret?: string, backupCodes?: string[]): Promise<void>;
-  verifyBackupCode(id: number, code: string): Promise<boolean>;
+  recordFailedLogin(id: number): Promise<void>;
+  resetFailedLogins(id: number): Promise<void>;
+  isAccountLocked(user: User): boolean;
+  setEmailVerified(id: number): Promise<void>;
+  createEmailVerificationToken(token: InsertEmailVerificationToken): Promise<EmailVerificationToken>;
+  getEmailVerificationToken(token: string): Promise<EmailVerificationToken | undefined>;
+  markEmailVerificationTokenUsed(tokenId: number): Promise<void>;
 
   // Saved Places
   getSavedPlaces(userId: number): Promise<SavedPlace[]>;
@@ -294,8 +302,9 @@ export class DatabaseStorage implements IStorage {
 
   async deletePlaceTip(id: number, userId: number): Promise<boolean> {
     const result = await db.delete(placeTips)
-      .where(and(eq(placeTips.id, id), eq(placeTips.userId, userId)));
-    return (result.rowCount ?? 0) > 0;
+      .where(and(eq(placeTips.id, id), eq(placeTips.userId, userId)))
+      .returning();
+    return result.length > 0;
   }
 
   // Reviews
@@ -337,17 +346,18 @@ export class DatabaseStorage implements IStorage {
   async deleteReview(id: number, userId: number): Promise<boolean> {
     const review = await this.getReview(id);
     if (!review || review.userId !== userId) return false;
-    
+
     const result = await db.delete(reviews)
-      .where(and(eq(reviews.id, id), eq(reviews.userId, userId)));
-    
-    if ((result.rowCount ?? 0) > 0 && review.placeId) {
-      await db.update(places).set({ 
-        reviewCount: sql`GREATEST(${places.reviewCount} - 1, 0)`,
+      .where(and(eq(reviews.id, id), eq(reviews.userId, userId)))
+      .returning();
+
+    if (result.length > 0 && review.placeId) {
+      await db.update(places).set({
+        reviewCount: sql`CASE WHEN ${places.reviewCount} > 0 THEN ${places.reviewCount} - 1 ELSE 0 END`,
         updatedAt: new Date()
       }).where(eq(places.id, review.placeId));
     }
-    return (result.rowCount ?? 0) > 0;
+    return result.length > 0;
   }
 
   async incrementReviewHelpfulCount(id: number): Promise<Review | undefined> {
@@ -430,7 +440,7 @@ export class DatabaseStorage implements IStorage {
   }
 
   async getUpcomingEvents(): Promise<Event[]> {
-    return await db.select().from(events).where(and(eq(events.status, "active"), sql`${events.date} >= NOW()`)).orderBy(events.date);
+    return await db.select().from(events).where(and(eq(events.status, "active"), gte(events.date, new Date()))).orderBy(events.date);
   }
 
   async getFeaturedEvents(): Promise<Event[]> {
@@ -596,24 +606,43 @@ export class DatabaseStorage implements IStorage {
     }).where(eq(users.id, id));
   }
 
-  async verifyBackupCode(id: number, code: string): Promise<boolean> {
+  // Brute-force protection
+  async recordFailedLogin(id: number): Promise<void> {
     const user = await this.getUserById(id);
-    if (!user || !user.backupCodes) return false;
-    
-    let codes: string[];
-    try {
-      codes = JSON.parse(user.backupCodes);
-    } catch (e) {
-      return false;
+    if (!user) return;
+    const attempts = (user.failedLoginAttempts ?? 0) + 1;
+    const updates: { failedLoginAttempts: number; lockedUntil?: Date } = { failedLoginAttempts: attempts };
+    if (shouldLockAccount(attempts)) {
+      updates.lockedUntil = new Date(Date.now() + LOCKOUT_DURATION_MS);
     }
-    
-    const codeIndex = codes.indexOf(code);
-    if (codeIndex === -1) return false;
-    
-    // Remove used backup code
-    const updatedCodes = codes.filter((_, i) => i !== codeIndex);
-    await db.update(users).set({ backupCodes: JSON.stringify(updatedCodes) }).where(eq(users.id, id));
-    return true;
+    await db.update(users).set(updates).where(eq(users.id, id));
+  }
+
+  async resetFailedLogins(id: number): Promise<void> {
+    await db.update(users).set({ failedLoginAttempts: 0, lockedUntil: null }).where(eq(users.id, id));
+  }
+
+  isAccountLocked(user: User): boolean {
+    return isAccountLocked(user.lockedUntil);
+  }
+
+  // Email verification
+  async setEmailVerified(id: number): Promise<void> {
+    await db.update(users).set({ emailVerified: true }).where(eq(users.id, id));
+  }
+
+  async createEmailVerificationToken(token: InsertEmailVerificationToken): Promise<EmailVerificationToken> {
+    const [newToken] = await db.insert(emailVerificationTokens).values(token).returning();
+    return newToken;
+  }
+
+  async getEmailVerificationToken(token: string): Promise<EmailVerificationToken | undefined> {
+    const [result] = await db.select().from(emailVerificationTokens).where(eq(emailVerificationTokens.token, token));
+    return result;
+  }
+
+  async markEmailVerificationTokenUsed(tokenId: number): Promise<void> {
+    await db.update(emailVerificationTokens).set({ usedAt: new Date() }).where(eq(emailVerificationTokens.id, tokenId));
   }
 
   // Saved Places
@@ -672,7 +701,7 @@ export class DatabaseStorage implements IStorage {
   }
 
   async deleteExpiredTokens(): Promise<void> {
-    await db.delete(passwordResetTokens).where(sql`${passwordResetTokens.expiresAt} < NOW()`);
+    await db.delete(passwordResetTokens).where(lt(passwordResetTokens.expiresAt, new Date()));
   }
 
   // Admin User Management
@@ -687,6 +716,9 @@ export class DatabaseStorage implements IStorage {
       isBanned: users.isBanned,
       banReason: users.banReason,
       lastLoginAt: users.lastLoginAt,
+      emailVerified: users.emailVerified,
+      failedLoginAttempts: users.failedLoginAttempts,
+      lockedUntil: users.lockedUntil,
       createdAt: users.createdAt,
     }).from(users).orderBy(desc(users.createdAt));
     return result;
@@ -701,9 +733,13 @@ export class DatabaseStorage implements IStorage {
   }
 
   async getUserStats(userId: number): Promise<{ reviewCount: number; communityPostCount: number; mediaCount: number }> {
+    const user = await this.getUserById(userId);
+    const uploaderName = user?.displayName || user?.email;
     const [reviewResult] = await db.select({ count: sql<number>`count(*)` }).from(reviews).where(eq(reviews.userId, userId));
     const [postResult] = await db.select({ count: sql<number>`count(*)` }).from(communityPosts).where(eq(communityPosts.userId, userId));
-    const [mediaResult] = await db.select({ count: sql<number>`count(*)` }).from(placeMedia);
+    const [mediaResult] = uploaderName
+      ? await db.select({ count: sql<number>`count(*)` }).from(placeMedia).where(eq(placeMedia.uploadedBy, uploaderName))
+      : [{ count: 0 }];
     return {
       reviewCount: Number(reviewResult.count),
       communityPostCount: Number(postResult.count),
@@ -716,35 +752,47 @@ export class DatabaseStorage implements IStorage {
     const review = await this.getReview(id);
     if (!review) return false;
 
-    const result = await db.delete(reviews).where(eq(reviews.id, id));
+    const result = await db.delete(reviews).where(eq(reviews.id, id)).returning();
 
-    if ((result.rowCount ?? 0) > 0 && review.placeId) {
+    if (result.length > 0 && review.placeId) {
       await db.update(places).set({
-        reviewCount: sql`GREATEST(${places.reviewCount} - 1, 0)`,
+        reviewCount: sql`CASE WHEN ${places.reviewCount} > 0 THEN ${places.reviewCount} - 1 ELSE 0 END`,
         updatedAt: new Date()
       }).where(eq(places.id, review.placeId));
     }
-    return (result.rowCount ?? 0) > 0;
+    return result.length > 0;
   }
 
   async deleteCommunityPostAdmin(id: number): Promise<boolean> {
-    const result = await db.delete(communityPosts).where(eq(communityPosts.id, id));
-    return (result.rowCount ?? 0) > 0;
+    const result = await db.delete(communityPosts).where(eq(communityPosts.id, id)).returning();
+    return result.length > 0;
   }
 
   async deletePlace(id: number): Promise<boolean> {
+    const mediaRows = await db.select({ id: placeMedia.id }).from(placeMedia).where(eq(placeMedia.placeId, id));
+    const reviewRows = await db.select({ id: reviews.id }).from(reviews).where(eq(reviews.placeId, id));
+    const mediaIds = mediaRows.map((m) => m.id);
+    const reviewIds = reviewRows.map((r) => r.id);
+
     await db.delete(accessibilityFeatures).where(eq(accessibilityFeatures.placeId, id));
     await db.delete(placeMedia).where(eq(placeMedia.placeId, id));
     await db.delete(placeTips).where(eq(placeTips.placeId, id));
     await db.delete(reviews).where(eq(reviews.placeId, id));
-    const result = await db.delete(places).where(eq(places.id, id));
-    return (result.rowCount ?? 0) > 0;
+    await db.delete(savedPlaces).where(eq(savedPlaces.placeId, id));
+    if (mediaIds.length > 0) {
+      await db.delete(reports).where(and(eq(reports.contentType, "photo"), inArray(reports.contentId, mediaIds)));
+    }
+    if (reviewIds.length > 0) {
+      await db.delete(reports).where(and(eq(reports.contentType, "review"), inArray(reports.contentId, reviewIds)));
+    }
+    const result = await db.delete(places).where(eq(places.id, id)).returning();
+    return result.length > 0;
   }
 
   // Admin Petition Management
   async deleteSignature(id: number): Promise<boolean> {
-    const result = await db.delete(signatures).where(eq(signatures.id, id));
-    return (result.rowCount ?? 0) > 0;
+    const result = await db.delete(signatures).where(eq(signatures.id, id)).returning();
+    return result.length > 0;
   }
 
   // Reports
@@ -771,8 +819,8 @@ export class DatabaseStorage implements IStorage {
   }
 
   async deleteReport(id: number): Promise<boolean> {
-    const result = await db.delete(reports).where(eq(reports.id, id));
-    return (result.rowCount ?? 0) > 0;
+    const result = await db.delete(reports).where(eq(reports.id, id)).returning();
+    return result.length > 0;
   }
 }
 

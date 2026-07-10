@@ -1,8 +1,10 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
+import { useSearch } from "wouter";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useMutation } from "@tanstack/react-query";
 import { z } from "zod";
+import { usePageMeta } from "@/hooks/use-page-meta";
 import { SectionLabel } from "@/components/SectionLabel";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -53,7 +55,12 @@ type ContactFormData = z.infer<typeof contactFormSchema>;
 const PHILADELPHIA_CENTER = { lat: 39.9526, lng: -75.1652 };
 
 export default function Contact() {
+  usePageMeta({
+    title: "Contact Us",
+    description: "Get in touch with the Open Way team with questions, feedback, or accessibility reports.",
+  });
   const [isSubmitted, setIsSubmitted] = useState(false);
+  const search = useSearch();
 
   const form = useForm<ContactFormData>({
     resolver: zodResolver(contactFormSchema),
@@ -64,6 +71,13 @@ export default function Contact() {
       message: "",
     },
   });
+
+  useEffect(() => {
+    const subjectParam = new URLSearchParams(search).get("subject");
+    if (subjectParam) {
+      form.setValue("subject", subjectParam);
+    }
+  }, [search, form]);
 
   const mutation = useMutation({
     mutationFn: async (data: ContactFormData) => {

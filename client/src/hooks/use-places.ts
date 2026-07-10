@@ -2,6 +2,10 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { api, buildUrl, type PlaceInput } from "@shared/routes";
 import { apiRequest } from "@/lib/queryClient";
 import { z } from "zod";
+import type { Place } from "@shared/schema";
+
+// The list endpoint adds a computed distanceMiles field when lat/lng are provided.
+export type PlaceWithDistance = Place & { distanceMiles?: number };
 
 // Helper to handle API responses properly
 async function handleResponse<T>(res: Response, schema: z.ZodSchema<T>): Promise<T> {
@@ -15,15 +19,34 @@ async function handleResponse<T>(res: Response, schema: z.ZodSchema<T>): Promise
 
 // === PLACES ===
 
-export function usePlaces(search?: string) {
+export interface PlaceFilters {
+  search?: string;
+  category?: string;
+  status?: string;
+  lat?: number;
+  lng?: number;
+  radius?: number;
+  sort?: "rating" | "reviews" | "distance" | "recent";
+}
+
+export function usePlaces(filters?: string | PlaceFilters) {
+  const normalized: PlaceFilters = typeof filters === "string" ? { search: filters } : (filters ?? {});
+  const params = new URLSearchParams();
+  if (normalized.search) params.set("search", normalized.search);
+  if (normalized.category) params.set("category", normalized.category);
+  if (normalized.status) params.set("status", normalized.status);
+  if (normalized.lat !== undefined) params.set("lat", String(normalized.lat));
+  if (normalized.lng !== undefined) params.set("lng", String(normalized.lng));
+  if (normalized.radius !== undefined) params.set("radius", String(normalized.radius));
+  if (normalized.sort) params.set("sort", normalized.sort);
+  const queryString = params.toString();
+
   return useQuery({
-    queryKey: [api.places.list.path, search],
-    queryFn: async () => {
-      const url = search 
-        ? `${api.places.list.path}?search=${encodeURIComponent(search)}`
-        : api.places.list.path;
+    queryKey: [api.places.list.path, normalized],
+    queryFn: async (): Promise<PlaceWithDistance[]> => {
+      const url = queryString ? `${api.places.list.path}?${queryString}` : api.places.list.path;
       const res = await fetch(url);
-      return handleResponse(res, api.places.list.responses[200]);
+      return handleResponse(res, api.places.list.responses[200]) as unknown as Promise<PlaceWithDistance[]>;
     },
   });
 }

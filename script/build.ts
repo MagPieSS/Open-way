@@ -2,11 +2,11 @@ import { build as esbuild } from "esbuild";
 import { build as viteBuild } from "vite";
 import { rm, readFile } from "fs/promises";
 
-// server deps to bundle to reduce openat(2) syscalls
-// which helps cold start times
+// server deps to bundle to reduce openat(2) syscalls, which helps cold start times.
+// Keep this in sync with what server/*.ts actually imports — entries for packages that
+// aren't in package.json dependencies are silently no-ops (see buildAll() below), which
+// previously let this list drift from reality.
 const allowlist = [
-  "@google/generative-ai",
-  "axios",
   "connect-pg-simple",
   "cors",
   "date-fns",
@@ -15,20 +15,11 @@ const allowlist = [
   "express",
   "express-rate-limit",
   "express-session",
-  "jsonwebtoken",
   "memorystore",
   "nanoid",
-  "nodemailer",
-  "openai",
-  "passport",
-  "passport-local",
   "pg",
-  "stripe",
-  "uuid",
   "ws",
-  "xlsx",
   "zod",
-  "zod-validation-error",
 ];
 
 async function buildAll() {

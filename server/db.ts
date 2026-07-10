@@ -1,4 +1,4 @@
-import { drizzle as drizzlePg } from "drizzle-orm/node-postgres";
+import { drizzle as drizzlePg, type NodePgDatabase } from "drizzle-orm/node-postgres";
 import { drizzle as drizzleSqlite } from "drizzle-orm/better-sqlite3";
 import { Pool } from "pg";
 import Database from "better-sqlite3";
@@ -9,6 +9,8 @@ import path from "path";
 config({ path: ".env.local" });
 
 const useSqliteFallback = !process.env.DATABASE_URL || !process.env.DATABASE_URL.startsWith("postgres");
+
+let sqliteConnection: Database.Database | undefined;
 
 if (useSqliteFallback) {
   const sqlitePath = path.resolve(process.cwd(), "sqlite.db");
@@ -30,7 +32,19 @@ if (useSqliteFallback) {
       is_banned BOOLEAN DEFAULT false,
       ban_reason TEXT,
       last_login_at TIMESTAMP,
+      email_verified BOOLEAN DEFAULT false,
+      failed_login_attempts INTEGER DEFAULT 0,
+      locked_until TIMESTAMP,
       created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    )`,
+    `CREATE TABLE IF NOT EXISTS email_verification_tokens (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      user_id INTEGER NOT NULL,
+      token TEXT NOT NULL UNIQUE,
+      expires_at TIMESTAMP NOT NULL,
+      used_at TIMESTAMP,
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY (user_id) REFERENCES users(id)
     )`,
     `CREATE TABLE IF NOT EXISTS places (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -243,14 +257,16 @@ if (useSqliteFallback) {
     )`,
     `CREATE TABLE IF NOT EXISTS reports (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
-      report_type TEXT NOT NULL,
-      reportable_id INTEGER NOT NULL,
-      reportable_type TEXT NOT NULL,
       reporter_id INTEGER NOT NULL,
+      content_type TEXT NOT NULL,
+      content_id INTEGER NOT NULL,
       reason TEXT NOT NULL,
       status TEXT DEFAULT 'pending',
+      resolved_by INTEGER,
+      resolved_at TIMESTAMP,
       created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-      FOREIGN KEY (reporter_id) REFERENCES users(id)
+      FOREIGN KEY (reporter_id) REFERENCES users(id),
+      FOREIGN KEY (resolved_by) REFERENCES users(id)
     )`,
     `CREATE TABLE IF NOT EXISTS saved_places (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -266,12 +282,67 @@ if (useSqliteFallback) {
     sqlite.exec(statement);
   }
 
+  // Lightweight migrations for databases created before certain columns/tables existed.
+  // CREATE TABLE IF NOT EXISTS above is a no-op against tables that already exist with an
+  // older shape, so new columns and the reports-table rename have to be applied explicitly.
+  const columnExists = (tableName: string, columnName: string): boolean => {
+    const columns = sqlite.prepare(`PRAGMA table_info(${tableName})`).all() as Array<{ name: string }>;
+    return columns.some((col) => col.name === columnName);
+  };
+
+  const userColumnMigrations: Array<[string, string]> = [
+    ["email_verified", "BOOLEAN DEFAULT false"],
+    ["failed_login_attempts", "INTEGER DEFAULT 0"],
+    ["locked_until", "TIMESTAMP"],
+  ];
+  for (const [column, definition] of userColumnMigrations) {
+    if (!columnExists("users", column)) {
+      sqlite.exec(`ALTER TABLE users ADD COLUMN ${column} ${definition}`);
+    }
+  }
+
+  if (columnExists("reports", "report_type") && !columnExists("reports", "content_type")) {
+    console.log("[db] Migrating legacy reports table schema...");
+    sqlite.exec(`ALTER TABLE reports RENAME TO reports_legacy`);
+    sqlite.exec(`CREATE TABLE reports (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      reporter_id INTEGER NOT NULL,
+      content_type TEXT NOT NULL,
+      content_id INTEGER NOT NULL,
+      reason TEXT NOT NULL,
+      status TEXT DEFAULT 'pending',
+      resolved_by INTEGER,
+      resolved_at TIMESTAMP,
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY (reporter_id) REFERENCES users(id),
+      FOREIGN KEY (resolved_by) REFERENCES users(id)
+    )`);
+    sqlite.exec(`
+      INSERT INTO reports (id, reporter_id, content_type, content_id, reason, status, created_at)
+      SELECT id, reporter_id, reportable_type, reportable_id, reason, status, created_at FROM reports_legacy
+    `);
+    sqlite.exec(`DROP TABLE reports_legacy`);
+  } else if (!columnExists("reports", "resolved_by")) {
+    sqlite.exec(`ALTER TABLE reports ADD COLUMN resolved_by INTEGER REFERENCES users(id)`);
+    sqlite.exec(`ALTER TABLE reports ADD COLUMN resolved_at TIMESTAMP`);
+  }
+
   console.log(`[db] Using SQLite fallback at ${sqlitePath}`);
+
+  sqliteConnection = sqlite;
 }
 
-export const db = useSqliteFallback
-  ? drizzleSqlite(new Database(path.resolve(process.cwd(), "sqlite.db")), { schema })
-  : drizzlePg(new Pool({ connectionString: process.env.DATABASE_URL }), { schema });
+// `schema` is written in drizzle-orm/pg-core, so the Postgres driver's type is the source of
+// truth for storage.ts's query builder calls. The SQLite fallback is intentionally treated as
+// structurally compatible here (matching column names/affinities, .returning() support, portable
+// SQL only — see the CASE WHEN / gte / lt usage in storage.ts) rather than duplicating the schema
+// in sqlite-core just to satisfy the type checker; TypeScript can't usefully unify the two
+// drivers' generic builder types, so mixing them via a plain union broke every query call.
+export const db = (
+  useSqliteFallback
+    ? drizzleSqlite(sqliteConnection!, { schema })
+    : drizzlePg(new Pool({ connectionString: process.env.DATABASE_URL }), { schema })
+) as NodePgDatabase<typeof schema>;
 
 export const pool = useSqliteFallback ? undefined : new Pool({ connectionString: process.env.DATABASE_URL });
 

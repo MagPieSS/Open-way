@@ -10,7 +10,6 @@ import { useAuth } from "@/hooks/use-auth";
 import { useUpload } from "@/hooks/use-upload";
 import { useLocation } from "wouter";
 import { Loader2, MapPin, MessageSquare, Check, Upload, X, ImageIcon, LogIn, Star } from "lucide-react";
-import { useSettings } from "@/hooks/use-settings";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import * as z from "zod";
@@ -46,8 +45,6 @@ export default function Submit() {
   const preselectedPlaceId = queryParams.get("placeId");
   const [mode, setMode] = useState<'place' | 'review'>(preselectedPlaceId ? 'review' : 'place');
   const { user, isLoading: isAuthLoading } = useAuth();
-
-  const { textSize } = useSettings();
 
   if (isAuthLoading) {
     return (
@@ -106,14 +103,14 @@ export default function Submit() {
         </div>
 
         <Card className="p-6 md:p-8">
-          {mode === 'place' ? <PlaceForm textSize={textSize} /> : <ReviewForm textSize={textSize} preselectedPlaceId={preselectedPlaceId} />}
+          {mode === 'place' ? <PlaceForm /> : <ReviewForm preselectedPlaceId={preselectedPlaceId} />}
         </Card>
       </div>
     </div>
   );
 }
 
-function PlaceForm({ textSize }: { textSize: string }) {
+function PlaceForm() {
   const { toast } = useToast();
   const [, setLocation] = useLocation();
   const createPlace = useCreatePlace();
@@ -468,7 +465,7 @@ function StarRating({ value, onChange }: { value: number; onChange: (rating: num
   );
 }
 
-function ReviewForm({ textSize, preselectedPlaceId }: { textSize: string, preselectedPlaceId: string | null }) {
+function ReviewForm({ preselectedPlaceId }: { preselectedPlaceId: string | null }) {
   const { toast } = useToast();
   const [, setLocation] = useLocation();
   const createReview = useCreateReview();

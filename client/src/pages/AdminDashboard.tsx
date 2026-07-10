@@ -20,6 +20,8 @@ import {
 } from "lucide-react";
 import { format } from "date-fns";
 import type { Place, Review, CommunityPost, PlaceMedia, Report, Signature, Petition, Event } from "@shared/schema";
+import { usePagination } from "@/hooks/use-pagination";
+import { PaginationControls } from "@/components/PaginationControls";
 
 interface AdminStats {
   totalUsers: number;
@@ -121,6 +123,9 @@ export default function AdminDashboard() {
     queryKey: ["/api/admin/users"],
     enabled: !!user?.isAdmin,
   });
+
+  const usersPagination = usePagination(usersData ?? [], 25);
+  const placesPagination = usePagination(placesData ?? [], 25);
 
   const { data: signaturesData, isLoading: signaturesLoading } = useQuery<Signature[]>({
     queryKey: ["/api/signatures"],
@@ -623,7 +628,7 @@ export default function AdminDashboard() {
                       </TableRow>
                     </TableHeader>
                     <TableBody>
-                      {placesData.map((place) => (
+                      {placesPagination.pageItems.map((place) => (
                         <TableRow key={place.id} data-testid={`row-place-${place.id}`}>
                           <TableCell className="font-medium" data-testid={`text-place-name-${place.id}`}>{place.name}</TableCell>
                           <TableCell data-testid={`text-place-category-${place.id}`}>{place.category}</TableCell>
@@ -661,6 +666,13 @@ export default function AdminDashboard() {
                       ))}
                     </TableBody>
                   </Table>
+                  <PaginationControls
+                    page={placesPagination.page}
+                    pageCount={placesPagination.pageCount}
+                    totalCount={placesPagination.totalCount}
+                    onPageChange={placesPagination.setPage}
+                    testIdPrefix="pagination-places"
+                  />
                 </div>
               )}
             </TabsContent>
@@ -688,7 +700,7 @@ export default function AdminDashboard() {
                       </TableRow>
                     </TableHeader>
                     <TableBody>
-                      {usersData.map((userRecord) => (
+                      {usersPagination.pageItems.map((userRecord) => (
                         <TableRow key={userRecord.id} data-testid={`row-user-${userRecord.id}`}>
                           <TableCell className="font-medium" data-testid={`text-user-name-${userRecord.id}`}>
                             {userRecord.displayName || "—"}
@@ -730,6 +742,13 @@ export default function AdminDashboard() {
                       ))}
                     </TableBody>
                   </Table>
+                  <PaginationControls
+                    page={usersPagination.page}
+                    pageCount={usersPagination.pageCount}
+                    totalCount={usersPagination.totalCount}
+                    onPageChange={usersPagination.setPage}
+                    testIdPrefix="pagination-users"
+                  />
                 </div>
               )}
             </TabsContent>

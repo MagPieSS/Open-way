@@ -1,10 +1,9 @@
 import { Link, useLocation } from "wouter";
 import { Heart, Menu, MapPin, Settings, Home, Users, FileText, Megaphone, Info, X, BookOpen, Calendar, HelpCircle, Mail, User, LogIn, LogOut, Bookmark, Shield } from "lucide-react";
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, type KeyboardEvent as ReactKeyboardEvent } from "react";
 import { useSettings } from "@/hooks/use-settings";
 import { useAuth } from "@/hooks/use-auth";
 import { GlobalSearch } from "@/components/GlobalSearch";
-import { Button } from "@/components/ui/button";
 
 interface NavGroup {
   label: string;
@@ -19,9 +18,14 @@ export function Navigation() {
   const dropdownRef = useRef<HTMLDivElement>(null);
 
   const handleLogout = async () => {
-    await logout();
-    setIsOpen(false);
-    setLocation("/");
+    try {
+      await logout();
+    } catch (err) {
+      console.error("Logout failed:", err);
+    } finally {
+      setIsOpen(false);
+      setLocation("/");
+    }
   };
 
   const navGroups: NavGroup[] = [
@@ -78,6 +82,39 @@ export function Navigation() {
     return () => document.removeEventListener("keydown", handleEscape);
   }, []);
 
+  const getMenuItems = (): HTMLElement[] => {
+    if (!dropdownRef.current) return [];
+    return Array.from(
+      dropdownRef.current.querySelectorAll<HTMLElement>('[role="menuitem"]')
+    );
+  };
+
+  useEffect(() => {
+    if (isOpen) {
+      getMenuItems()[0]?.focus();
+    }
+  }, [isOpen]);
+
+  const handleMenuKeyDown = (event: ReactKeyboardEvent) => {
+    const items = getMenuItems();
+    if (items.length === 0) return;
+    const currentIndex = items.indexOf(document.activeElement as HTMLElement);
+
+    if (event.key === "ArrowDown") {
+      event.preventDefault();
+      items[(currentIndex + 1 + items.length) % items.length]?.focus();
+    } else if (event.key === "ArrowUp") {
+      event.preventDefault();
+      items[(currentIndex - 1 + items.length) % items.length]?.focus();
+    } else if (event.key === "Home") {
+      event.preventDefault();
+      items[0]?.focus();
+    } else if (event.key === "End") {
+      event.preventDefault();
+      items[items.length - 1]?.focus();
+    }
+  };
+
   const getLinkClass = (href: string) => {
     const isActive = location === href;
     return `
@@ -133,12 +170,13 @@ export function Navigation() {
 
               {/* Dropdown Panel */}
               {isOpen && (
-                <div 
+                <div
                   className="absolute right-0 mt-2 w-72 max-h-[70vh] overflow-y-auto bg-white dark:bg-card rounded-xl shadow-xl border border-border animate-dropdown z-[9999] scrollbar-thin"
                   role="menu"
                   aria-orientation="vertical"
                   data-testid="dropdown-menu"
                   style={{ scrollBehavior: 'smooth' }}
+                  onKeyDown={handleMenuKeyDown}
                 >
                   {/* User Section */}
                   <div className="p-2 border-b border-border">
@@ -158,20 +196,22 @@ export function Navigation() {
                           </div>
                         </div>
                         <Link href="/saved" onClick={() => setIsOpen(false)}>
-                          <div 
+                          <div
                             className={getLinkClass("/saved")}
                             data-testid="link-nav-saved"
                             role="menuitem"
+                            tabIndex={-1}
                           >
                             <Bookmark className="w-5 h-5" />
                             <span className={`text-${textSize}`}>Saved Places</span>
                           </div>
                         </Link>
                         <Link href="/profile" onClick={() => setIsOpen(false)}>
-                          <div 
+                          <div
                             className={getLinkClass("/profile")}
                             data-testid="link-nav-profile"
                             role="menuitem"
+                            tabIndex={-1}
                           >
                             <User className="w-5 h-5" />
                             <span className={`text-${textSize}`}>Profile</span>
@@ -183,6 +223,7 @@ export function Navigation() {
                           className="flex items-center gap-3 px-4 py-2.5 rounded-lg font-medium transition-colors w-full text-destructive hover:bg-destructive/10"
                           data-testid="button-logout"
                           role="menuitem"
+                          tabIndex={-1}
                         >
                           <LogOut className="w-5 h-5" />
                           <span className={`text-${textSize}`}>{isLoggingOut ? "Signing out..." : "Sign Out"}</span>
@@ -191,20 +232,22 @@ export function Navigation() {
                     ) : (
                       <div className="space-y-1">
                         <Link href="/login" onClick={() => setIsOpen(false)}>
-                          <div 
+                          <div
                             className={getLinkClass("/login")}
                             data-testid="link-nav-login"
                             role="menuitem"
+                            tabIndex={-1}
                           >
                             <LogIn className="w-5 h-5" />
                             <span className={`text-${textSize}`}>Sign In</span>
                           </div>
                         </Link>
                         <Link href="/register" onClick={() => setIsOpen(false)}>
-                          <div 
+                          <div
                             className="flex items-center gap-3 px-4 py-2.5 rounded-lg font-medium transition-colors w-full bg-primary text-primary-foreground hover:bg-primary/90"
                             data-testid="link-nav-register"
                             role="menuitem"
+                            tabIndex={-1}
                           >
                             <User className="w-5 h-5" />
                             <span className={`text-${textSize}`}>Create Account</span>
@@ -217,10 +260,11 @@ export function Navigation() {
                   {/* Home Link */}
                   <div className="p-2 border-b border-border">
                     <Link href="/" onClick={() => setIsOpen(false)}>
-                      <div 
+                      <div
                         className={getLinkClass("/")}
                         data-testid="link-nav-home"
                         role="menuitem"
+                        tabIndex={-1}
                       >
                         <Home className="w-5 h-5" />
                         <span className={`text-${textSize}`}>Home</span>
@@ -236,10 +280,11 @@ export function Navigation() {
                       </div>
                       {group.items.map((link) => (
                         <Link key={link.href} href={link.href} onClick={() => setIsOpen(false)}>
-                          <div 
+                          <div
                             className={getLinkClass(link.href)}
                             data-testid={`link-nav-${link.label.toLowerCase().replace(/\s+/g, '-')}`}
                             role="menuitem"
+                            tabIndex={-1}
                           >
                             <link.icon className="w-5 h-5" />
                             <span className={`text-${textSize}`}>{link.label}</span>

@@ -3,6 +3,11 @@ import type { Config } from "tailwindcss";
 export default {
   darkMode: ["class"],
   content: ["./client/index.html", "./client/src/**/*.{js,jsx,ts,tsx}"],
+  // text-{sm,base,lg,xl} are applied via a `text-${textSize}` template literal in several
+  // components (the user-facing text-size accessibility setting) — Tailwind's content scanner
+  // can't statically see those, so they're safelisted here to guarantee they're always generated
+  // regardless of whether the literal class names happen to also appear elsewhere.
+  safelist: ["text-sm", "text-base", "text-lg", "text-xl"],
   theme: {
     extend: {
       borderRadius: {

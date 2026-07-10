@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { useLocation } from "wouter";
 import { Search, MapPin, BookOpen, Calendar, FileText, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -34,6 +34,7 @@ export function GlobalSearch() {
   const [isLoading, setIsLoading] = useState(false);
   const [, setLocation] = useLocation();
   const debouncedQuery = useDebounce(query, 300);
+  const abortControllerRef = useRef<AbortController | null>(null);
 
   useEffect(() => {
     const down = (e: KeyboardEvent) => {
@@ -49,15 +50,24 @@ export function GlobalSearch() {
 
   const searchContent = useCallback(async (searchQuery: string) => {
     if (!searchQuery.trim()) {
+      abortControllerRef.current?.abort();
       setResults([]);
       return;
     }
 
+    // Cancel any in-flight request so a slow earlier response can't overwrite results from
+    // a more recent keystroke.
+    abortControllerRef.current?.abort();
+    const controller = new AbortController();
+    abortControllerRef.current = controller;
+
     setIsLoading(true);
     try {
-      const response = await fetch(`/api/search?q=${encodeURIComponent(searchQuery)}`);
+      const response = await fetch(`/api/search?q=${encodeURIComponent(searchQuery)}`, {
+        signal: controller.signal,
+      });
       if (!response.ok) throw new Error("Search failed");
-      
+
       const data: SearchResponse = await response.json();
       
       const formattedResults: SearchResult[] = [
@@ -93,10 +103,15 @@ export function GlobalSearch() {
       
       setResults(formattedResults);
     } catch (error) {
+      if (error instanceof DOMException && error.name === "AbortError") {
+        return; // superseded by a newer search; leave state to the request that replaced it
+      }
       console.error("Search error:", error);
       setResults([]);
     } finally {
-      setIsLoading(false);
+      if (abortControllerRef.current === controller) {
+        setIsLoading(false);
+      }
     }
   }, []);
 
@@ -170,8 +185,9 @@ export function GlobalSearch() {
         />
         <CommandList data-testid="search-results-list">
           {isLoading && (
-            <div className="flex items-center justify-center py-6">
-              <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+            <div className="flex items-center justify-center py-6" role="status">
+              <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" aria-hidden="true" />
+              <span className="sr-only">Searching...</span>
             </div>
           )}
           

@@ -1,6 +1,11 @@
 import { useSettings } from "@/hooks/use-settings";
+import { usePageMeta } from "@/hooks/use-page-meta";
 
 export default function About() {
+  usePageMeta({
+    title: "About Us",
+    description: "Learn about Open Way's mission to make accessibility information easy to find and share.",
+  });
   const { textSize } = useSettings();
 
   return (

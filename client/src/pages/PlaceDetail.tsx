@@ -9,6 +9,7 @@ import {
 } from "lucide-react";
 import { SiX, SiFacebook } from "react-icons/si";
 import { useSettings } from "@/hooks/use-settings";
+import { usePageMeta } from "@/hooks/use-page-meta";
 import { ACCESSIBILITY_STATUS, type AccessibilityFeature, type PlaceMedia, type PlaceTip } from "@shared/schema";
 import { format } from "date-fns";
 import { AccessibilityMap } from "@/components/AccessibilityMap";
@@ -101,6 +102,10 @@ export default function PlaceDetail() {
   const params = useParams();
   const id = Number(params.id);
   const { data: place, isLoading: isLoadingPlace } = usePlace(id);
+  usePageMeta({
+    title: place ? place.name : "Place Details",
+    description: place?.description,
+  });
   const { data: reviews, isLoading: isLoadingReviews, error: reviewsError } = useQuery<any[]>({
     queryKey: ["/api/places", id, "place-reviews"],
     queryFn: async () => {

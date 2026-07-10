@@ -20,6 +20,21 @@ export const users = pgTable("users", {
   isBanned: boolean("is_banned").default(false),
   banReason: text("ban_reason"),
   lastLoginAt: timestamp("last_login_at"),
+  // Email verification
+  emailVerified: boolean("email_verified").default(false),
+  // Brute-force protection
+  failedLoginAttempts: integer("failed_login_attempts").default(0),
+  lockedUntil: timestamp("locked_until"),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+// Email verification tokens
+export const emailVerificationTokens = pgTable("email_verification_tokens", {
+  id: serial("id").primaryKey(),
+  userId: integer("user_id").references(() => users.id).notNull(),
+  token: text("token").notNull().unique(),
+  expiresAt: timestamp("expires_at").notNull(),
+  usedAt: timestamp("used_at"),
   createdAt: timestamp("created_at").defaultNow(),
 });
 
@@ -336,6 +351,8 @@ export const insertReportSchema = createInsertSchema(reports).omit({ id: true, c
 
 export const insertPasswordResetTokenSchema = createInsertSchema(passwordResetTokens).omit({ id: true, createdAt: true, usedAt: true });
 
+export const insertEmailVerificationTokenSchema = createInsertSchema(emailVerificationTokens).omit({ id: true, createdAt: true, usedAt: true });
+
 // Forgot password request schema
 export const forgotPasswordSchema = z.object({
   email: z.string().email("Invalid email address"),
@@ -354,7 +371,7 @@ export const resetPasswordSchema = z.object({
 export type User = typeof users.$inferSelect;
 export type InsertUser = z.infer<typeof insertUserSchema>;
 export type LoginInput = z.infer<typeof loginSchema>;
-export type SafeUser = Omit<User, 'passwordHash' | 'twoFactorSecret' | 'backupCodes'>;
+export type SafeUser = Omit<User, 'passwordHash' | 'twoFactorSecret' | 'backupCodes' | 'failedLoginAttempts' | 'lockedUntil'>;
 
 export type SavedPlace = typeof savedPlaces.$inferSelect;
 export type InsertSavedPlace = z.infer<typeof insertSavedPlaceSchema>;
@@ -417,6 +434,9 @@ export type PasswordResetToken = typeof passwordResetTokens.$inferSelect;
 export type InsertPasswordResetToken = z.infer<typeof insertPasswordResetTokenSchema>;
 export type ForgotPasswordInput = z.infer<typeof forgotPasswordSchema>;
 export type ResetPasswordInput = z.infer<typeof resetPasswordSchema>;
+
+export type EmailVerificationToken = typeof emailVerificationTokens.$inferSelect;
+export type InsertEmailVerificationToken = z.infer<typeof insertEmailVerificationTokenSchema>;
 
 // Response Types
 export type PlaceResponse = Place;

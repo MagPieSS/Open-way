@@ -1,6 +1,7 @@
 import { Link } from "wouter";
 import { ArrowRight, MapPin, MessageSquarePlus, PenTool, Search, Users, Building2, Train, Heart, Star, Clock, Folder, ExternalLink, CheckCircle, AlertTriangle, XCircle } from "lucide-react";
 import { useSettings } from "@/hooks/use-settings";
+import { usePageMeta } from "@/hooks/use-page-meta";
 import { motion } from "framer-motion";
 import { usePetitionCount } from "@/hooks/use-petition";
 import { usePlaces } from "@/hooks/use-places";
@@ -15,6 +16,10 @@ import type { Place, ActivityLog, Partner, Category } from "@shared/schema";
 import { ACCESSIBILITY_STATUS } from "@shared/schema";
 
 export default function Home() {
+  usePageMeta({
+    title: "Open Way — Find Accessible Places",
+    description: "Discover and share accessibility information for public places, starting with Philadelphia.",
+  });
   const { textSize, reducedMotion } = useSettings();
   const { data: petitionData } = usePetitionCount(1);
   const { data: places } = usePlaces();
@@ -90,21 +95,19 @@ export default function Home() {
               </p>
               
               <div className="flex flex-col sm:flex-row gap-4 justify-center lg:justify-start">
-                <Link href="/places">
-                  <button 
-                    className="w-full sm:w-auto px-8 py-4 rounded-full bg-white text-primary font-bold text-lg shadow-lg hover:shadow-xl hover:bg-gray-50 transition-all flex items-center justify-center gap-2"
-                    data-testid="button-explore-places"
-                  >
-                    <Search className="w-5 h-5" /> Explore Places
-                  </button>
+                <Link
+                  href="/places"
+                  className="w-full sm:w-auto px-8 py-4 rounded-full bg-white text-primary font-bold text-lg shadow-lg hover:shadow-xl hover:bg-gray-50 transition-all flex items-center justify-center gap-2"
+                  data-testid="button-explore-places"
+                >
+                  <Search className="w-5 h-5" /> Explore Places
                 </Link>
-                <Link href="/petitions">
-                  <button 
-                    className="w-full sm:w-auto px-8 py-4 rounded-full bg-white/20 backdrop-blur-sm text-white font-bold text-lg border-2 border-white/30 hover:bg-white/30 transition-all flex items-center justify-center gap-2"
-                    data-testid="button-sign-petition"
-                  >
-                    <PenTool className="w-5 h-5" /> Sign Petition
-                  </button>
+                <Link
+                  href="/petitions"
+                  className="w-full sm:w-auto px-8 py-4 rounded-full bg-white/20 backdrop-blur-sm text-white font-bold text-lg border-2 border-white/30 hover:bg-white/30 transition-all flex items-center justify-center gap-2"
+                  data-testid="button-sign-petition"
+                >
+                  <PenTool className="w-5 h-5" /> Sign Petition
                 </Link>
               </div>
             </motion.div>
@@ -179,10 +182,8 @@ export default function Home() {
               <SectionLabel>Featured Places</SectionLabel>
               <h2 className="font-display font-bold text-3xl md:text-4xl mt-4">Explore Accessible Locations</h2>
             </div>
-            <Link href="/places">
-              <button className="text-primary font-semibold flex items-center gap-2 hover:gap-3 transition-all" data-testid="link-view-all-places">
-                View all places <ArrowRight className="w-4 h-4" />
-              </button>
+            <Link href="/places" className="text-primary font-semibold flex items-center gap-2 hover:gap-3 transition-all" data-testid="link-view-all-places">
+              View all places <ArrowRight className="w-4 h-4" />
             </Link>
           </div>
 
@@ -275,10 +276,8 @@ export default function Home() {
                 <div className="bg-secondary/50 rounded-xl p-8 text-center">
                   <Clock className="w-12 h-12 mx-auto text-muted-foreground/50 mb-4" />
                   <p className="text-muted-foreground">No recent activity yet. Be the first to contribute!</p>
-                  <Link href="/submit">
-                    <button className="mt-4 px-6 py-2 rounded-full bg-primary text-primary-foreground font-semibold" data-testid="button-submit-review-cta">
-                      Submit a Review
-                    </button>
+                  <Link href="/submit" className="inline-block mt-4 px-6 py-2 rounded-full bg-primary text-primary-foreground font-semibold" data-testid="button-submit-review-cta">
+                    Submit a Review
                   </Link>
                 </div>
               )}
@@ -303,13 +302,12 @@ export default function Home() {
                     <div className="text-sm text-muted-foreground">
                       <span className="font-semibold text-foreground">{places?.length || 0}</span> locations mapped
                     </div>
-                    <Link href="/places?view=map">
-                      <button 
-                        className="px-4 py-2 rounded-full bg-primary text-primary-foreground font-semibold text-sm flex items-center gap-2 hover:bg-primary/90 transition-colors"
-                        data-testid="button-view-full-map"
-                      >
-                        View Full Map <ArrowRight className="w-4 h-4" />
-                      </button>
+                    <Link
+                      href="/places?view=map"
+                      className="px-4 py-2 rounded-full bg-primary text-primary-foreground font-semibold text-sm flex items-center gap-2 hover:bg-primary/90 transition-colors"
+                      data-testid="button-view-full-map"
+                    >
+                      View Full Map <ArrowRight className="w-4 h-4" />
                     </Link>
                   </div>
                 </div>
@@ -354,10 +352,8 @@ export default function Home() {
                 <p className={`text-muted-foreground mb-8 text-${textSize}`}>
                   Whether you use a wheelchair, have a visual impairment, or just want to support inclusive businesses, Open Way is your tool for navigation and advocacy.
                 </p>
-                <Link href="/about">
-                  <button className="font-bold text-primary hover:text-primary/80 flex items-center gap-2 text-lg group" data-testid="link-about">
-                    Learn more about us <ArrowRight className="w-5 h-5 group-hover:translate-x-1 transition-transform" />
-                  </button>
+                <Link href="/about" className="font-bold text-primary hover:text-primary/80 flex items-center gap-2 text-lg group" data-testid="link-about">
+                  Learn more about us <ArrowRight className="w-5 h-5 group-hover:translate-x-1 transition-transform" />
                 </Link>
               </div>
             </div>
@@ -389,15 +385,11 @@ export default function Home() {
           <h2 className="font-display font-bold text-3xl md:text-4xl mb-4">Ready to Make a Difference?</h2>
           <p className="text-white/90 mb-8 text-lg">Join thousands of advocates working toward a more accessible Philadelphia.</p>
           <div className="flex flex-col sm:flex-row gap-4 justify-center">
-            <Link href="/submit">
-              <button className="px-8 py-4 rounded-full bg-white text-primary font-bold text-lg shadow-lg hover:shadow-xl transition-all" data-testid="button-cta-share-review">
-                Share Your Review
-              </button>
+            <Link href="/submit" className="px-8 py-4 rounded-full bg-white text-primary font-bold text-lg shadow-lg hover:shadow-xl transition-all" data-testid="button-cta-share-review">
+              Share Your Review
             </Link>
-            <Link href="/petitions">
-              <button className="px-8 py-4 rounded-full bg-white/20 text-white font-bold text-lg border-2 border-white/30 hover:bg-white/30 transition-all" data-testid="button-cta-sign-petition">
-                Sign a Petition
-              </button>
+            <Link href="/petitions" className="px-8 py-4 rounded-full bg-white/20 text-white font-bold text-lg border-2 border-white/30 hover:bg-white/30 transition-all" data-testid="button-cta-sign-petition">
+              Sign a Petition
             </Link>
           </div>
         </div>
@@ -462,9 +454,11 @@ function FeaturedPlaceCard({ place }: { place: Place }) {
       >
         <div className="relative h-44 overflow-hidden bg-muted">
           {place.imageUrl ? (
-            <img 
-              src={place.imageUrl} 
+            <img
+              src={place.imageUrl}
               alt={place.name}
+              loading="lazy"
+              decoding="async"
               className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
             />
           ) : (

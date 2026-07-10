@@ -4,9 +4,12 @@ import { PlaceCardSkeleton } from "@/components/Skeleton";
 import { SectionLabel } from "@/components/SectionLabel";
 import { AccessibilityMap } from "@/components/AccessibilityMap";
 import { AccessibilityLegend } from "@/components/AccessibilityLegend";
-import { Search, MapPin, Filter, List, Map, Plus } from "lucide-react";
+import { usePagination } from "@/hooks/use-pagination";
+import { PaginationControls } from "@/components/PaginationControls";
+import { Search, MapPin, Filter, List, Map, Plus, LocateFixed, Loader2 } from "lucide-react";
 import { useState, useMemo } from "react";
 import { useSettings } from "@/hooks/use-settings";
+import { usePageMeta } from "@/hooks/use-page-meta";
 import { ACCESSIBILITY_STATUS, PLACE_CATEGORIES } from "@shared/schema";
 import { Button } from "@/components/ui/button";
 import { Link } from "wouter";
@@ -19,16 +22,48 @@ import {
 } from "@/components/ui/select";
 
 type ViewMode = "list" | "map";
-type SortOption = "most-reviewed" | "recently-added" | "highest-rated";
+type SortOption = "most-reviewed" | "recently-added" | "highest-rated" | "distance";
 
 export default function Places() {
+  usePageMeta({
+    title: "Browse Accessible Places",
+    description: "Search and filter accessible transit, museums, parks, restaurants, and more.",
+  });
   const [searchTerm, setSearchTerm] = useState("");
   const [statusFilter, setStatusFilter] = useState<string>("all");
   const [categoryFilter, setCategoryFilter] = useState<string>("all");
   const [viewMode, setViewMode] = useState<ViewMode>("list");
   const [sortOption, setSortOption] = useState<SortOption>("recently-added");
-  const { data: places, isLoading, error } = usePlaces(searchTerm);
+  const [nearMe, setNearMe] = useState<{ lat: number; lng: number } | null>(null);
+  const [isLocating, setIsLocating] = useState(false);
+  const [geoError, setGeoError] = useState<string | null>(null);
+  const { data: places, isLoading, error } = usePlaces({
+    search: searchTerm || undefined,
+    lat: nearMe?.lat,
+    lng: nearMe?.lng,
+  });
   const { textSize } = useSettings();
+
+  const handleUseMyLocation = () => {
+    if (!navigator.geolocation) {
+      setGeoError("Location services aren't available in this browser.");
+      return;
+    }
+    setGeoError(null);
+    setIsLocating(true);
+    navigator.geolocation.getCurrentPosition(
+      (position) => {
+        setNearMe({ lat: position.coords.latitude, lng: position.coords.longitude });
+        setSortOption("distance");
+        setIsLocating(false);
+      },
+      () => {
+        setGeoError("Couldn't get your location. Check your browser's location permission.");
+        setIsLocating(false);
+      },
+      { timeout: 10000 }
+    );
+  };
 
   const filteredAndSortedPlaces = useMemo(() => {
     if (!places) return [];
@@ -45,16 +80,21 @@ export default function Places() {
           return (b.reviewCount ?? 0) - (a.reviewCount ?? 0);
         case "highest-rated":
           return (b.averageRating ?? 0) - (a.averageRating ?? 0);
+        case "distance":
+          return (a.distanceMiles ?? Infinity) - (b.distanceMiles ?? Infinity);
         case "recently-added":
-        default:
+        default: {
           const dateA = a.createdAt ? new Date(a.createdAt).getTime() : 0;
           const dateB = b.createdAt ? new Date(b.createdAt).getTime() : 0;
           return dateB - dateA;
+        }
       }
     });
 
     return result;
   }, [places, statusFilter, categoryFilter, sortOption]);
+
+  const placesPagination = usePagination(filteredAndSortedPlaces, 24);
 
   return (
     <div className="min-h-screen bg-background">
@@ -126,7 +166,23 @@ export default function Places() {
             </div>
 
             {/* Sort Dropdown */}
-            <div className="flex items-center gap-2">
+            <div className="flex flex-wrap items-center gap-3">
+              <Button
+                type="button"
+                variant={nearMe ? "default" : "outline"}
+                size="sm"
+                onClick={handleUseMyLocation}
+                disabled={isLocating}
+                data-testid="button-near-me"
+              >
+                {isLocating ? (
+                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                ) : (
+                  <LocateFixed className="w-4 h-4 mr-2" />
+                )}
+                {nearMe ? "Using your location" : "Near me"}
+              </Button>
+
               <span className="text-sm text-muted-foreground">Sort by:</span>
               <Select value={sortOption} onValueChange={(value) => setSortOption(value as SortOption)}>
                 <SelectTrigger className="w-[180px]" data-testid="select-sort">
@@ -142,10 +198,21 @@ export default function Places() {
                   <SelectItem value="highest-rated" data-testid="sort-option-highest-rated">
                     Highest Rated
                   </SelectItem>
+                  {nearMe && (
+                    <SelectItem value="distance" data-testid="sort-option-distance">
+                      Nearest to Me
+                    </SelectItem>
+                  )}
                 </SelectContent>
               </Select>
             </div>
           </div>
+
+          {geoError && (
+            <p className="text-sm text-destructive" role="alert" data-testid="text-geo-error">
+              {geoError}
+            </p>
+          )}
 
           {/* Category Filters */}
           <div className="flex flex-wrap items-center gap-2">
@@ -247,10 +314,25 @@ export default function Places() {
                 Showing <span className="font-semibold text-foreground">{filteredAndSortedPlaces?.length}</span> places
               </p>
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
-                {filteredAndSortedPlaces?.map((place) => (
-                  <PlaceCard key={place.id} place={place} />
+                {placesPagination.pageItems.map((place) => (
+                  <div key={place.id}>
+                    <PlaceCard place={place} />
+                    {place.distanceMiles !== undefined && (
+                      <p className="text-xs text-muted-foreground mt-1.5 flex items-center gap-1" data-testid={`text-distance-${place.id}`}>
+                        <LocateFixed className="w-3 h-3" aria-hidden="true" />
+                        {place.distanceMiles < 0.1 ? "Less than 0.1 mi away" : `${place.distanceMiles.toFixed(1)} mi away`}
+                      </p>
+                    )}
+                  </div>
                 ))}
               </div>
+              <PaginationControls
+                page={placesPagination.page}
+                pageCount={placesPagination.pageCount}
+                totalCount={placesPagination.totalCount}
+                onPageChange={placesPagination.setPage}
+                testIdPrefix="pagination-places"
+              />
             </>
           ) : (
             <div className="space-y-4">

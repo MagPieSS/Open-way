@@ -9,8 +9,23 @@ const SALT_ROUNDS = 12;
 const BACKUP_CODE_COUNT = 10;
 const ENCRYPTION_ALGORITHM = "aes-256-gcm";
 
-// Derive encryption key from SESSION_SECRET
+let warnedAboutSharedKey = false;
+
+// Derive encryption key for 2FA secrets/backup codes. Prefers a dedicated key so that
+// rotating SESSION_SECRET (session signing) doesn't also invalidate every user's 2FA data.
 function getEncryptionKey(): Buffer {
+  const dedicatedSecret = process.env.TWO_FACTOR_ENCRYPTION_KEY;
+  if (dedicatedSecret) {
+    return crypto.scryptSync(dedicatedSecret, "2fa-encryption-salt", 32);
+  }
+  if (!warnedAboutSharedKey) {
+    console.warn(
+      "[auth] TWO_FACTOR_ENCRYPTION_KEY is not set; deriving 2FA encryption from SESSION_SECRET. " +
+      "Rotating SESSION_SECRET will make existing 2FA secrets/backup codes undecryptable. " +
+      "Set a dedicated TWO_FACTOR_ENCRYPTION_KEY to avoid this."
+    );
+    warnedAboutSharedKey = true;
+  }
   const secret = process.env.SESSION_SECRET || "dev-secret-change-in-production";
   return crypto.scryptSync(secret, "2fa-encryption-salt", 32);
 }
@@ -103,7 +118,7 @@ export function isWeakPassword(password: string): boolean {
 
 // Create a safe user object (without sensitive fields)
 export function toSafeUser(user: User): SafeUser {
-  const { passwordHash, twoFactorSecret, backupCodes, ...safeUser } = user;
+  const { passwordHash, twoFactorSecret, backupCodes, failedLoginAttempts, lockedUntil, ...safeUser } = user;
   return safeUser;
 }
 
@@ -141,8 +156,8 @@ export function verifyTwoFactorCode(secret: string, code: string): boolean {
 export function generateBackupCodes(): string[] {
   const codes: string[] = [];
   for (let i = 0; i < BACKUP_CODE_COUNT; i++) {
-    // Generate 8-character alphanumeric codes
-    const code = crypto.randomBytes(4).toString("hex").toUpperCase();
+    // 6 random bytes = 48 bits of entropy, formatted as a readable 12-char code
+    const code = crypto.randomBytes(6).toString("hex").toUpperCase();
     codes.push(code);
   }
   return codes;
@@ -192,10 +207,17 @@ export async function loginUser(
     return { success: false, error: "This account has been deactivated" };
   }
 
+  if (storage.isAccountLocked(user)) {
+    return { success: false, error: "Too many failed login attempts. Please try again in 15 minutes." };
+  }
+
   const passwordValid = await verifyPassword(password, user.passwordHash);
   if (!passwordValid) {
+    await storage.recordFailedLogin(user.id);
     return { success: false, error: "Invalid email or password" };
   }
+
+  await storage.resetFailedLogins(user.id);
 
   // Check if 2FA is enabled
   if (user.twoFactorEnabled && user.twoFactorSecret) {
@@ -238,12 +260,20 @@ export async function verifyTwoFactor(
   return { success: false, error: "Invalid verification code" };
 }
 
+// Constant-time string comparison to avoid leaking match position via timing
+function safeStringsEqual(a: string, b: string): boolean {
+  const bufA = Buffer.from(a, "utf8");
+  const bufB = Buffer.from(b, "utf8");
+  if (bufA.length !== bufB.length) return false;
+  return crypto.timingSafeEqual(bufA, bufB);
+}
+
 // Verify backup code against encrypted codes
 async function verifyEncryptedBackupCode(userId: number, code: string, encryptedCodes: string[]): Promise<boolean> {
   for (let i = 0; i < encryptedCodes.length; i++) {
     try {
       const decryptedCode = decryptSecret(encryptedCodes[i]);
-      if (decryptedCode === code) {
+      if (safeStringsEqual(decryptedCode, code)) {
         // Remove used code (update with remaining encrypted codes)
         const remainingCodes = [...encryptedCodes];
         remainingCodes.splice(i, 1);
@@ -322,8 +352,37 @@ export async function confirm2FA(
   return { success: true };
 }
 
-// Disable 2FA
-export async function disable2FA(userId: number): Promise<{ success: boolean }> {
+// Disable 2FA — requires re-authentication (password or a valid 2FA/backup code) so that a
+// hijacked session alone can't turn off a user's second factor.
+export async function disable2FA(
+  userId: number,
+  verification: { password?: string; code?: string }
+): Promise<{ success: boolean; error?: string }> {
+  const user = await storage.getUserById(userId);
+  if (!user) {
+    return { success: false, error: "User not found" };
+  }
+
+  if (verification.password) {
+    const valid = await verifyPassword(verification.password, user.passwordHash);
+    if (!valid) {
+      return { success: false, error: "Incorrect password" };
+    }
+  } else if (verification.code && user.twoFactorSecret) {
+    const decryptedSecret = decryptSecret(user.twoFactorSecret);
+    const validTotp = verifyTwoFactorCode(decryptedSecret, verification.code);
+    const validBackup = !validTotp && await verifyEncryptedBackupCode(
+      userId,
+      verification.code.toUpperCase(),
+      parseStoredBackupCodes(user.backupCodes)
+    );
+    if (!validTotp && !validBackup) {
+      return { success: false, error: "Invalid verification code" };
+    }
+  } else {
+    return { success: false, error: "Password or verification code is required to disable 2FA" };
+  }
+
   await storage.updateUser2FA(userId, false, undefined, undefined);
   return { success: true };
 }

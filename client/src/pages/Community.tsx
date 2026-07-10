@@ -51,7 +51,7 @@ function CommentItem({
             {format(new Date(comment.createdAt || new Date()), "MMM d, yyyy")}
           </span>
         </div>
-        <p className={`text-muted-foreground text-sm leading-relaxed`} data-testid={`text-comment-content-${comment.id}`}>
+        <p className={`text-muted-foreground leading-relaxed text-${textSize}`} data-testid={`text-comment-content-${comment.id}`}>
           {comment.content}
         </p>
       </div>

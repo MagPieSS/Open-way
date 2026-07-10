@@ -1,5 +1,7 @@
 import { useState, useMemo } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
+import { z } from "zod";
+import { usePageMeta } from "@/hooks/use-page-meta";
 
 import { SectionLabel } from "@/components/SectionLabel";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -46,6 +48,10 @@ const SORT_OPTIONS = [
 ];
 
 export default function Blog() {
+  usePageMeta({
+    title: "Blog",
+    description: "Guides and stories about accessibility from the Open Way team and community.",
+  });
 
   const [categoryFilter, setCategoryFilter] = useState("All");
   const [sortBy, setSortBy] = useState("newest");
@@ -58,11 +64,20 @@ export default function Blog() {
     category: "Community",
     author: "",
   });
+  const [postErrors, setPostErrors] = useState<Record<string, string>>({});
   const { toast } = useToast();
   const { user } = useAuth();
 
   const { data: posts, isLoading, error } = useQuery<BlogPost[]>({
     queryKey: ["/api/blog"],
+  });
+
+  const newPostSchema = z.object({
+    title: z.string().trim().min(3, "Title must be at least 3 characters").max(200, "Title is too long"),
+    content: z.string().trim().min(20, "Content must be at least 20 characters"),
+    excerpt: z.string().max(300, "Summary is too long").optional(),
+    author: z.string().max(100, "Name is too long").optional(),
+    category: z.string(),
   });
 
   const createPostMutation = useMutation({
@@ -84,6 +99,7 @@ export default function Blog() {
         category: "Community",
         author: "",
       });
+      setPostErrors({});
       toast({ title: "Blog post submitted successfully!" });
     },
     onError: (err: Error) => {
@@ -206,6 +222,16 @@ export default function Blog() {
                 <form
                   onSubmit={(e) => {
                     e.preventDefault();
+                    const result = newPostSchema.safeParse(newPost);
+                    if (!result.success) {
+                      const fieldErrors: Record<string, string> = {};
+                      for (const issue of result.error.issues) {
+                        fieldErrors[String(issue.path[0])] = issue.message;
+                      }
+                      setPostErrors(fieldErrors);
+                      return;
+                    }
+                    setPostErrors({});
                     createPostMutation.mutate(newPost);
                   }}
                   className="space-y-4"
@@ -219,6 +245,9 @@ export default function Blog() {
                       required
                       data-testid="input-post-title"
                     />
+                    {postErrors.title && (
+                      <p className="text-destructive text-sm mt-1">{postErrors.title}</p>
+                    )}
                   </div>
                   <div>
                     <Label htmlFor="post-author">Your Name</Label>
@@ -229,6 +258,9 @@ export default function Blog() {
                       placeholder="e.g. Jane Smith"
                       data-testid="input-post-author"
                     />
+                    {postErrors.author && (
+                      <p className="text-destructive text-sm mt-1">{postErrors.author}</p>
+                    )}
                   </div>
                   <div>
                     <Label htmlFor="post-excerpt">Summary (short description)</Label>
@@ -239,6 +271,9 @@ export default function Blog() {
                       placeholder="A brief summary of your post..."
                       data-testid="input-post-excerpt"
                     />
+                    {postErrors.excerpt && (
+                      <p className="text-destructive text-sm mt-1">{postErrors.excerpt}</p>
+                    )}
                   </div>
                   <div>
                     <Label htmlFor="post-content">Content</Label>
@@ -250,6 +285,9 @@ export default function Blog() {
                       className="min-h-[150px]"
                       data-testid="input-post-content"
                     />
+                    {postErrors.content && (
+                      <p className="text-destructive text-sm mt-1">{postErrors.content}</p>
+                    )}
                   </div>
                   <div>
                     <Label htmlFor="post-category">Category</Label>

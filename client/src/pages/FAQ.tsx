@@ -1,6 +1,7 @@
 import { useState, useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
 
+import { usePageMeta } from "@/hooks/use-page-meta";
 import { SectionLabel } from "@/components/SectionLabel";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -42,6 +43,10 @@ const CATEGORIES = [
 ];
 
 export default function FAQ() {
+  usePageMeta({
+    title: "Frequently Asked Questions",
+    description: "Answers to common questions about accessibility ratings, submissions, and petitions.",
+  });
 
   const [searchTerm, setSearchTerm] = useState("");
   const [selectedCategory, setSelectedCategory] = useState("All");

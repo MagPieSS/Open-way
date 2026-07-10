@@ -1,5 +1,7 @@
 import { useState, useMemo } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
+import { z } from "zod";
+import { usePageMeta } from "@/hooks/use-page-meta";
 import { SectionLabel } from "@/components/SectionLabel";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -60,6 +62,10 @@ const SORT_OPTIONS = [
 ];
 
 export default function Events() {
+  usePageMeta({
+    title: "Events",
+    description: "Accessibility awareness events, workshops, and community gatherings.",
+  });
   const [categoryFilter, setCategoryFilter] = useState("All");
   const [sortBy, setSortBy] = useState("soonest");
   const [showPast, setShowPast] = useState(false);
@@ -76,6 +82,7 @@ export default function Events() {
   });
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [imagePreview, setImagePreview] = useState<string | null>(null);
+  const [eventErrors, setEventErrors] = useState<Record<string, string>>({});
   const { toast } = useToast();
   const { user } = useAuth();
   const { uploadFile, isUploading } = useUpload({
@@ -86,6 +93,17 @@ export default function Events() {
 
   const { data: events, isLoading, error } = useQuery<Event[]>({
     queryKey: ["/api/events"],
+  });
+
+  const newEventSchema = z.object({
+    title: z.string().trim().min(3, "Title must be at least 3 characters").max(200, "Title is too long"),
+    description: z.string().trim().min(20, "Description must be at least 20 characters"),
+    date: z.string().refine((val) => !isNaN(new Date(val).getTime()), "Please choose a valid date and time"),
+    location: z.string().max(200, "Venue name is too long").optional(),
+    address: z.string().max(500, "Address is too long").optional(),
+    category: z.string(),
+    registrationUrl: z.string().url("Please enter a valid URL").or(z.literal("")).optional(),
+    imageUrl: z.string().optional(),
   });
 
   const createEventMutation = useMutation({
@@ -121,6 +139,7 @@ export default function Events() {
       });
       setSelectedFile(null);
       setImagePreview(null);
+      setEventErrors({});
       toast({ title: "Event submitted!", description: "Your event is pending admin review. It will be publicly visible once approved." });
     },
     onError: (err: Error) => {
@@ -294,6 +313,16 @@ export default function Events() {
                 <form
                   onSubmit={(e) => {
                     e.preventDefault();
+                    const result = newEventSchema.safeParse(newEvent);
+                    if (!result.success) {
+                      const fieldErrors: Record<string, string> = {};
+                      for (const issue of result.error.issues) {
+                        fieldErrors[String(issue.path[0])] = issue.message;
+                      }
+                      setEventErrors(fieldErrors);
+                      return;
+                    }
+                    setEventErrors({});
                     createEventMutation.mutate(newEvent);
                   }}
                   className="space-y-4"
@@ -307,6 +336,9 @@ export default function Events() {
                       required
                       data-testid="input-event-title"
                     />
+                    {eventErrors.title && (
+                      <p className="text-destructive text-sm mt-1">{eventErrors.title}</p>
+                    )}
                   </div>
                   <div>
                     <Label htmlFor="event-description">Description</Label>
@@ -317,6 +349,9 @@ export default function Events() {
                       required
                       data-testid="input-event-description"
                     />
+                    {eventErrors.description && (
+                      <p className="text-destructive text-sm mt-1">{eventErrors.description}</p>
+                    )}
                   </div>
                   <div>
                     <Label htmlFor="event-date">Date & Time</Label>
@@ -328,6 +363,9 @@ export default function Events() {
                       required
                       data-testid="input-event-date"
                     />
+                    {eventErrors.date && (
+                      <p className="text-destructive text-sm mt-1">{eventErrors.date}</p>
+                    )}
                   </div>
                   <div>
                     <Label htmlFor="event-location">Venue Name</Label>
@@ -377,6 +415,9 @@ export default function Events() {
                       placeholder="https://..."
                       data-testid="input-event-registration"
                     />
+                    {eventErrors.registrationUrl && (
+                      <p className="text-destructive text-sm mt-1">{eventErrors.registrationUrl}</p>
+                    )}
                   </div>
                   <div>
                     <Label htmlFor="event-image">Event Photo (optional)</Label>

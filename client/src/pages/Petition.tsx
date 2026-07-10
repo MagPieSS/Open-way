@@ -387,16 +387,12 @@ function SignPetitionForm({ petitionId, onSuccess }: { petitionId: number; onSuc
           Create an account or sign in to add your voice to this petition.
         </p>
         <div className="flex flex-col gap-2">
-          <Link href="/login">
-            <Button className="w-full" data-testid="button-login-to-sign">
-              Sign In
-            </Button>
-          </Link>
-          <Link href="/register">
-            <Button variant="outline" className="w-full" data-testid="button-register-to-sign">
-              Create Account
-            </Button>
-          </Link>
+          <Button asChild className="w-full" data-testid="button-login-to-sign">
+            <Link href="/login">Sign In</Link>
+          </Button>
+          <Button asChild variant="outline" className="w-full" data-testid="button-register-to-sign">
+            <Link href="/register">Create Account</Link>
+          </Button>
         </div>
       </div>
     );
@@ -549,12 +545,12 @@ function CreatePetitionDialog() {
 
   if (!authLoading && !user) {
     return (
-      <Link href="/login">
-        <Button className="gap-2" data-testid="button-start-petition-login">
+      <Button asChild className="gap-2" data-testid="button-start-petition-login">
+        <Link href="/login">
           <Plus className="w-4 h-4" />
           Sign In to Start a Petition
-        </Button>
-      </Link>
+        </Link>
+      </Button>
     );
   }
 
@@ -697,10 +693,16 @@ function PetitionCard({ petition }: { petition: PetitionType }) {
               <span className="text-xs text-muted-foreground">
                 {Math.round(progressPercent)}% of goal
               </span>
-              <Button variant="outline" size="sm" className="gap-1" data-testid={`button-view-petition-${petition.id}`}>
+              {/* Visual affordance only — the whole card is already the link, so this isn't a
+                  second nested interactive element */}
+              <span
+                className="inline-flex items-center gap-1 px-3 py-1.5 rounded-md border border-input text-sm font-medium"
+                aria-hidden="true"
+                data-testid={`button-view-petition-${petition.id}`}
+              >
                 <Eye className="w-3 h-3" />
                 View
-              </Button>
+              </span>
             </div>
           </div>
         </Card>
@@ -848,12 +850,12 @@ export function PetitionDetail() {
           <PenTool className="w-16 h-16 mx-auto text-muted-foreground/30 mb-4" />
           <h2 className="font-bold text-2xl mb-2">Petition Not Found</h2>
           <p className="text-muted-foreground mb-6">This petition may have been removed or doesn't exist.</p>
-          <Link href="/petitions">
-            <Button className="gap-2" data-testid="button-back-to-petitions">
+          <Button asChild className="gap-2" data-testid="button-back-to-petitions">
+            <Link href="/petitions">
               <ArrowLeft className="w-4 h-4" />
               Back to All Petitions
-            </Button>
-          </Link>
+            </Link>
+          </Button>
         </div>
       </div>
     );
@@ -909,12 +911,12 @@ export function PetitionDetail() {
       </section>
 
       <div className="max-w-6xl mx-auto px-4 py-4">
-        <Link href="/petitions">
-          <Button variant="ghost" className="gap-2" data-testid="link-back-to-petitions">
+        <Button asChild variant="ghost" className="gap-2" data-testid="link-back-to-petitions">
+          <Link href="/petitions">
             <ArrowLeft className="w-4 h-4" />
             Back to All Petitions
-          </Button>
-        </Link>
+          </Link>
+        </Button>
       </div>
 
       <section className="pb-16 px-4">

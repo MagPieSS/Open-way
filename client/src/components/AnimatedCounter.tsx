@@ -16,6 +16,7 @@ export function AnimatedCounter({ value, duration = 1500 }: AnimatedCounterProps
       return;
     }
 
+    let rafId: number;
     const startTime = Date.now();
     const startValue = displayValue;
     const diff = value - startValue;
@@ -23,22 +24,31 @@ export function AnimatedCounter({ value, duration = 1500 }: AnimatedCounterProps
     const animate = () => {
       const elapsed = Date.now() - startTime;
       const progress = Math.min(elapsed / duration, 1);
-      
+
       // Easing function for smooth animation
       const easeOut = 1 - Math.pow(1 - progress, 3);
-      
+
       setDisplayValue(Math.round(startValue + diff * easeOut));
 
       if (progress < 1) {
-        requestAnimationFrame(animate);
+        rafId = requestAnimationFrame(animate);
       }
     };
 
-    requestAnimationFrame(animate);
+    rafId = requestAnimationFrame(animate);
+    return () => cancelAnimationFrame(rafId);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [value, duration, reducedMotion]);
 
   return (
-    <span className="tabular-nums">{displayValue.toLocaleString()}</span>
+    <span className="tabular-nums">
+      {/* Visible counter animates every frame; a screen reader shouldn't hear every tick, so
+          it only gets the final settled value via this visually-hidden live region. */}
+      <span aria-hidden="true">{displayValue.toLocaleString()}</span>
+      <span className="sr-only" aria-live="polite">
+        {displayValue === value ? value.toLocaleString() : ""}
+      </span>
+    </span>
   );
 }
 

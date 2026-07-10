@@ -101,8 +101,8 @@ export function useAuth() {
   });
 
   const disable2FAMutation = useMutation({
-    mutationFn: async () => {
-      const res = await apiRequest("POST", "/api/auth/2fa/disable");
+    mutationFn: async (verification: { password?: string; code?: string }) => {
+      const res = await apiRequest("POST", "/api/auth/2fa/disable", verification);
       return res.json();
     },
     onSuccess: () => {

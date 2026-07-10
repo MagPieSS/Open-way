@@ -1,6 +1,8 @@
 import { useState, useMemo } from "react";
+import { Link } from "wouter";
 
 import { useQuery } from "@tanstack/react-query";
+import { usePageMeta } from "@/hooks/use-page-meta";
 import { SectionLabel } from "@/components/SectionLabel";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -54,6 +56,10 @@ const CATEGORIES = [
 ];
 
 export default function Resources() {
+  usePageMeta({
+    title: "Accessibility Resources",
+    description: "ADA services, legal resources, and support organizations for people with disabilities.",
+  });
 
   const [searchTerm, setSearchTerm] = useState("");
   const [categoryFilter, setCategoryFilter] = useState("All");
@@ -315,8 +321,8 @@ export default function Resources() {
           <p className="text-muted-foreground mb-6">
             Help others by suggesting accessibility resources in your community.
           </p>
-          <Button size="lg" data-testid="button-suggest-resource">
-            Suggest a Resource
+          <Button asChild size="lg" data-testid="button-suggest-resource">
+            <Link href="/contact?subject=Resource+Suggestion">Suggest a Resource</Link>
           </Button>
         </div>
       </section>

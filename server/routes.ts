@@ -22,9 +22,12 @@ import {
   hashPassword,
   isWeakPassword
 } from "./auth";
-import { authRateLimiter, apiRateLimiter, validateCsrf } from "./index";
+import { authRateLimiter, apiRateLimiter, reviewRateLimiter, validateCsrf } from "./index";
 import { geocodeAddress } from "./geocode";
-import { sendPasswordResetEmail } from "./email";
+import { sendPasswordResetEmail, sendVerificationEmail } from "./email";
+import { sanitizeString } from "./sanitize";
+import { haversineDistanceMiles } from "./geo";
+import { checkReviewForSpam } from "./spam-detection";
 
 const MAX_UPLOAD_SIZE_BYTES = 10 * 1024 * 1024;
 const ALLOWED_UPLOAD_TYPES: Record<string, string> = {
@@ -98,38 +101,6 @@ async function requireAdmin(req: Request, res: Response, next: NextFunction) {
     return res.status(500).json({ message: "Unable to verify admin status" });
   }
 }
-
-// Comprehensive input sanitization helper - prevents XSS attacks
-function sanitizeString(input: string, maxLength: number = 1000): string {
-  return input
-    // Remove HTML tags including malformed ones
-    .replace(/<[^>]*>?/g, "")
-    // Remove script-related patterns (even without tags)
-    .replace(/javascript:/gi, "")
-    .replace(/on\w+\s*=/gi, "")
-    .replace(/data:/gi, "data-blocked:")
-    // Remove angle brackets and other dangerous characters
-    .replace(/[<>]/g, "")
-    // Encode remaining HTML entities for safety
-    .replace(/&/g, "&amp;")
-    .replace(/"/g, "&quot;")
-    .replace(/'/g, "&#x27;")
-    // Remove null bytes and control characters
-    .replace(/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/g, "")
-    .trim()
-    .slice(0, maxLength);
-}
-
-// HTML-encode for display (used when data will be rendered as HTML)
-function encodeHtml(input: string): string {
-  return input
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;")
-    .replace(/'/g, "&#x27;");
-}
-
 
 export async function registerRoutes(
   httpServer: Server,
@@ -231,6 +202,20 @@ export async function registerRoutes(
       // Auto-login after registration
       req.session.userId = result.user!.id;
       req.session.email = result.user!.email;
+
+      // Send email verification link (best-effort; failure doesn't block registration)
+      try {
+        const token = randomBytes(32).toString("hex");
+        const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000); // 24 hours
+        await storage.createEmailVerificationToken({ userId: result.user!.id, token, expiresAt });
+        const verifyUrl = `${req.protocol}://${req.get("host")}/verify-email?token=${token}`;
+        const emailResult = await sendVerificationEmail({ to: result.user!.email, verifyUrl, expiresAt });
+        if (!emailResult.sent) {
+          console.warn(`Verification email not sent via ${emailResult.provider}: ${emailResult.error}`);
+        }
+      } catch (emailErr) {
+        console.error("Failed to send verification email:", emailErr);
+      }
 
       res.status(201).json({ user: result.user });
     } catch (err) {
@@ -422,6 +407,54 @@ export async function registerRoutes(
     }
   });
 
+  // ==================== EMAIL VERIFICATION ROUTES ====================
+
+  // Verify email with token
+  app.post("/api/auth/verify-email", authRateLimiter, async (req, res) => {
+    const { token } = req.body;
+    if (!token || typeof token !== "string") {
+      return res.status(400).json({ message: "Verification token is required" });
+    }
+
+    const verificationToken = await storage.getEmailVerificationToken(token);
+    if (!verificationToken) {
+      return res.status(400).json({ message: "Invalid or expired verification link" });
+    }
+    if (verificationToken.usedAt) {
+      return res.status(400).json({ message: "This verification link has already been used" });
+    }
+    if (new Date() > verificationToken.expiresAt) {
+      return res.status(400).json({ message: "This verification link has expired" });
+    }
+
+    await storage.setEmailVerified(verificationToken.userId);
+    await storage.markEmailVerificationTokenUsed(verificationToken.id);
+
+    res.json({ message: "Email verified successfully" });
+  });
+
+  // Resend verification email (requires login)
+  app.post("/api/auth/resend-verification", requireAuth, validateCsrf, authRateLimiter, async (req, res) => {
+    const user = await storage.getUserById(req.session.userId!);
+    if (!user) {
+      return res.status(404).json({ message: "User not found" });
+    }
+    if (user.emailVerified) {
+      return res.json({ message: "Email is already verified" });
+    }
+
+    const token = randomBytes(32).toString("hex");
+    const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000);
+    await storage.createEmailVerificationToken({ userId: user.id, token, expiresAt });
+    const verifyUrl = `${req.protocol}://${req.get("host")}/verify-email?token=${token}`;
+    const emailResult = await sendVerificationEmail({ to: user.email, verifyUrl, expiresAt });
+    if (!emailResult.sent) {
+      console.warn(`Verification email not sent via ${emailResult.provider}: ${emailResult.error}`);
+    }
+
+    res.json({ message: "Verification email sent" });
+  });
+
   // ==================== 2FA MANAGEMENT ROUTES ====================
 
   // Start 2FA setup
@@ -456,9 +489,16 @@ export async function registerRoutes(
     res.json({ success: true });
   });
 
-  // Disable 2FA
-  app.post("/api/auth/2fa/disable", requireAuth, validateCsrf, async (req, res) => {
-    await disable2FA(req.session.userId!);
+  // Disable 2FA (requires password or a valid 2FA/backup code to prevent session hijacking from silently disabling it)
+  app.post("/api/auth/2fa/disable", requireAuth, validateCsrf, authRateLimiter, async (req, res) => {
+    const { password, code } = req.body;
+    const result = await disable2FA(req.session.userId!, {
+      password: typeof password === "string" ? password : undefined,
+      code: typeof code === "string" ? sanitizeString(code, 20) : undefined,
+    });
+    if (!result.success) {
+      return res.status(400).json({ message: result.error });
+    }
     res.json({ success: true });
   });
 
@@ -610,26 +650,55 @@ export async function registerRoutes(
     }
   });
 
-  // Places
+  // Places (supports combining category/status/radius/sort filters; search and featured
+  // are still mutually exclusive with each other since they define the base result set)
   app.get(api.places.list.path, async (req, res) => {
     try {
       const search = req.query.search as string | undefined;
       const category = req.query.category as string | undefined;
       const featured = req.query.featured as string | undefined;
-      
+      const status = req.query.status as string | undefined;
+      const lat = req.query.lat !== undefined ? Number(req.query.lat) : undefined;
+      const lng = req.query.lng !== undefined ? Number(req.query.lng) : undefined;
+      const radiusMiles = req.query.radius !== undefined ? Number(req.query.radius) : undefined;
+      const sort = req.query.sort as string | undefined; // 'rating' | 'reviews' | 'distance' | 'recent'
+
+      let results;
       if (search) {
-        const results = await storage.searchPlaces(search);
-        res.json(results);
+        results = await storage.searchPlaces(search);
       } else if (category) {
-        const results = await storage.getPlacesByCategory(category);
-        res.json(results);
+        results = await storage.getPlacesByCategory(category);
       } else if (featured === 'true') {
-        const results = await storage.getFeaturedPlaces();
-        res.json(results);
+        results = await storage.getFeaturedPlaces();
       } else {
-        const results = await storage.getPlaces();
-        res.json(results);
+        results = await storage.getPlaces();
       }
+
+      if (status) {
+        results = results.filter((p) => p.accessibilityStatus === status);
+      }
+
+      const hasCoords = lat !== undefined && lng !== undefined && !Number.isNaN(lat) && !Number.isNaN(lng);
+      let withDistance = results.map((p) => ({
+        ...p,
+        distanceMiles: hasCoords && p.latitude != null && p.longitude != null
+          ? haversineDistanceMiles(lat!, lng!, p.latitude, p.longitude)
+          : undefined,
+      }));
+
+      if (hasCoords && radiusMiles !== undefined && !Number.isNaN(radiusMiles)) {
+        withDistance = withDistance.filter((p) => p.distanceMiles !== undefined && p.distanceMiles <= radiusMiles);
+      }
+
+      if (sort === 'rating') {
+        withDistance.sort((a, b) => (b.averageRating ?? 0) - (a.averageRating ?? 0));
+      } else if (sort === 'reviews') {
+        withDistance.sort((a, b) => (b.reviewCount ?? 0) - (a.reviewCount ?? 0));
+      } else if (sort === 'distance' && hasCoords) {
+        withDistance.sort((a, b) => (a.distanceMiles ?? Infinity) - (b.distanceMiles ?? Infinity));
+      }
+
+      res.json(withDistance);
     } catch (err) {
       console.error("[PRODUCTION] Failed to load places:", err);
       res.status(500).json({ message: "Failed to load places" });
@@ -873,7 +942,7 @@ export async function registerRoutes(
   });
 
   // Create review (requires authentication)
-  app.post(api.reviews.create.path, requireAuth, validateCsrf, async (req, res) => {
+  app.post(api.reviews.create.path, requireAuth, validateCsrf, reviewRateLimiter, async (req, res) => {
     try {
       const input = api.reviews.create.input.parse(req.body);
       // Sanitize input content
@@ -885,6 +954,23 @@ export async function registerRoutes(
         userId: req.session.userId, // Link review to authenticated user
       };
       const review = await storage.createReview(sanitizedInput);
+
+      // Best-effort: flag likely-spam content into the existing moderation queue rather than
+      // blocking submission outright (heuristics have false positives; a human should decide).
+      try {
+        const spamCheck = checkReviewForSpam(sanitizedInput.content);
+        if (spamCheck.isSuspicious) {
+          await storage.createReport({
+            reporterId: req.session.userId!,
+            contentType: "review",
+            contentId: review.id,
+            reason: `Automated spam check: ${spamCheck.reasons.join(", ")}`,
+          });
+        }
+      } catch (spamErr) {
+        console.error("Spam check/report failed (non-fatal):", spamErr);
+      }
+
       res.status(201).json(review);
     } catch (err) {
       if (err instanceof z.ZodError) {
@@ -1438,6 +1524,45 @@ export async function registerRoutes(
     }
   });
 
+  // ==================== SITEMAP ====================
+
+  app.get("/sitemap.xml", async (req, res) => {
+    try {
+      const baseUrl = `${req.protocol}://${req.get("host")}`;
+      const staticPaths = [
+        "/", "/places", "/community", "/petitions", "/events", "/resources",
+        "/blog", "/faq", "/contact", "/about",
+      ];
+
+      const [places, blogPosts, events] = await Promise.all([
+        storage.getPlaces(),
+        storage.getPublishedBlogPosts(),
+        storage.getEvents(),
+      ]);
+
+      const urlEntries: string[] = [
+        ...staticPaths.map((path) => `  <url><loc>${baseUrl}${path}</loc></url>`),
+        ...places.map((p) => `  <url><loc>${baseUrl}/places/${p.id}</loc><lastmod>${(p.updatedAt ?? p.createdAt ?? new Date()).toISOString().slice(0, 10)}</lastmod></url>`),
+        ...blogPosts.map((b) => `  <url><loc>${baseUrl}/blog</loc><lastmod>${(b.publishedAt ?? b.createdAt ?? new Date()).toISOString().slice(0, 10)}</lastmod></url>`),
+        ...events.map((e) => `  <url><loc>${baseUrl}/events</loc><lastmod>${(e.createdAt ?? new Date()).toISOString().slice(0, 10)}</lastmod></url>`),
+      ];
+
+      const xml = `<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n${urlEntries.join("\n")}\n</urlset>`;
+
+      res.set("Content-Type", "application/xml");
+      res.send(xml);
+    } catch (err) {
+      console.error("Failed to generate sitemap:", err);
+      res.status(500).send("Failed to generate sitemap");
+    }
+  });
+
+  app.get("/robots.txt", (req, res) => {
+    const baseUrl = `${req.protocol}://${req.get("host")}`;
+    res.set("Content-Type", "text/plain");
+    res.send(`User-agent: *\nDisallow: /admin/\nSitemap: ${baseUrl}/sitemap.xml\n`);
+  });
+
   // ==================== ADMIN ROUTES ====================
 
   // Admin: Get all users with stats
@@ -1665,12 +1790,16 @@ export async function registerRoutes(
               reportedContent = { content: post.content, authorName: post.authorName };
             }
           }
-        } catch {}
+        } catch {
+          // Reported content may have been deleted since the report was filed; leave reportedContent null.
+        }
 
         try {
           const [reporter] = await db.select({ email: users.email }).from(users).where(eq(users.id, report.reporterId));
           reporterEmail = reporter?.email ?? null;
-        } catch {}
+        } catch {
+          // Reporter lookup failed; leave reporterEmail null rather than failing the whole list.
+        }
 
         return { ...report, reportedContent, placeName, reporterEmail };
       }));

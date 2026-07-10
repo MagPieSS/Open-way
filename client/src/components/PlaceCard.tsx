@@ -1,6 +1,7 @@
 import { Place, ACCESSIBILITY_STATUS } from "@shared/schema";
 import { Link } from "wouter";
 import { MapPin, CheckCircle, AlertTriangle, XCircle, ArrowRight } from "lucide-react";
+import { useState } from "react";
 import { useSettings } from "@/hooks/use-settings";
 import { PlaceReviewsList } from "@/components/PlaceReviewsList";
 import { Button } from "@/components/ui/button";
@@ -11,6 +12,7 @@ interface PlaceCardProps {
 
 export function PlaceCard({ place }: PlaceCardProps) {
   const { textSize } = useSettings();
+  const [imageFailed, setImageFailed] = useState(false);
 
   const getStatusConfig = (status: string) => {
     switch (status) {
@@ -51,20 +53,29 @@ export function PlaceCard({ place }: PlaceCardProps) {
     >
       {/* Image */}
       <div className="relative h-48 overflow-hidden bg-muted">
-        {place.imageUrl ? (
-          <img 
-            src={place.imageUrl} 
+        {place.imageUrl && !imageFailed ? (
+          <img
+            src={place.imageUrl}
             alt={place.name}
+            width={400}
+            height={192}
+            loading="lazy"
+            decoding="async"
+            onError={() => setImageFailed(true)}
             className="w-full h-full object-cover"
           />
         ) : (
           <div className="w-full h-full flex items-center justify-center bg-secondary">
-            <MapPin className="w-12 h-12 text-muted-foreground/30" />
+            <MapPin className="w-12 h-12 text-muted-foreground/30" aria-hidden="true" />
+            <span className="sr-only">No photo available for {place.name}</span>
           </div>
         )}
         {/* Status Badge */}
-        <div className={`absolute top-3 right-3 px-3 py-1.5 rounded-full font-bold text-sm flex items-center gap-1.5 shadow-md ${statusConfig.bgColor}`}>
-          <StatusIcon className="w-4 h-4" />
+        <div
+          className={`absolute top-3 right-3 px-3 py-1.5 rounded-full font-bold text-sm flex items-center gap-1.5 shadow-md ${statusConfig.bgColor}`}
+          aria-label={`Accessibility status: ${statusConfig.text}`}
+        >
+          <StatusIcon className="w-4 h-4" aria-hidden="true" />
           <span>{statusConfig.text}</span>
         </div>
       </div>

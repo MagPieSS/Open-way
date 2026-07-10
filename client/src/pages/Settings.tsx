@@ -30,6 +30,8 @@ export default function Settings() {
   const [verifyCode, setVerifyCode] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [copiedIndex, setCopiedIndex] = useState<number | null>(null);
+  const [showDisableConfirm, setShowDisableConfirm] = useState(false);
+  const [disablePassword, setDisablePassword] = useState('');
 
   const handleSetup2FA = async () => {
     setIsLoading(true);
@@ -64,15 +66,21 @@ export default function Settings() {
   };
 
   const handleDisable2FA = async () => {
+    if (!disablePassword) {
+      toast({ variant: "destructive", title: "Error", description: "Enter your password to confirm" });
+      return;
+    }
     setIsLoading(true);
     try {
-      await disable2FA();
+      await disable2FA({ password: disablePassword });
       setTwoFactorStep('idle');
       setQrCode('');
       setBackupCodes([]);
+      setShowDisableConfirm(false);
+      setDisablePassword('');
       toast({ title: "Success", description: "Two-factor authentication disabled" });
     } catch (error) {
-      toast({ variant: "destructive", title: "Error", description: "Failed to disable 2FA" });
+      toast({ variant: "destructive", title: "Error", description: error instanceof Error ? error.message : "Failed to disable 2FA. Check your password and try again." });
     } finally {
       setIsLoading(false);
     }
@@ -361,8 +369,9 @@ export default function Settings() {
             {readAloudEnabled && (
               <div className="space-y-4 pt-2 border-t border-border">
                 <div className="mt-4">
-                  <label className="block text-sm font-medium mb-2">Voice</label>
+                  <label htmlFor="read-aloud-voice" className="block text-sm font-medium mb-2">Voice</label>
                   <select
+                    id="read-aloud-voice"
                     value={readAloudVoice}
                     onChange={(e) => setReadAloudVoice(e.target.value)}
                     className="w-full px-3 py-2 rounded-lg border border-border bg-background text-foreground text-sm"
@@ -378,12 +387,13 @@ export default function Settings() {
                 </div>
 
                 <div>
-                  <label className="block text-sm font-medium mb-2">
+                  <label htmlFor="read-aloud-speed" className="block text-sm font-medium mb-2">
                     Speed: {speedLabels[String(readAloudSpeed)] || `${readAloudSpeed}x`}
                   </label>
                   <div className="flex items-center gap-3">
                     <span className="text-xs text-muted-foreground">0.5x</span>
                     <input
+                      id="read-aloud-speed"
                       type="range"
                       min="0.5"
                       max="2"
@@ -392,6 +402,7 @@ export default function Settings() {
                       onChange={(e) => setReadAloudSpeed(parseFloat(e.target.value))}
                       className="flex-1 accent-primary"
                       data-testid="slider-read-aloud-speed"
+                      aria-valuetext={`${readAloudSpeed}x`}
                     />
                     <span className="text-xs text-muted-foreground">2x</span>
                   </div>
@@ -469,16 +480,52 @@ export default function Settings() {
                       {isLoading ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : null}
                       View Backup Codes
                     </Button>
-                    <Button 
-                      variant="destructive" 
-                      onClick={handleDisable2FA}
-                      disabled={isLoading}
-                      data-testid="button-disable-2fa"
-                    >
-                      {isLoading ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : null}
-                      Disable 2FA
-                    </Button>
+                    {!showDisableConfirm && (
+                      <Button
+                        variant="destructive"
+                        onClick={() => setShowDisableConfirm(true)}
+                        disabled={isLoading}
+                        data-testid="button-disable-2fa"
+                      >
+                        Disable 2FA
+                      </Button>
+                    )}
                   </div>
+
+                  {showDisableConfirm && (
+                    <div className="bg-destructive/5 border border-destructive/20 rounded-xl p-4 space-y-3">
+                      <label htmlFor="disable-2fa-password" className="text-sm font-medium">
+                        Confirm your password to disable 2FA
+                      </label>
+                      <input
+                        id="disable-2fa-password"
+                        type="password"
+                        value={disablePassword}
+                        onChange={(e) => setDisablePassword(e.target.value)}
+                        autoComplete="current-password"
+                        className="w-full px-3 py-2 rounded-lg border border-input bg-background text-sm"
+                        data-testid="input-disable-2fa-password"
+                      />
+                      <div className="flex gap-2">
+                        <Button
+                          variant="destructive"
+                          onClick={handleDisable2FA}
+                          disabled={isLoading}
+                          data-testid="button-confirm-disable-2fa"
+                        >
+                          {isLoading ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : null}
+                          Confirm Disable
+                        </Button>
+                        <Button
+                          variant="outline"
+                          onClick={() => { setShowDisableConfirm(false); setDisablePassword(''); }}
+                          disabled={isLoading}
+                        >
+                          Cancel
+                        </Button>
+                      </div>
+                    </div>
+                  )}
                 </div>
               )}
 

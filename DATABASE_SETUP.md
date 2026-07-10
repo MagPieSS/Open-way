@@ -2,6 +2,32 @@
 
 ## Quick Start
 
+### Option 0: No setup — SQLite fallback (default)
+
+If `DATABASE_URL` is unset or doesn't start with `postgres`, `server/db.ts` automatically falls
+back to a local SQLite database at `sqlite.db` in the repo root, creating tables on first run.
+This is what you get by just running:
+
+```powershell
+npm install
+npm run dev
+```
+
+Good for quickly trying the app out. It is **not** suitable for production (see the warnings in
+`server/index.ts` about session storage) and `npm run db:push` (Drizzle migrations) does not apply
+to it — the SQLite schema is created and migrated separately in `server/db.ts`. For anything beyond
+local exploration, use one of the PostgreSQL options below.
+
+To create a local admin account against the SQLite database:
+
+```powershell
+$env:ADMIN_EMAIL = "you@example.com"; $env:ADMIN_PASSWORD = "choose-a-password"; npx tsx scripts/create-admin.ts
+```
+
+Omitting `ADMIN_PASSWORD` generates and prints a random one instead of using a fixed default.
+
+---
+
 ### Option 1: Local PostgreSQL (Windows)
 
 1. **Install PostgreSQL**
@@ -47,7 +73,7 @@
 
 7. **Visit**
    ```
-   http://localhost:5173
+   http://localhost:5000
    ```
 
 ---
@@ -131,14 +157,17 @@ Copy the output and paste into `.env.local` for `SESSION_SECRET`.
 
 ## Verify Connection
 
-Test your connection:
+`npm run check` only runs the TypeScript compiler (`tsc --noEmit`) — it does **not** verify DB
+connectivity. To actually verify the connection, start the dev server and confirm it connects:
 
 ```powershell
 $env:DATABASE_URL = "postgresql://postgres:password@localhost:5432/openway"
-npm run check
+npm run dev
 ```
 
-If successful, you'll see TypeScript compilation pass without errors.
+Watch the startup logs: with `DATABASE_URL` set to a `postgres://` URL, `server/db.ts` uses the
+Postgres pool; you should NOT see the `[db] Using SQLite fallback` log line. Then run
+`npm run db:push` to apply the Drizzle schema.
 
 ---
 
@@ -165,5 +194,5 @@ If successful, you'll see TypeScript compilation pass without errors.
 Once database is set up:
 
 1. Start dev server: `npm run dev`
-2. Open browser: http://localhost:5173
+2. Open browser: http://localhost:5000
 3. Create account and explore!

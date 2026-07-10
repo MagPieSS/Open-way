@@ -65,7 +65,7 @@ export function ReadAloudProvider() {
       const target = e.target as HTMLElement;
 
       if (target.closest("[data-read-aloud-controls]")) return;
-      if (target.closest("button, a, input, textarea, select, nav, [role='navigation'], [role='button'], [role='link'], [contenteditable]")) return;
+      if (target.closest("button, a, input, textarea, select, nav, [role='navigation'], [role='button'], [role='link'], [role='dialog'], [role='menu'], [contenteditable]")) return;
 
       const readable = target.closest("p, h1, h2, h3, h4, h5, h6, li, td, th, blockquote, figcaption, [data-read-aloud], .card-content, article") as HTMLElement | null;
 
@@ -117,8 +117,9 @@ export function ReadAloudProvider() {
           data-read-aloud-controls
           className="fixed bottom-4 left-4 z-50 bg-primary text-primary-foreground px-4 py-2 rounded-full shadow-lg flex items-center gap-2 text-sm font-medium"
           data-testid="read-aloud-indicator"
+          role="status"
         >
-          <Volume2 className="w-4 h-4" />
+          <Volume2 className="w-4 h-4" aria-hidden="true" />
           <span>Click any text to hear it</span>
         </div>
       )}
@@ -127,6 +128,8 @@ export function ReadAloudProvider() {
           data-read-aloud-controls
           className="fixed bottom-4 left-4 z-50 bg-card border border-border rounded-xl shadow-xl p-3 flex items-center gap-3 max-w-sm"
           data-testid="read-aloud-controls"
+          role="status"
+          aria-live="polite"
         >
           <div className="flex items-center gap-1.5">
             <Button
