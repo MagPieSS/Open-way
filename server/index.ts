@@ -1,8 +1,13 @@
 import express, { type Request, Response, NextFunction } from "express";
+// Must be imported before any routes are registered: patches Express to forward rejected
+// promises from async route handlers to the error middleware instead of crashing the process.
+// Express 4 does not do this natively — before this was added, any unhandled error/rejection
+// inside an `async (req, res) => {...}` route handler took down the entire server for every user.
+import "express-async-errors";
 import session, { MemoryStore } from "express-session";
 import helmet from "helmet";
 import cors from "cors";
-import rateLimit from "express-rate-limit";
+import rateLimit, { ipKeyGenerator } from "express-rate-limit";
 import connectPgSimple from "connect-pg-simple";
 import { registerRoutes } from "./routes";
 import { serveStatic } from "./static";
@@ -121,7 +126,7 @@ export const reviewRateLimiter = rateLimit({
   message: { message: "You're submitting reviews too quickly. Please wait a bit before posting another." },
   standardHeaders: true,
   legacyHeaders: false,
-  keyGenerator: (req) => (req.session?.userId ? `user:${req.session.userId}` : req.ip || "unknown"),
+  keyGenerator: (req) => (req.session?.userId ? `user:${req.session.userId}` : ipKeyGenerator(req.ip || "unknown")),
 });
 
 app.use("/api", apiRateLimiter);
@@ -314,6 +319,24 @@ app.use((req, res, next) => {
       log(`serving on port ${port}`);
     },
   );
+
+  // Last-resort safety net for errors outside Express's request/response cycle (background
+  // tasks, timers, etc. — anything express-async-errors above doesn't cover).
+  //
+  // unhandledRejection: a rejected promise nobody awaited doesn't corrupt process state, so
+  // logging and continuing is safe and keeps the server available.
+  //
+  // uncaughtException: per Node's own docs, the process is in an undefined state after a truly
+  // uncaught synchronous throw — continuing risks silent corruption or, as seen while testing
+  // this (a swallowed EADDRINUSE left a zombie process not actually serving traffic), a process
+  // that appears alive but isn't doing its job. Log and exit; let the process manager restart it.
+  process.on("unhandledRejection", (reason) => {
+    log(`Unhandled promise rejection: ${reason instanceof Error ? reason.stack || reason.message : reason}`, "error");
+  });
+  process.on("uncaughtException", (err) => {
+    log(`Uncaught exception, exiting: ${err.stack || err.message}`, "error");
+    process.exit(1);
+  });
 
   // Graceful shutdown: stop accepting new connections and let in-flight requests finish
   // before closing the DB pool, instead of dropping everything on SIGTERM/SIGINT.

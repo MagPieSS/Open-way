@@ -1,5 +1,6 @@
 import { pgTable, text, serial, integer, boolean, timestamp, real, json, uniqueIndex } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
+import { sql } from "drizzle-orm";
 import { z } from "zod";
 
 // === TABLE DEFINITIONS ===
@@ -11,21 +12,21 @@ export const users = pgTable("users", {
   passwordHash: text("password_hash").notNull(),
   displayName: text("display_name"),
   // 2FA fields
-  twoFactorEnabled: boolean("two_factor_enabled").default(false),
+  twoFactorEnabled: boolean("two_factor_enabled").default(sql`FALSE`),
   twoFactorSecret: text("two_factor_secret"),
   backupCodes: text("backup_codes"),
   // Account status
-  isActive: boolean("is_active").default(true),
-  isAdmin: boolean("is_admin").default(false),
-  isBanned: boolean("is_banned").default(false),
+  isActive: boolean("is_active").default(sql`TRUE`),
+  isAdmin: boolean("is_admin").default(sql`FALSE`),
+  isBanned: boolean("is_banned").default(sql`FALSE`),
   banReason: text("ban_reason"),
   lastLoginAt: timestamp("last_login_at"),
   // Email verification
-  emailVerified: boolean("email_verified").default(false),
+  emailVerified: boolean("email_verified").default(sql`FALSE`),
   // Brute-force protection
   failedLoginAttempts: integer("failed_login_attempts").default(0),
   lockedUntil: timestamp("locked_until"),
-  createdAt: timestamp("created_at").defaultNow(),
+  createdAt: timestamp("created_at").default(sql`CURRENT_TIMESTAMP`),
 });
 
 // Email verification tokens
@@ -35,7 +36,7 @@ export const emailVerificationTokens = pgTable("email_verification_tokens", {
   token: text("token").notNull().unique(),
   expiresAt: timestamp("expires_at").notNull(),
   usedAt: timestamp("used_at"),
-  createdAt: timestamp("created_at").defaultNow(),
+  createdAt: timestamp("created_at").default(sql`CURRENT_TIMESTAMP`),
 });
 
 // User saved places (favorites)
@@ -43,7 +44,7 @@ export const savedPlaces = pgTable("saved_places", {
   id: serial("id").primaryKey(),
   userId: integer("user_id").references(() => users.id).notNull(),
   placeId: integer("place_id").references(() => places.id).notNull(),
-  savedAt: timestamp("saved_at").defaultNow(),
+  savedAt: timestamp("saved_at").default(sql`CURRENT_TIMESTAMP`),
 });
 
 // Categories for organizing places
@@ -78,12 +79,12 @@ export const places = pgTable("places", {
   submittedBy: integer("submitted_by").references(() => users.id),
   lastCheckedAt: timestamp("last_checked_at"),
   // Engagement
-  isFeatured: boolean("is_featured").default(false),
+  isFeatured: boolean("is_featured").default(sql`FALSE`),
   viewCount: integer("view_count").default(0),
   reviewCount: integer("review_count").default(0),
   averageRating: real("average_rating"),
-  updatedAt: timestamp("updated_at").defaultNow(),
-  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").default(sql`CURRENT_TIMESTAMP`),
+  createdAt: timestamp("created_at").default(sql`CURRENT_TIMESTAMP`),
 });
 
 // Accessibility features for detailed checklists
@@ -91,7 +92,7 @@ export const accessibilityFeatures = pgTable("accessibility_features", {
   id: serial("id").primaryKey(),
   placeId: integer("place_id").references(() => places.id).notNull(),
   featureType: text("feature_type").notNull(),
-  available: boolean("available").default(true),
+  available: boolean("available").default(sql`TRUE`),
   description: text("description"),
   verifiedAt: timestamp("verified_at"),
 });
@@ -103,7 +104,7 @@ export const placeMedia = pgTable("place_media", {
   url: text("url").notNull(),
   caption: text("caption"),
   uploadedBy: text("uploaded_by"),
-  createdAt: timestamp("created_at").defaultNow(),
+  createdAt: timestamp("created_at").default(sql`CURRENT_TIMESTAMP`),
 });
 
 // Tips for places
@@ -114,7 +115,7 @@ export const placeTips = pgTable("place_tips", {
   content: text("content").notNull(),
   author: text("author"),
   helpfulCount: integer("helpful_count").default(0),
-  createdAt: timestamp("created_at").defaultNow(),
+  createdAt: timestamp("created_at").default(sql`CURRENT_TIMESTAMP`),
 });
 
 // Reviews
@@ -128,8 +129,8 @@ export const reviews = pgTable("reviews", {
   authorRole: text("author_role"),
   imageUrl: text("image_url"),
   helpfulCount: integer("helpful_count").default(0),
-  isFeatured: boolean("is_featured").default(false),
-  createdAt: timestamp("created_at").defaultNow(),
+  isFeatured: boolean("is_featured").default(sql`FALSE`),
+  createdAt: timestamp("created_at").default(sql`CURRENT_TIMESTAMP`),
 });
 
 // Petitions
@@ -142,7 +143,7 @@ export const petitions = pgTable("petitions", {
   creatorName: text("creator_name"),
   status: text("status").default("active"),
   imageUrl: text("image_url"),
-  createdAt: timestamp("created_at").defaultNow(),
+  createdAt: timestamp("created_at").default(sql`CURRENT_TIMESTAMP`),
 });
 
 // Petition signatures
@@ -153,8 +154,8 @@ export const signatures = pgTable("signatures", {
   displayName: text("display_name"),
   city: text("city"),
   message: text("message"),
-  shareConsent: boolean("share_consent").default(false),
-  signedAt: timestamp("signed_at").defaultNow(),
+  shareConsent: boolean("share_consent").default(sql`FALSE`),
+  signedAt: timestamp("signed_at").default(sql`CURRENT_TIMESTAMP`),
 }, (table) => [
   uniqueIndex("signatures_user_petition_unique").on(table.userId, table.petitionId),
 ]);
@@ -166,7 +167,7 @@ export const petitionUpdates = pgTable("petition_updates", {
   title: text("title").notNull(),
   content: text("content").notNull(),
   author: text("author"),
-  createdAt: timestamp("created_at").defaultNow(),
+  createdAt: timestamp("created_at").default(sql`CURRENT_TIMESTAMP`),
 });
 
 // Events calendar
@@ -181,10 +182,10 @@ export const events = pgTable("events", {
   category: text("category"),
   imageUrl: text("image_url"),
   registrationUrl: text("registration_url"),
-  isFeatured: boolean("is_featured").default(false),
+  isFeatured: boolean("is_featured").default(sql`FALSE`),
   status: text("status").default("active"),
   createdBy: integer("created_by").references(() => users.id),
-  createdAt: timestamp("created_at").defaultNow(),
+  createdAt: timestamp("created_at").default(sql`CURRENT_TIMESTAMP`),
 });
 
 // Resources
@@ -198,9 +199,9 @@ export const resources = pgTable("resources", {
   email: text("email"),
   address: text("address"),
   icon: text("icon"),
-  isFeatured: boolean("is_featured").default(false),
+  isFeatured: boolean("is_featured").default(sql`FALSE`),
   sortOrder: integer("sort_order").default(0),
-  createdAt: timestamp("created_at").defaultNow(),
+  createdAt: timestamp("created_at").default(sql`CURRENT_TIMESTAMP`),
 });
 
 // Blog posts
@@ -213,10 +214,10 @@ export const blogPosts = pgTable("blog_posts", {
   author: text("author"),
   category: text("category"),
   imageUrl: text("image_url"),
-  isFeatured: boolean("is_featured").default(false),
-  isPublished: boolean("is_published").default(true),
-  publishedAt: timestamp("published_at").defaultNow(),
-  createdAt: timestamp("created_at").defaultNow(),
+  isFeatured: boolean("is_featured").default(sql`FALSE`),
+  isPublished: boolean("is_published").default(sql`TRUE`),
+  publishedAt: timestamp("published_at").default(sql`CURRENT_TIMESTAMP`),
+  createdAt: timestamp("created_at").default(sql`CURRENT_TIMESTAMP`),
 });
 
 // FAQ entries
@@ -226,7 +227,7 @@ export const faqEntries = pgTable("faq_entries", {
   answer: text("answer").notNull(),
   category: text("category"),
   sortOrder: integer("sort_order").default(0),
-  createdAt: timestamp("created_at").defaultNow(),
+  createdAt: timestamp("created_at").default(sql`CURRENT_TIMESTAMP`),
 });
 
 // Contact submissions
@@ -237,7 +238,7 @@ export const contactSubmissions = pgTable("contact_submissions", {
   subject: text("subject"),
   message: text("message").notNull(),
   status: text("status").default("new"),
-  createdAt: timestamp("created_at").defaultNow(),
+  createdAt: timestamp("created_at").default(sql`CURRENT_TIMESTAMP`),
 });
 
 // Activity log
@@ -248,7 +249,7 @@ export const activityLog = pgTable("activity_log", {
   relatedId: integer("related_id"),
   relatedType: text("related_type"),
   actorName: text("actor_name"),
-  createdAt: timestamp("created_at").defaultNow(),
+  createdAt: timestamp("created_at").default(sql`CURRENT_TIMESTAMP`),
 });
 
 // Partners
@@ -258,7 +259,7 @@ export const partners = pgTable("partners", {
   logoUrl: text("logo_url"),
   website: text("website"),
   description: text("description"),
-  isFeatured: boolean("is_featured").default(true),
+  isFeatured: boolean("is_featured").default(sql`TRUE`),
   sortOrder: integer("sort_order").default(0),
 });
 
@@ -269,7 +270,7 @@ export const communityPosts = pgTable("community_posts", {
   content: text("content").notNull(),
   authorName: text("author_name"),
   parentId: integer("parent_id"), // For replies
-  createdAt: timestamp("created_at").defaultNow(),
+  createdAt: timestamp("created_at").default(sql`CURRENT_TIMESTAMP`),
 });
 
 // Content reports (users can report photos, reviews, community posts)
@@ -282,7 +283,7 @@ export const reports = pgTable("reports", {
   status: text("status").default("pending"), // 'pending', 'resolved', 'dismissed'
   resolvedBy: integer("resolved_by").references(() => users.id),
   resolvedAt: timestamp("resolved_at"),
-  createdAt: timestamp("created_at").defaultNow(),
+  createdAt: timestamp("created_at").default(sql`CURRENT_TIMESTAMP`),
 });
 
 // Password reset tokens
@@ -292,7 +293,7 @@ export const passwordResetTokens = pgTable("password_reset_tokens", {
   token: text("token").notNull().unique(),
   expiresAt: timestamp("expires_at").notNull(),
   usedAt: timestamp("used_at"),
-  createdAt: timestamp("created_at").defaultNow(),
+  createdAt: timestamp("created_at").default(sql`CURRENT_TIMESTAMP`),
 });
 
 // === INSERT SCHEMAS ===

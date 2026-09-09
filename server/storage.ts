@@ -1,4 +1,4 @@
-import { db } from "./db";
+import { db, useSqliteFallback } from "./db";
 import {
   places, reviews, signatures, categories, accessibilityFeatures,
   placeMedia, placeTips, petitions, petitionUpdates, events, resources,
@@ -28,6 +28,13 @@ import {
 } from "@shared/schema";
 import { eq, desc, sql, and, inArray, gte, lt } from "drizzle-orm";
 import { isAccountLocked, shouldLockAccount, LOCKOUT_DURATION_MS } from "./account-lockout";
+
+// The schema's boolean columns are defined via drizzle-orm/pg-core; under the Postgres driver
+// a raw JS boolean binds fine, but better-sqlite3 only accepts numbers/strings/bigints/buffers/null
+// as bind parameters, so a raw `true`/`false` throws. Route boolean equality checks through this
+// so the same `eq()` call works under both drivers.
+const boolEq = (value: boolean): boolean =>
+  (useSqliteFallback ? (value ? 1 : 0) : value) as unknown as boolean;
 
 export interface IStorage {
   // Categories
@@ -219,7 +226,7 @@ export class DatabaseStorage implements IStorage {
   }
 
   async getFeaturedPlaces(): Promise<Place[]> {
-    return await db.select().from(places).where(eq(places.isFeatured, true)).orderBy(desc(places.updatedAt));
+    return await db.select().from(places).where(eq(places.isFeatured, boolEq(true))).orderBy(desc(places.updatedAt));
   }
 
   async getPlace(id: number): Promise<Place | undefined> {
@@ -321,7 +328,7 @@ export class DatabaseStorage implements IStorage {
   }
 
   async getFeaturedReviews(): Promise<Review[]> {
-    return await db.select().from(reviews).where(eq(reviews.isFeatured, true)).orderBy(desc(reviews.createdAt));
+    return await db.select().from(reviews).where(eq(reviews.isFeatured, boolEq(true))).orderBy(desc(reviews.createdAt));
   }
 
   async createReview(review: InsertReview): Promise<Review> {
@@ -397,7 +404,7 @@ export class DatabaseStorage implements IStorage {
   }
 
   async getPublicSignatures(petitionId: number): Promise<Signature[]> {
-    return await db.select().from(signatures).where(and(eq(signatures.petitionId, petitionId), eq(signatures.shareConsent, true))).orderBy(desc(signatures.signedAt));
+    return await db.select().from(signatures).where(and(eq(signatures.petitionId, petitionId), eq(signatures.shareConsent, boolEq(true)))).orderBy(desc(signatures.signedAt));
   }
 
   async createSignature(signature: InsertSignature & { userId: number }): Promise<Signature> {
@@ -444,7 +451,7 @@ export class DatabaseStorage implements IStorage {
   }
 
   async getFeaturedEvents(): Promise<Event[]> {
-    return await db.select().from(events).where(and(eq(events.isFeatured, true), eq(events.status, "active"))).orderBy(events.date);
+    return await db.select().from(events).where(and(eq(events.isFeatured, boolEq(true)), eq(events.status, "active"))).orderBy(events.date);
   }
 
   async getEvent(id: number): Promise<Event | undefined> {
@@ -472,7 +479,7 @@ export class DatabaseStorage implements IStorage {
   }
 
   async getFeaturedResources(): Promise<Resource[]> {
-    return await db.select().from(resources).where(eq(resources.isFeatured, true)).orderBy(resources.sortOrder);
+    return await db.select().from(resources).where(eq(resources.isFeatured, boolEq(true))).orderBy(resources.sortOrder);
   }
 
   async createResource(resource: InsertResource): Promise<Resource> {
@@ -486,11 +493,11 @@ export class DatabaseStorage implements IStorage {
   }
 
   async getPublishedBlogPosts(): Promise<BlogPost[]> {
-    return await db.select().from(blogPosts).where(eq(blogPosts.isPublished, true)).orderBy(desc(blogPosts.publishedAt));
+    return await db.select().from(blogPosts).where(eq(blogPosts.isPublished, boolEq(true))).orderBy(desc(blogPosts.publishedAt));
   }
 
   async getFeaturedBlogPosts(): Promise<BlogPost[]> {
-    return await db.select().from(blogPosts).where(and(eq(blogPosts.isFeatured, true), eq(blogPosts.isPublished, true))).orderBy(desc(blogPosts.publishedAt));
+    return await db.select().from(blogPosts).where(and(eq(blogPosts.isFeatured, boolEq(true)), eq(blogPosts.isPublished, boolEq(true)))).orderBy(desc(blogPosts.publishedAt));
   }
 
   async getBlogPost(id: number): Promise<BlogPost | undefined> {
@@ -557,7 +564,7 @@ export class DatabaseStorage implements IStorage {
   }
 
   async getFeaturedPartners(): Promise<Partner[]> {
-    return await db.select().from(partners).where(eq(partners.isFeatured, true)).orderBy(partners.sortOrder);
+    return await db.select().from(partners).where(eq(partners.isFeatured, boolEq(true))).orderBy(partners.sortOrder);
   }
 
   async createPartner(partner: InsertPartner): Promise<Partner> {

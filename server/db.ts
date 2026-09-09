@@ -8,7 +8,7 @@ import path from "path";
 
 config({ path: ".env.local" });
 
-const useSqliteFallback = !process.env.DATABASE_URL || !process.env.DATABASE_URL.startsWith("postgres");
+export const useSqliteFallback = !process.env.DATABASE_URL || !process.env.DATABASE_URL.startsWith("postgres");
 
 let sqliteConnection: Database.Database | undefined;
 
