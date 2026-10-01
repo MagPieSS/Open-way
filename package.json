@@ -16,6 +16,7 @@
     "format:check": "prettier --check .",
     "test": "vitest run",
     "test:watch": "vitest",
+    "seed:places": "tsx scripts/seed-places.ts",
     "db:push": "drizzle-kit push"
   },
   "dependencies": {
