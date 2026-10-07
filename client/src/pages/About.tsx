@@ -37,7 +37,7 @@ export default function About() {
           <div className="bg-secondary p-8 rounded-2xl mt-12">
             <h3 className="font-bold text-xl text-foreground mb-2">Get Involved</h3>
             <p>
-              Whether you add a review, sign our petition, or simply tell a friend, you are helping build a more open world. Thank you for moving your way with us.
+              Whether you add a review, start or support a petition, or simply tell a friend, you are helping build a more open world. Thank you for moving your way with us.
             </p>
           </div>
         </div>

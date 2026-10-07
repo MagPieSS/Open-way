@@ -1,18 +1,19 @@
 import { Place, ACCESSIBILITY_STATUS } from "@shared/schema";
 import { Link } from "wouter";
-import { MapPin, CheckCircle, AlertTriangle, XCircle, ArrowRight } from "lucide-react";
-import { useState } from "react";
+import { CheckCircle, AlertTriangle, XCircle, ArrowRight } from "lucide-react";
 import { useSettings } from "@/hooks/use-settings";
 import { PlaceReviewsList } from "@/components/PlaceReviewsList";
+import { PlaceImage } from "@/components/PlaceImage";
 import { Button } from "@/components/ui/button";
+import { getVerificationBadgeLabel } from "@/lib/accessibility-filtering";
 
 interface PlaceCardProps {
   place: Place;
+  needTags?: string[];
 }
 
-export function PlaceCard({ place }: PlaceCardProps) {
+export function PlaceCard({ place, needTags = [] }: PlaceCardProps) {
   const { textSize } = useSettings();
-  const [imageFailed, setImageFailed] = useState(false);
 
   const getStatusConfig = (status: string) => {
     switch (status) {
@@ -53,23 +54,7 @@ export function PlaceCard({ place }: PlaceCardProps) {
     >
       {/* Image */}
       <div className="relative h-48 overflow-hidden bg-muted">
-        {place.imageUrl && !imageFailed ? (
-          <img
-            src={place.imageUrl}
-            alt={place.name}
-            width={400}
-            height={192}
-            loading="lazy"
-            decoding="async"
-            onError={() => setImageFailed(true)}
-            className="w-full h-full object-cover"
-          />
-        ) : (
-          <div className="w-full h-full flex items-center justify-center bg-secondary">
-            <MapPin className="w-12 h-12 text-muted-foreground/30" aria-hidden="true" />
-            <span className="sr-only">No photo available for {place.name}</span>
-          </div>
-        )}
+        <PlaceImage src={place.imageUrl} category={place.category} alt={place.name} className="w-full h-full object-cover" />
         {/* Status Badge */}
         <div
           className={`absolute top-3 right-3 px-3 py-1.5 rounded-full font-bold text-sm flex items-center gap-1.5 shadow-md ${statusConfig.bgColor}`}
@@ -96,6 +81,27 @@ export function PlaceCard({ place }: PlaceCardProps) {
         <p className={`text-muted-foreground mb-4 line-clamp-3 flex-grow text-${textSize}`}>
           {place.description}
         </p>
+
+        {needTags.length > 0 && (
+          <div className="flex flex-wrap gap-2 mb-4">
+            {needTags.map((tag) => (
+              <span
+                key={tag}
+                className="rounded-full border border-primary/30 bg-primary/5 px-2 py-1 text-[11px] font-semibold text-primary"
+              >
+                {tag}
+              </span>
+            ))}
+          </div>
+        )}
+
+        {place.verificationStatus && (
+          <div className="mb-4">
+            <span className="rounded-full border border-border bg-secondary px-2 py-1 text-[11px] font-medium text-muted-foreground">
+              {getVerificationBadgeLabel(place.verificationStatus)}
+            </span>
+          </div>
+        )}
         
         <PlaceReviewsList placeId={place.id} />
 

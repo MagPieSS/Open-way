@@ -24,6 +24,7 @@ import {
 import { useAuth } from "@/hooks/use-auth";
 import { ReportButton } from "@/components/ReportButton";
 import type { CommunityPost } from "@shared/schema";
+import { Link } from "wouter";
 
 const SORT_OPTIONS = [
   { label: "Newest", value: "newest" },
@@ -195,7 +196,7 @@ function PostCard({
               </div>
             ) : (
               <p className="text-sm text-muted-foreground text-center py-2">
-                Please <a href="/login" className="text-primary underline">sign in</a> to comment.
+                Please <Link href={`/login?returnTo=${encodeURIComponent("/community")}`} className="text-primary underline">sign in</Link> to comment.
               </p>
             )}
           </div>
@@ -296,28 +297,39 @@ export default function Community() {
             </CardTitle>
           </CardHeader>
           <CardContent>
-            <Textarea 
-              placeholder="What's on your mind? Share an accessibility update or ask a question..."
-              value={postContent}
-              onChange={(e) => setPostContent(e.target.value)}
-              className="mb-4 min-h-[100px]"
-              data-testid="input-post-content"
-            />
-            <Button 
-              onClick={() => {
-                postMutation.mutate({ content: postContent }, {
-                  onSuccess: () => {
-                    setPostContent("");
-                    toast({ title: "Post created successfully!" });
-                  }
-                });
-              }}
-              disabled={postMutation.isPending || !postContent.trim()}
-              className="w-full sm:w-auto"
-              data-testid="button-submit-post"
-            >
-              {postMutation.isPending ? "Posting..." : "Post to Community"}
-            </Button>
+            {user ? (
+              <>
+                <Textarea
+                  placeholder="What's on your mind? Share an accessibility update or ask a question..."
+                  value={postContent}
+                  onChange={(e) => setPostContent(e.target.value)}
+                  className="mb-4 min-h-[100px]"
+                  data-testid="input-post-content"
+                />
+                <Button
+                  onClick={() => {
+                    postMutation.mutate({ content: postContent }, {
+                      onSuccess: () => {
+                        setPostContent("");
+                        toast({ title: "Post created successfully!" });
+                      }
+                    });
+                  }}
+                  disabled={postMutation.isPending || !postContent.trim()}
+                  className="w-full sm:w-auto"
+                  data-testid="button-submit-post"
+                >
+                  {postMutation.isPending ? "Posting..." : "Post to Community"}
+                </Button>
+              </>
+            ) : (
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <p className="text-sm text-muted-foreground">Sign in to start a community discussion.</p>
+                <Button asChild variant="outline">
+                  <Link href={`/login?returnTo=${encodeURIComponent("/community")}`}>Sign in to post</Link>
+                </Button>
+              </div>
+            )}
           </CardContent>
         </Card>
 

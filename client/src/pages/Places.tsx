@@ -8,11 +8,13 @@ import { usePagination } from "@/hooks/use-pagination";
 import { PaginationControls } from "@/components/PaginationControls";
 import { Search, MapPin, Filter, List, Map, Plus, LocateFixed, Loader2 } from "lucide-react";
 import { useState, useMemo } from "react";
+import { useQuery } from "@tanstack/react-query";
 import { useSettings } from "@/hooks/use-settings";
 import { usePageMeta } from "@/hooks/use-page-meta";
 import { ACCESSIBILITY_STATUS, PLACE_CATEGORIES } from "@shared/schema";
 import { Button } from "@/components/ui/button";
 import { Link } from "wouter";
+import { NEED_FILTERS, matchesNeedFilter, getPlaceNeedTags } from "@/lib/accessibility-filtering";
 import {
   Select,
   SelectContent,
@@ -37,12 +39,28 @@ export default function Places() {
   const [nearMe, setNearMe] = useState<{ lat: number; lng: number } | null>(null);
   const [isLocating, setIsLocating] = useState(false);
   const [geoError, setGeoError] = useState<string | null>(null);
+  const [needFilter, setNeedFilter] = useState<string>("all");
   const { data: places, isLoading, error } = usePlaces({
     search: searchTerm || undefined,
     lat: nearMe?.lat,
     lng: nearMe?.lng,
   });
   const { textSize } = useSettings();
+
+  const { data: placeFeatureMap = {} } = useQuery<Record<number, any[]>>({
+    queryKey: ["/api/places", "feature-map", places?.map((place) => place.id)],
+    enabled: !!places && places.length > 0,
+    queryFn: async () => {
+      const entries = await Promise.all(
+        places!.map(async (place) => {
+          const res = await fetch(`/api/places/${place.id}/features`);
+          const data = res.ok ? await res.json() : [];
+          return [place.id, data] as const;
+        })
+      );
+      return Object.fromEntries(entries);
+    },
+  });
 
   const handleUseMyLocation = () => {
     if (!navigator.geolocation) {
@@ -71,7 +89,8 @@ export default function Places() {
     let result = places.filter((place) => {
       const matchesStatus = statusFilter === "all" || place.accessibilityStatus === statusFilter;
       const matchesCategory = categoryFilter === "all" || place.category.toLowerCase() === categoryFilter.toLowerCase();
-      return matchesStatus && matchesCategory;
+      const matchesNeed = needFilter === "all" || matchesNeedFilter(placeFeatureMap[place.id] ?? [], needFilter);
+      return matchesStatus && matchesCategory && matchesNeed;
     });
 
     result = [...result].sort((a, b) => {
@@ -92,7 +111,7 @@ export default function Places() {
     });
 
     return result;
-  }, [places, statusFilter, categoryFilter, sortOption]);
+  }, [places, statusFilter, categoryFilter, sortOption, needFilter, placeFeatureMap]);
 
   const placesPagination = usePagination(filteredAndSortedPlaces, 24);
 
@@ -272,6 +291,29 @@ export default function Places() {
             ))}
           </div>
 
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="text-sm text-muted-foreground mr-1">Need:</span>
+            <button
+              onClick={() => setNeedFilter("all")}
+              className={`px-3 py-1.5 rounded-full text-sm font-semibold transition-colors ${
+                needFilter === "all" ? "bg-primary text-primary-foreground" : "bg-card border border-border hover:border-primary"
+              }`}
+            >
+              All needs
+            </button>
+            {NEED_FILTERS.map((filter) => (
+              <button
+                key={filter.id}
+                onClick={() => setNeedFilter(filter.id)}
+                className={`px-3 py-1.5 rounded-full text-sm font-semibold transition-colors ${
+                  needFilter === filter.id ? "bg-primary text-primary-foreground" : "bg-card border border-border hover:border-primary"
+                }`}
+              >
+                {filter.label}
+              </button>
+            ))}
+          </div>
+
           {/* Accessibility Legend */}
           <div className="pt-2 border-t border-border">
             <AccessibilityLegend />
@@ -316,7 +358,10 @@ export default function Places() {
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
                 {placesPagination.pageItems.map((place) => (
                   <div key={place.id}>
-                    <PlaceCard place={place} />
+                    <PlaceCard
+                      place={place}
+                      needTags={getPlaceNeedTags(placeFeatureMap[place.id] ?? [])}
+                    />
                     {place.distanceMiles !== undefined && (
                       <p className="text-xs text-muted-foreground mt-1.5 flex items-center gap-1" data-testid={`text-distance-${place.id}`}>
                         <LocateFixed className="w-3 h-3" aria-hidden="true" />

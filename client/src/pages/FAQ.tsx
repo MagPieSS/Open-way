@@ -42,6 +42,63 @@ const CATEGORIES = [
   "Technical Support",
 ];
 
+const fallbackFaqEntries: FaqEntry[] = [
+  {
+    id: 1,
+    question: "What is Open Way for?",
+    answer:
+      "Open Way is a community-powered directory of accessibility information for public places in Philadelphia and beyond. We help people understand whether a venue is likely to work for their needs before they travel there.",
+    category: "About Open Way",
+    sortOrder: 1,
+    createdAt: new Date("2024-01-01T00:00:00Z"),
+  },
+  {
+    id: 2,
+    question: "How should I interpret an accessibility rating?",
+    answer:
+      "Our accessibility status is a practical snapshot, not a legal guarantee. A place marked 'Accessible' usually has strong wheelchair access and key support features, while 'Partially Accessible' may have some helpful features but still has barriers for some visitors.",
+    category: "Accessibility Rights",
+    sortOrder: 2,
+    createdAt: new Date("2024-01-02T00:00:00Z"),
+  },
+  {
+    id: 3,
+    question: "How can I submit a new place or update an existing one?",
+    answer:
+      "Use the Add Place form from the directory page. Include the name, category, address, and accessibility details you know, and note any uncertainty so other users know whether the information is verified or community-sourced.",
+    category: "Using the Platform",
+    sortOrder: 3,
+    createdAt: new Date("2024-01-03T00:00:00Z"),
+  },
+  {
+    id: 4,
+    question: "What does 'community submitted' mean?",
+    answer:
+      "It means the information was contributed by a local user or community member. That can still be very useful, but it may not have been independently verified by an organization or venue representative.",
+    category: "Community",
+    sortOrder: 4,
+    createdAt: new Date("2024-01-04T00:00:00Z"),
+  },
+  {
+    id: 5,
+    question: "Is my information private?",
+    answer:
+      "Open Way protects user account details and only shares the information people choose to make public. Reviews and submissions are moderated for safety and quality, and we do not publish private contact information without consent.",
+    category: "Privacy & Security",
+    sortOrder: 5,
+    createdAt: new Date("2024-01-05T00:00:00Z"),
+  },
+  {
+    id: 6,
+    question: "What if a place is missing from the map?",
+    answer:
+      "You can submit it directly through the site. If a location is not yet in the directory, the community can add it with notes about access, parking, restrooms, and other practical details.",
+    category: "Technical Support",
+    sortOrder: 6,
+    createdAt: new Date("2024-01-06T00:00:00Z"),
+  },
+];
+
 export default function FAQ() {
   usePageMeta({
     title: "Frequently Asked Questions",
@@ -55,10 +112,12 @@ export default function FAQ() {
     queryKey: ["/api/faq"],
   });
 
-  const filteredAndGroupedFaqs = useMemo(() => {
-    if (!faqEntries) return {};
+  const faqEntriesToUse = faqEntries && faqEntries.length > 0 ? faqEntries : fallbackFaqEntries;
 
-    let filtered = faqEntries;
+  const filteredAndGroupedFaqs = useMemo(() => {
+    if (!faqEntriesToUse) return {};
+
+    let filtered = faqEntriesToUse;
 
     if (searchTerm) {
       const term = searchTerm.toLowerCase();
@@ -88,7 +147,7 @@ export default function FAQ() {
     });
 
     return grouped;
-  }, [faqEntries, searchTerm, selectedCategory]);
+  }, [faqEntriesToUse, searchTerm, selectedCategory]);
 
   const getCategoryIcon = (category: string) => {
     const Icon = CATEGORY_ICONS[category] || HelpCircle;

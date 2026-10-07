@@ -21,6 +21,8 @@ import Petition, { PetitionDetail } from "@/pages/Petition";
 import About from "@/pages/About";
 import Settings from "@/pages/Settings";
 import Resources from "@/pages/Resources";
+import Benchmarks from "@/pages/Benchmarks";
+import Guides from "@/pages/Guides";
 import Events from "@/pages/Events";
 import Blog from "@/pages/Blog";
 import FAQ from "@/pages/FAQ";
@@ -49,6 +51,8 @@ function Router() {
       <Route path="/about" component={About} />
       <Route path="/settings" component={Settings} />
       <Route path="/resources" component={Resources} />
+      <Route path="/benchmarks" component={Benchmarks} />
+      <Route path="/guides" component={Guides} />
       <Route path="/events" component={Events} />
       <Route path="/blog" component={Blog} />
       <Route path="/faq" component={FAQ} />

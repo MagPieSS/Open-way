@@ -20,7 +20,9 @@ import { apiRequest } from "@/lib/queryClient";
 
 import { Pencil, Trash2 } from "lucide-react";
 import { ReportButton } from "@/components/ReportButton";
+import { PlaceImage } from "@/components/PlaceImage";
 import { useUpload } from "@/hooks/use-upload";
+import { getVerificationBadgeLabel } from "@/lib/accessibility-filtering";
 
 const FEATURE_GROUPS: Record<string, { label: string; icon: typeof Move; features: string[] }> = {
   mobility: {
@@ -420,13 +422,7 @@ export default function PlaceDetail() {
     <div className="min-h-screen bg-background pb-20" data-testid="place-detail-page">
       {/* Hero Image */}
       <div className="relative h-[300px] md:h-[400px] w-full bg-muted">
-        {place.imageUrl ? (
-          <img src={place.imageUrl} alt={place.name} className="w-full h-full object-cover" data-testid="img-place-hero" />
-        ) : (
-          <div className="w-full h-full flex items-center justify-center bg-secondary">
-            <MapPin className="w-20 h-20 text-muted-foreground/20" />
-          </div>
-        )}
+        <PlaceImage src={place.imageUrl} category={place.category} alt={place.name} className="w-full h-full object-cover" loading="eager" />
         <div className="absolute inset-0 bg-gradient-to-t from-background to-transparent" />
         
         <Link href="/places">
@@ -458,7 +454,7 @@ export default function PlaceDetail() {
                 <div className="mt-3 flex flex-wrap items-center gap-2 text-sm text-muted-foreground" data-testid="place-data-provenance">
                   {place.verificationStatus && (
                     <span className="rounded-md bg-secondary px-2 py-1 font-medium">
-                      {place.verificationStatus === "community" ? "Community submitted" : place.verificationStatus}
+                      {getVerificationBadgeLabel(place.verificationStatus)}
                     </span>
                   )}
                   {place.accessibilitySource && (
@@ -938,13 +934,7 @@ export default function PlaceDetail() {
                   <Link key={p.id} href={`/places/${p.id}`}>
                     <div className="group cursor-pointer" data-testid={`related-place-card-${p.id}`}>
                       <div className="aspect-video rounded-xl overflow-hidden bg-muted mb-2 relative">
-                        {p.imageUrl ? (
-                          <img src={p.imageUrl} alt={p.name} className="w-full h-full object-cover group-hover:scale-105 transition-transform" />
-                        ) : (
-                          <div className="w-full h-full flex items-center justify-center bg-secondary">
-                            <MapPin className="w-8 h-8 text-muted-foreground/20" />
-                          </div>
-                        )}
+                        <PlaceImage src={p.imageUrl} category={p.category} alt={p.name} className="w-full h-full object-cover group-hover:scale-105 transition-transform" />
                         <div className={`absolute top-2 right-2 w-3 h-3 rounded-full shadow-sm ${getStatusColor(p.accessibilityStatus).split(' ')[1]}`} />
                       </div>
                       <h4 className="font-bold text-sm truncate group-hover:text-primary transition-colors">{p.name}</h4>

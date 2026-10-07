@@ -1,5 +1,5 @@
 import { Link, useLocation } from "wouter";
-import { Heart, Menu, MapPin, Settings, Home, Users, FileText, Megaphone, Info, X, BookOpen, Calendar, HelpCircle, Mail, User, LogIn, LogOut, Bookmark, Shield } from "lucide-react";
+import { Heart, Menu, MapPin, Settings, Home, Users, FileText, Megaphone, Info, X, BookOpen, Calendar, HelpCircle, Mail, User, LogIn, LogOut, Bookmark, Shield, Compass, Map } from "lucide-react";
 import { useState, useEffect, useRef, type KeyboardEvent as ReactKeyboardEvent } from "react";
 import { useSettings } from "@/hooks/use-settings";
 import { useAuth } from "@/hooks/use-auth";
@@ -33,6 +33,7 @@ export function Navigation() {
       label: "Discover",
       items: [
         { href: "/places", label: "Places", icon: MapPin },
+        { href: "/guides", label: "City Guides", icon: Map },
         { href: "/reviews", label: "Community", icon: Users },
         { href: "/blog", label: "Blog", icon: FileText },
       ],
@@ -48,6 +49,7 @@ export function Navigation() {
       label: "Help",
       items: [
         { href: "/resources", label: "Resources", icon: BookOpen },
+        { href: "/benchmarks", label: "Research", icon: Compass },
         { href: "/faq", label: "FAQ", icon: HelpCircle },
         { href: "/contact", label: "Contact", icon: Mail },
         { href: "/about", label: "About", icon: Info },

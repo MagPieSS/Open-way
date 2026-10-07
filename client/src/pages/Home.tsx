@@ -10,10 +10,11 @@ import { TestimonialCarousel } from "@/components/TestimonialCarousel";
 import { SectionLabel } from "@/components/SectionLabel";
 import { AnimatedCounter } from "@/components/AnimatedCounter";
 import { AccessibilityMap } from "@/components/AccessibilityMap";
+import { PlaceImage } from "@/components/PlaceImage";
 import { Carousel, CarouselContent, CarouselItem, CarouselPrevious, CarouselNext } from "@/components/ui/carousel";
 import { formatDistanceToNow } from "date-fns";
-import type { Place, ActivityLog, Partner, Category } from "@shared/schema";
-import { ACCESSIBILITY_STATUS } from "@shared/schema";
+import type { Place, ActivityLog, Partner } from "@shared/schema";
+import { ACCESSIBILITY_STATUS, PLACE_CATEGORIES } from "@shared/schema";
 
 export default function Home() {
   usePageMeta({
@@ -35,6 +36,9 @@ export default function Home() {
     },
   });
 
+  const homePlaces = featuredPlaces?.length ? featuredPlaces : (places ?? []).slice(0, 4);
+  const showingRecentPlaces = !loadingFeatured && !featuredPlaces?.length && homePlaces.length > 0;
+
   const { data: activities, isLoading: loadingActivities } = useQuery<ActivityLog[]>({
     queryKey: ['/api/activity', 5],
     queryFn: async () => {
@@ -51,17 +55,9 @@ export default function Home() {
     },
   });
 
-  const { data: categories } = useQuery<Category[]>({
-    queryKey: ['/api/categories'],
-    queryFn: async () => {
-      const res = await fetch('/api/categories');
-      return res.json();
-    },
-  });
-
   const stats = [
     { value: places?.length || 0, label: "Places Mapped", icon: MapPin },
-    { value: categories?.length || 0, label: "Categories", icon: Folder },
+    { value: PLACE_CATEGORIES.length, label: "Categories", icon: Folder },
     { value: communityPosts?.length || 0, label: "Community Posts", icon: MessageSquarePlus },
     { value: petitionData?.total || 0, label: "Petition Signatures", icon: PenTool },
   ];
@@ -107,7 +103,7 @@ export default function Home() {
                   className="w-full sm:w-auto px-8 py-4 rounded-full bg-white/20 backdrop-blur-sm text-white font-bold text-lg border-2 border-white/30 hover:bg-white/30 transition-all flex items-center justify-center gap-2"
                   data-testid="button-sign-petition"
                 >
-                  <PenTool className="w-5 h-5" /> Sign Petition
+                  <PenTool className="w-5 h-5" /> Browse Petitions
                 </Link>
               </div>
             </motion.div>
@@ -179,8 +175,10 @@ export default function Home() {
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex flex-col md:flex-row md:items-end md:justify-between gap-4 mb-10">
             <div>
-              <SectionLabel>Featured Places</SectionLabel>
-              <h2 className="font-display font-bold text-3xl md:text-4xl mt-4">Explore Accessible Locations</h2>
+              <SectionLabel>{showingRecentPlaces ? "Places to Explore" : "Featured Places"}</SectionLabel>
+              <h2 className="font-display font-bold text-3xl md:text-4xl mt-4">
+                {showingRecentPlaces ? "Explore the Philadelphia Directory" : "Explore Accessible Locations"}
+              </h2>
             </div>
             <Link href="/places" className="text-primary font-semibold flex items-center gap-2 hover:gap-3 transition-all" data-testid="link-view-all-places">
               View all places <ArrowRight className="w-4 h-4" />
@@ -193,13 +191,13 @@ export default function Home() {
                 <div key={i} className="bg-card rounded-xl border border-border h-80 animate-pulse" />
               ))}
             </div>
-          ) : featuredPlaces && featuredPlaces.length > 0 ? (
+          ) : homePlaces.length > 0 ? (
             <Carousel
               opts={{ align: "start", loop: true }}
               className="w-full"
             >
               <CarouselContent className="-ml-4">
-                {featuredPlaces.map((place) => (
+                {homePlaces.map((place) => (
                   <CarouselItem key={place.id} className="pl-4 md:basis-1/2 lg:basis-1/3 xl:basis-1/4">
                     <FeaturedPlaceCard place={place} />
                   </CarouselItem>
@@ -209,7 +207,7 @@ export default function Home() {
               <CarouselNext className="hidden md:flex -right-4" />
             </Carousel>
           ) : (
-            <p className="text-muted-foreground text-center py-8">No featured places available yet.</p>
+            <p className="text-muted-foreground text-center py-8">No places are available yet.</p>
           )}
         </div>
       </section>
@@ -240,7 +238,7 @@ export default function Home() {
             <FeatureCard 
               icon={PenTool}
               title="Take Action"
-              description="Sign our petition to demand better accessibility standards in public spaces."
+              description="Start or support a community petition for accessibility improvements in public spaces."
               color="text-accessible"
               link="/petitions"
             />
@@ -382,14 +380,14 @@ export default function Home() {
       {/* CTA Banner */}
       <section className="py-16 bg-gradient-to-r from-primary to-accent text-white">
         <div className="max-w-4xl mx-auto px-4 text-center">
-          <h2 className="font-display font-bold text-3xl md:text-4xl mb-4">Ready to Make a Difference?</h2>
+          <h2 className="font-display font-bold text-3xl md:text-4xl mb-4">Ready to Take Action?</h2>
           <p className="text-white/90 mb-8 text-lg">Join thousands of advocates working toward a more accessible Philadelphia.</p>
           <div className="flex flex-col sm:flex-row gap-4 justify-center">
             <Link href="/submit" className="px-8 py-4 rounded-full bg-white text-primary font-bold text-lg shadow-lg hover:shadow-xl transition-all" data-testid="button-cta-share-review">
               Share Your Review
             </Link>
             <Link href="/petitions" className="px-8 py-4 rounded-full bg-white/20 text-white font-bold text-lg border-2 border-white/30 hover:bg-white/30 transition-all" data-testid="button-cta-sign-petition">
-              Sign a Petition
+              Browse Petitions
             </Link>
           </div>
         </div>
@@ -453,19 +451,7 @@ function FeaturedPlaceCard({ place }: { place: Place }) {
         data-testid={`card-featured-place-${place.id}`}
       >
         <div className="relative h-44 overflow-hidden bg-muted">
-          {place.imageUrl ? (
-            <img
-              src={place.imageUrl}
-              alt={place.name}
-              loading="lazy"
-              decoding="async"
-              className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
-            />
-          ) : (
-            <div className="w-full h-full flex items-center justify-center bg-secondary">
-              <MapPin className="w-10 h-10 text-muted-foreground/30" />
-            </div>
-          )}
+          <PlaceImage src={place.imageUrl} category={place.category} alt={place.name} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" />
           <div className={`absolute top-3 right-3 px-2.5 py-1 rounded-full font-bold text-xs flex items-center gap-1 shadow-md ${statusConfig.bgColor}`}>
             <StatusIcon className="w-3 h-3" />
             <span>{statusConfig.text}</span>

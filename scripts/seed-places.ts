@@ -10,6 +10,29 @@ type PlaceSeed = Omit<InsertPlace, "id"> & {
   features: Array<Omit<InsertAccessibilityFeature, "id" | "placeId">>;
 };
 
+function unverifiedPlace(
+  name: string,
+  category: string,
+  address: string,
+  website: string,
+  coordinates: [number, number],
+): PlaceSeed {
+  return {
+    name,
+    category,
+    accessibilityStatus: "Unknown",
+    description:
+      "This public venue is listed from its official source. Open Way has not confirmed its accessibility features; contact the venue about your specific needs before visiting.",
+    address,
+    latitude: coordinates[0],
+    longitude: coordinates[1],
+    website,
+    accessibilitySource: `Official venue source (location details only; accessibility not confirmed): ${website}. Coordinates geocoded from the published address with OpenStreetMap Nominatim.`,
+    verificationStatus: "needs-review",
+    features: [],
+  };
+}
+
 const places: PlaceSeed[] = [
   {
     name: "Philadelphia Museum of Art",
@@ -175,6 +198,143 @@ const places: PlaceSeed[] = [
     verificationStatus: "community",
     features: [],
   },
+  {
+    name: "Parkway Central Library",
+    category: "libraries",
+    accessibilityStatus: "Unknown",
+    description:
+      "The Free Library lists this location as handicapped accessible. That general listing does not confirm specific features for every visitor; contact the branch about your needs before visiting. Map coordinates are geocoded from the published address.",
+    address: "1901 Vine Street, Philadelphia, PA 19103",
+    latitude: 39.9595913,
+    longitude: -75.1710199,
+    phone: "1-833-825-5357",
+    website: "https://libwww.freelibrary.org/locations/parkway-central-library",
+    accessibilitySource:
+      "Official Free Library location page: https://libwww.freelibrary.org/locations/parkway-central-library",
+    verificationStatus: "venue",
+    features: [],
+  },
+  {
+    name: "South Philadelphia Library",
+    category: "libraries",
+    accessibilityStatus: "Unknown",
+    description:
+      "The Free Library lists this location as handicapped accessible. That general listing does not confirm specific features for every visitor; contact the branch about your needs before visiting. Map coordinates are geocoded from the published address.",
+    address: "1700 South Broad Street, Philadelphia, PA 19145",
+    latitude: 39.9289789,
+    longitude: -75.1693022,
+    phone: "215-685-1866",
+    website: "https://libwww.freelibrary.org/locations/south-philadelphia-library",
+    accessibilitySource:
+      "Official Free Library location page: https://libwww.freelibrary.org/locations/south-philadelphia-library",
+    verificationStatus: "venue",
+    features: [],
+  },
+  unverifiedPlace(
+    "Temple University Station",
+    "transit",
+    "10th and Berks Streets, Philadelphia, PA 19122",
+    "https://www.temple.edu/maps-directions",
+    [39.98081, -75.15067],
+  ),
+  unverifiedPlace(
+    "Cecil B. Moore Station",
+    "transit",
+    "Broad Street and Cecil B. Moore Avenue, Philadelphia, PA 19122",
+    "https://www.temple.edu/maps-directions",
+    [39.9783926, -75.1577911],
+  ),
+  unverifiedPlace(
+    "Rittenhouse Square",
+    "parks",
+    "Rittenhouse Square, Philadelphia, PA 19103",
+    "https://www.phila.gov/parks-rec-finder/",
+    [39.9494662, -75.1718903],
+  ),
+  unverifiedPlace(
+    "Zahav",
+    "restaurants",
+    "237 St James Place, Philadelphia, PA 19106",
+    "https://www.zahavrestaurant.com/contact",
+    [39.946306, -75.145187],
+  ),
+  unverifiedPlace(
+    "Talula's Garden",
+    "restaurants",
+    "210 West Washington Square, Philadelphia, PA 19106",
+    "https://talulasgarden.com/",
+    [39.9472791, -75.1536297],
+  ),
+  unverifiedPlace(
+    "Hospital of the University of Pennsylvania",
+    "healthcare",
+    "3400 Civic Center Boulevard, Philadelphia, PA 19104",
+    "https://www.pennmedicine.org/locations/penn-medicine-hospital-of-the-university-of-pennsylvania",
+    [39.9475797, -75.1931302],
+  ),
+  unverifiedPlace(
+    "Temple University Hospital - Main Campus",
+    "healthcare",
+    "3401 North Broad Street, Philadelphia, PA 19140",
+    "https://www.templehealth.org/locations/temple-university-hospital",
+    [40.0053079, -75.1508235],
+  ),
+  unverifiedPlace(
+    "Reading Terminal Market",
+    "shopping",
+    "1136 Arch Street, Philadelphia, PA 19107",
+    "https://readingterminalmarket.org/",
+    [39.9537066, -75.1590923],
+  ),
+  unverifiedPlace(
+    "Fashion District Philadelphia",
+    "shopping",
+    "901 Market Street, Philadelphia, PA 19107",
+    "https://fashiondistrictphiladelphia.com/visit/",
+    [39.9513696, -75.1552838],
+  ),
+  unverifiedPlace(
+    "Kimmel Center for the Performing Arts",
+    "entertainment",
+    "300 South Broad Street, Philadelphia, PA 19102",
+    "https://www.ensembleartsphilly.org/plan-your-visit/getting-here",
+    [39.9467456, -75.1657393],
+  ),
+  unverifiedPlace(
+    "Academy of Music",
+    "entertainment",
+    "240 South Broad Street, Philadelphia, PA 19102",
+    "https://www.ensembleartsphilly.org/plan-your-visit/getting-here",
+    [39.9480186, -75.165197],
+  ),
+  unverifiedPlace(
+    "Philadelphia City Hall",
+    "government",
+    "1400 John F. Kennedy Boulevard, Philadelphia, PA 19107",
+    "https://www.phila.gov/",
+    [39.953206, -75.1643762],
+  ),
+  unverifiedPlace(
+    "United States Mint - Philadelphia",
+    "government",
+    "151 North Independence Mall East, Philadelphia, PA 19106",
+    "https://www.usmint.gov/about/mint-tours-facilities/philadelphia-tours",
+    [39.952083, -75.1486898],
+  ),
+  unverifiedPlace(
+    "Temple University",
+    "education",
+    "1801 North Broad Street, Philadelphia, PA 19122",
+    "https://www.temple.edu/maps-directions",
+    [39.9761229, -75.1602236],
+  ),
+  unverifiedPlace(
+    "University of Pennsylvania",
+    "education",
+    "3451 Walnut Street, Philadelphia, PA 19104",
+    "https://www.upenn.edu/visitors",
+    [39.9536186, -75.1938579],
+  ),
 ];
 
 async function main() {

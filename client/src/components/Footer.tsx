@@ -43,7 +43,7 @@ export function Footer() {
               <h4 className="font-bold mb-4 text-foreground">Take Action</h4>
               <ul className="space-y-2">
                 <li><Link href="/submit" className="text-muted-foreground hover:text-primary transition-colors" data-testid="link-footer-submit">Submit a Review</Link></li>
-                <li><Link href="/petitions" className="text-muted-foreground hover:text-primary transition-colors" data-testid="link-footer-sign">Sign a Petition</Link></li>
+                <li><Link href="/petitions" className="text-muted-foreground hover:text-primary transition-colors" data-testid="link-footer-sign">Browse Petitions</Link></li>
                 <li><Link href="/settings" className="text-muted-foreground hover:text-primary transition-colors" data-testid="link-footer-settings">Accessibility Settings</Link></li>
               </ul>
             </div>
@@ -51,7 +51,7 @@ export function Footer() {
 
           {/* Bottom Bar */}
           <div className="pt-8 border-t border-border flex flex-col md:flex-row items-center justify-between gap-4 text-sm text-muted-foreground">
-            <p>© 2024 Open Way. Built for everyone.</p>
+            <p>© {new Date().getFullYear()} Open Way. Built for everyone.</p>
             <p className="flex items-center gap-1">
               <Heart className="w-4 h-4 text-accent" /> Move Your Way!
             </p>

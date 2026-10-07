@@ -734,7 +734,7 @@ export default function PetitionListPage() {
             Petitions
           </h1>
           <p className={`text-white/90 max-w-2xl mx-auto mb-8 text-${textSize === 'xl' ? 'xl' : 'lg'}`}>
-            Raise your voice for accessibility. Start or sign a petition to demand better accessibility standards in Philadelphia.
+            Start a community campaign for accessibility improvements in Philadelphia. Open petitions will appear here for neighbors to review and sign.
           </p>
 
           <CreatePetitionDialog />
@@ -745,8 +745,8 @@ export default function PetitionListPage() {
         <div className="max-w-6xl mx-auto">
           <div className="flex items-center justify-between gap-4 mb-8 flex-wrap">
             <div>
-              <SectionLabel>Active Petitions</SectionLabel>
-              <h2 className="font-display font-bold text-3xl mt-2">Browse & Sign</h2>
+              <SectionLabel>{petitions?.length ? "Active Petitions" : "Petition Campaigns"}</SectionLabel>
+              <h2 className="font-display font-bold text-3xl mt-2">{petitions?.length ? "Browse & Sign" : "Start a Campaign"}</h2>
             </div>
             {petitions && petitions.length > 0 && (
               <Badge variant="secondary" className="text-sm">
@@ -779,9 +779,9 @@ export default function PetitionListPage() {
           ) : (
             <div className="text-center py-16">
               <PenTool className="w-16 h-16 mx-auto text-muted-foreground/30 mb-4" />
-              <h3 className="font-bold text-xl mb-2 text-foreground">No Petitions Yet</h3>
+              <h3 className="font-bold text-xl mb-2 text-foreground">No Active Petitions</h3>
               <p className="text-muted-foreground mb-6">
-                Be the first to start a petition for a more accessible Philadelphia.
+                There are no open campaigns to sign right now. Start one to bring an accessibility issue to the community.
               </p>
               <CreatePetitionDialog />
             </div>

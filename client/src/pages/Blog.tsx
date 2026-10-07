@@ -47,6 +47,51 @@ const SORT_OPTIONS = [
   { label: "Oldest First", value: "oldest" },
 ];
 
+const fallbackBlogPosts: BlogPost[] = [
+  {
+    id: 1,
+    title: "Why accessibility data has to be specific, not just positive",
+    slug: "why-accessibility-data-has-to-be-specific",
+    excerpt: "A place can look welcoming on the outside and still be hard to navigate for wheelchair users, people with sensory needs, or caregivers traveling with strollers.",
+    content: "Accessibility is not a single checkbox. The most useful information tells people what the experience is really like: whether there is step-free entry, how easy parking is, whether restrooms are truly accessible, and whether there are sensory or communication supports available. Data becomes useful when it answers the question 'can I actually get in and use this place without surprises?'",
+    author: "Open Way Team",
+    category: "Guides",
+    imageUrl: "https://images.unsplash.com/photo-1522202176988-66273c2fd55f?auto=format&fit=crop&w=1200&q=80",
+    isFeatured: true,
+    isPublished: true,
+    publishedAt: new Date("2026-09-15T00:00:00Z"),
+    createdAt: new Date("2026-09-15T00:00:00Z"),
+  },
+  {
+    id: 2,
+    title: "Five ways to make local public spaces easier to navigate",
+    slug: "five-ways-to-make-local-public-spaces-easier-to-navigate",
+    excerpt: "Accessible design works best when it anticipates real decisions people make before they leave home.",
+    content: "People planning a visit often ask the same practical questions: Is the entrance level? Are there restrooms nearby? Can I find parking close enough to walk without stress? Are there quiet hours or seating options? These are the details that determine whether a public place is genuinely accessible for a wide range of people.",
+    author: "Maya Johnson",
+    category: "Community",
+    imageUrl: "https://images.unsplash.com/photo-1517457373958-b7bdd4587205?auto=format&fit=crop&w=1200&q=80",
+    isFeatured: false,
+    isPublished: true,
+    publishedAt: new Date("2026-09-10T00:00:00Z"),
+    createdAt: new Date("2026-09-10T00:00:00Z"),
+  },
+  {
+    id: 3,
+    title: "What Philadelphia neighborhoods can teach us about access",
+    slug: "what-philadelphia-neighborhoods-can-teach-us-about-access",
+    excerpt: "Some of the most effective accessibility improvements happen when residents, advocates, and businesses work together in a specific neighborhood.",
+    content: "Walkable cities are built in layers: curb cuts, clear signage, seating, stable sidewalks, and communication tools that help visitors feel confident. Philadelphia's neighborhoods show that accessibility improvements are often community-driven and highly local, with real impact when residents document where barriers remain.",
+    author: "Community Desk",
+    category: "News",
+    imageUrl: "https://images.unsplash.com/photo-1552664730-d307ca884978?auto=format&fit=crop&w=1200&q=80",
+    isFeatured: false,
+    isPublished: true,
+    publishedAt: new Date("2026-09-02T00:00:00Z"),
+    createdAt: new Date("2026-09-02T00:00:00Z"),
+  },
+];
+
 export default function Blog() {
   usePageMeta({
     title: "Blog",
@@ -71,6 +116,9 @@ export default function Blog() {
   const { data: posts, isLoading, error } = useQuery<BlogPost[]>({
     queryKey: ["/api/blog"],
   });
+
+  const postsToUse = posts && posts.length > 0 ? posts : fallbackBlogPosts;
+  const usingSamplePosts = !isLoading && !error && (!posts || posts.length === 0);
 
   const newPostSchema = z.object({
     title: z.string().trim().min(3, "Title must be at least 3 characters").max(200, "Title is too long"),
@@ -108,14 +156,14 @@ export default function Blog() {
   });
 
   const featuredPosts = useMemo(() => {
-    if (!posts) return [];
-    return posts.filter((p) => p.isFeatured && p.isPublished);
-  }, [posts]);
+    if (!postsToUse) return [];
+    return postsToUse.filter((p) => p.isFeatured && p.isPublished);
+  }, [postsToUse]);
 
   const filteredPosts = useMemo(() => {
-    if (!posts) return [];
+    if (!postsToUse) return [];
 
-    let filtered = posts.filter((p) => !p.isFeatured && p.isPublished);
+    let filtered = postsToUse.filter((p) => !p.isFeatured && p.isPublished);
 
     if (categoryFilter !== "All") {
       filtered = filtered.filter((p) => p.category === categoryFilter);
@@ -128,7 +176,7 @@ export default function Blog() {
     });
 
     return filtered;
-  }, [posts, categoryFilter, sortBy]);
+  }, [postsToUse, categoryFilter, sortBy]);
 
   const estimateReadTime = (content: string) => {
     const wordsPerMinute = 200;
@@ -207,6 +255,11 @@ export default function Blog() {
           <p className="text-muted-foreground text-lg max-w-2xl mx-auto mb-4">
             Stay informed with the latest accessibility news, community stories, and advocacy updates
           </p>
+          {usingSamplePosts && (
+            <p className="mx-auto mb-6 max-w-2xl rounded-md border border-amber-500/40 bg-amber-500/10 px-4 py-3 text-sm text-foreground" role="status" data-testid="sample-blog-notice">
+              Sample stories are shown because no published community posts are available. These examples are not independent reporting.
+            </p>
+          )}
           {user && (
             <Dialog open={showCreateDialog} onOpenChange={setShowCreateDialog}>
               <DialogTrigger asChild>

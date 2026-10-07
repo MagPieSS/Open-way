@@ -55,6 +55,93 @@ const CATEGORIES = [
   "Advocacy",
 ];
 
+const fallbackResources: Resource[] = [
+  {
+    id: 1,
+    title: "Philadelphia Office for People with Disabilities",
+    description: "City disability advocacy, ADA compliance, reasonable modification requests, and grievance information.",
+    category: "Government",
+    url: "https://www.phila.gov/departments/office-for-people-with-disabilities/",
+    phone: "(215) 686-2798",
+    email: "ada.request@phila.gov",
+    address: "Municipal Services Building, 1401 John F. Kennedy Blvd, Philadelphia, PA 19102",
+    icon: "Building2",
+    isFeatured: true,
+    sortOrder: 1,
+    createdAt: new Date("2024-01-01T00:00:00Z"),
+  },
+  {
+    id: 2,
+    title: "SEPTA Accessibility Center",
+    description: "Transit information on ADA accessibility, elevators, accessible stations, rider assistance, and travel planning support.",
+    category: "Transportation",
+    url: "https://www.septa.org/accessibility",
+    phone: null,
+    email: null,
+    address: "1234 Market Street, Philadelphia, PA 19107",
+    icon: "Car",
+    isFeatured: true,
+    sortOrder: 2,
+    createdAt: new Date("2024-01-02T00:00:00Z"),
+  },
+  {
+    id: 3,
+    title: "Disability Rights Pennsylvania",
+    description: "Statewide protection and advocacy organization providing disability-rights information, legal advocacy, and referrals.",
+    category: "Legal",
+    url: "https://www.disabilityrightspa.org/",
+    phone: "1-800-692-7443",
+    email: null,
+    address: "1800 JFK Boulevard, Suite 900, Philadelphia, PA 19103",
+    icon: "Scale",
+    isFeatured: false,
+    sortOrder: 3,
+    createdAt: new Date("2024-01-03T00:00:00Z"),
+  },
+  {
+    id: 4,
+    title: "The Arc of Philadelphia",
+    description: "Programs and community support for people with intellectual and developmental disabilities, including advocacy and local resources.",
+    category: "Community",
+    url: "https://arcphiladelphia.org/contact/",
+    phone: "215-229-4550",
+    email: null,
+    address: "2350 West Westmoreland Street, Philadelphia, PA 19140",
+    icon: "Users",
+    isFeatured: false,
+    sortOrder: 4,
+    createdAt: new Date("2024-01-04T00:00:00Z"),
+  },
+  {
+    id: 5,
+    title: "Mid-Atlantic ADA Center",
+    description: "Free information, guidance, and training on the ADA for Pennsylvania and the Mid-Atlantic region. It provides technical assistance but is not an enforcement or advocacy agency.",
+    category: "ADA Services",
+    url: "https://www.adainfo.org/",
+    phone: "800-949-4232",
+    email: "adainfo@transcen.org",
+    address: "12300 Twinbrook Parkway, Suite 350, Rockville, MD 20852",
+    icon: "Accessibility",
+    isFeatured: false,
+    sortOrder: 5,
+    createdAt: new Date("2024-01-05T00:00:00Z"),
+  },
+  {
+    id: 6,
+    title: "Philadelphia Free Library — Accessibility Services",
+    description: "Parkway Central Library services, hours, and facilities. The library lists this location as accessible; contact the branch about specific accommodations.",
+    category: "Education",
+    url: "https://libwww.freelibrary.org/locations/parkway-central-library",
+    phone: "1-833-825-5357",
+    email: null,
+    address: "1901 Vine Street, Philadelphia, PA 19103",
+    icon: "GraduationCap",
+    isFeatured: false,
+    sortOrder: 6,
+    createdAt: new Date("2024-01-06T00:00:00Z"),
+  },
+];
+
 export default function Resources() {
   usePageMeta({
     title: "Accessibility Resources",
@@ -68,15 +155,17 @@ export default function Resources() {
     queryKey: ["/api/resources"],
   });
 
+  const resourcesToUse = resources && resources.length > 0 ? resources : fallbackResources;
+
   const featuredResources = useMemo(() => {
-    if (!resources) return [];
-    return resources.filter((r) => r.isFeatured);
-  }, [resources]);
+    if (!resourcesToUse) return [];
+    return resourcesToUse.filter((r) => r.isFeatured);
+  }, [resourcesToUse]);
 
   const groupedResources = useMemo(() => {
-    if (!resources) return {};
+    if (!resourcesToUse) return {};
 
-    let filtered = resources.filter((r) => !r.isFeatured);
+    let filtered = resourcesToUse.filter((r) => !r.isFeatured);
 
     if (searchTerm) {
       const term = searchTerm.toLowerCase();
@@ -106,7 +195,7 @@ export default function Resources() {
     });
 
     return grouped;
-  }, [resources, searchTerm, categoryFilter]);
+  }, [resourcesToUse, searchTerm, categoryFilter]);
 
   const getCategoryIcon = (category: string) => {
     const Icon = CATEGORY_ICONS[category] || Users;

@@ -1,4 +1,5 @@
 import { useState, useRef } from "react";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { insertPlaceSchema, insertReviewSchema, ACCESSIBILITY_STATUS, ACCESSIBILITY_FEATURE_TYPES, PLACE_CATEGORIES } from "@shared/schema";
@@ -14,6 +15,7 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import * as z from "zod";
 import { Link, useSearch } from "wouter";
+import { apiRequest } from "@/lib/queryClient";
 
 const ACCESSIBILITY_SOURCE_OPTIONS = [
   "Personal visit",
@@ -43,7 +45,9 @@ export default function Submit() {
   const search = useSearch();
   const queryParams = new URLSearchParams(search);
   const preselectedPlaceId = queryParams.get("placeId");
-  const [mode, setMode] = useState<'place' | 'review'>(preselectedPlaceId ? 'review' : 'place');
+  const contributionSearch = search ? (search.startsWith("?") ? search : `?${search}`) : "";
+  const initialMode = queryParams.get("type") === "tip" ? "tip" : preselectedPlaceId ? "review" : "place";
+  const [mode, setMode] = useState<'place' | 'review' | 'tip'>(initialMode);
   const { user, isLoading: isAuthLoading } = useAuth();
 
   if (isAuthLoading) {
@@ -55,16 +59,17 @@ export default function Submit() {
   }
 
   if (!user) {
+    const contributionType = mode === "tip" ? "share an accessibility tip" : mode === "review" ? "write a review" : "add a place";
     return (
       <div className="min-h-screen bg-background py-12 px-4 sm:px-6 lg:px-8">
         <div className="max-w-md mx-auto text-center">
           <Card className="p-8 space-y-6">
             <LogIn className="w-12 h-12 mx-auto text-muted-foreground" />
-            <h1 className="font-display font-bold text-2xl">Sign in to Contribute</h1>
+            <h1 className="font-display font-bold text-2xl">Sign in to {contributionType}</h1>
             <p className="text-muted-foreground">
-              You need to be logged in to add places or write reviews. Join us in making the world more accessible.
+              Your contribution helps people plan with better access information.
             </p>
-            <Link href="/login">
+              <Link href={"/login?returnTo=" + encodeURIComponent("/submit" + contributionSearch)}>
               <Button className="w-full" data-testid="button-login-redirect">
                 <LogIn className="w-4 h-4 mr-2" /> Sign In
               </Button>
@@ -100,10 +105,18 @@ export default function Submit() {
           >
             <MessageSquare className="w-5 h-5" /> Write Review
           </Button>
+          <Button
+            variant={mode === 'tip' ? 'default' : 'ghost'}
+            onClick={() => setMode('tip')}
+            className="flex-1"
+            data-testid="button-mode-tip"
+          >
+            <MessageSquare className="w-5 h-5" /> Share a Tip
+          </Button>
         </div>
 
         <Card className="p-6 md:p-8">
-          {mode === 'place' ? <PlaceForm /> : <ReviewForm preselectedPlaceId={preselectedPlaceId} />}
+          {mode === 'place' ? <PlaceForm /> : mode === 'review' ? <ReviewForm preselectedPlaceId={preselectedPlaceId} /> : <TipForm preselectedPlaceId={preselectedPlaceId} />}
         </Card>
       </div>
     </div>
@@ -560,6 +573,80 @@ function ReviewForm({ preselectedPlaceId }: { preselectedPlaceId: string | null 
             <MessageSquare className="w-5 h-5 mr-2" /> Post Review
           </>
         )}
+      </Button>
+    </form>
+  );
+}
+
+function TipForm({ preselectedPlaceId }: { preselectedPlaceId: string | null }) {
+  const { data: places } = usePlaces();
+  const { toast } = useToast();
+  const [, setLocation] = useLocation();
+  const queryClient = useQueryClient();
+  const [placeId, setPlaceId] = useState(preselectedPlaceId ?? "");
+  const [content, setContent] = useState("");
+  const [validationError, setValidationError] = useState("");
+
+  const createTipMutation = useMutation({
+    mutationFn: async () => apiRequest("POST", "/api/place-tips", { placeId: Number(placeId), content: content.trim() }),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ["/api/places", Number(placeId), "tips"] });
+      toast({ title: "Tip shared", description: "Your access tip has been added to the place." });
+      setLocation(`/places/${placeId}`);
+    },
+    onError: (error: Error) => {
+      toast({ title: "Could not share tip", description: error.message, variant: "destructive" });
+    },
+  });
+
+  const submitTip = (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (!placeId) {
+      setValidationError("Choose a place for this tip.");
+      return;
+    }
+    if (content.trim().length < 10 || content.trim().length > 500) {
+      setValidationError("Tip must be between 10 and 500 characters.");
+      return;
+    }
+    setValidationError("");
+    createTipMutation.mutate();
+  };
+
+  return (
+    <form onSubmit={submitTip} className="space-y-6" data-testid="form-place-tip">
+      <div>
+        <label htmlFor="tip-place" className="mb-2 block font-bold">Place</label>
+        <select
+          id="tip-place"
+          value={placeId}
+          onChange={(event) => setPlaceId(event.target.value)}
+          className="w-full rounded-md border-2 border-border bg-background p-4"
+          required
+          data-testid="select-tip-place"
+        >
+          <option value="">Choose a place...</option>
+          {places?.map((place) => <option key={place.id} value={place.id}>{place.name}</option>)}
+        </select>
+      </div>
+      <div>
+        <label htmlFor="tip-content" className="mb-2 block font-bold">What should visitors know?</label>
+        <textarea
+          id="tip-content"
+          value={content}
+          onChange={(event) => setContent(event.target.value)}
+          rows={5}
+          maxLength={500}
+          className="w-full rounded-md border-2 border-border bg-background p-4"
+          placeholder="Share a practical access detail from your experience. Include conditions or limitations when relevant."
+          required
+          data-testid="input-tip-content"
+        />
+        <p className="mt-1 text-right text-xs text-muted-foreground">{content.length}/500</p>
+        {validationError && <p className="mt-1 text-sm text-destructive" role="alert">{validationError}</p>}
+      </div>
+      <Button type="submit" disabled={createTipMutation.isPending || !placeId || content.trim().length < 10} data-testid="button-submit-tip">
+        {createTipMutation.isPending ? "Sharing..." : "Share Tip"}
       </Button>
     </form>
   );

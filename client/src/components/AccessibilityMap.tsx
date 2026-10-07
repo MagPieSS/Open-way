@@ -24,9 +24,12 @@ function createMarkerIcon(status: string): L.DivIcon {
       iconSvg = `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="black" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z"></path><line x1="12" y1="9" x2="12" y2="13"></line><line x1="12" y1="17" x2="12.01" y2="17"></line></svg>`;
       break;
     case ACCESSIBILITY_STATUS.NOT_ACCESSIBLE:
-    default:
       color = "#ef4444";
       iconSvg = `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><line x1="15" y1="9" x2="9" y2="15"></line><line x1="9" y1="9" x2="15" y2="15"></line></svg>`;
+      break;
+    default:
+      color = "#64748b";
+      iconSvg = `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="11" x2="12" y2="16"></line><circle cx="12" cy="7" r="0.5" fill="white"></circle></svg>`;
       break;
   }
 
@@ -105,7 +108,7 @@ export function AccessibilityMap({ places, className = "", onMarkerClick, center
       className={`w-full h-full min-h-[400px] rounded-xl overflow-hidden border border-border ${className}`}
       data-testid="accessibility-map"
       role="region"
-      aria-label={`Map showing ${placesWithCoords.length} accessible place${placesWithCoords.length === 1 ? "" : "s"}`}
+      aria-label={`Map with ${placesWithCoords.length} place marker${placesWithCoords.length === 1 ? "" : "s"}`}
     >
       <MapContainer
         center={center || PHILADELPHIA_CENTER}

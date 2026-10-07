@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Link, useLocation } from "wouter";
+import { Link, useLocation, useSearch } from "wouter";
 import { useAuth } from "@/hooks/use-auth";
 import { useToast } from "@/hooks/use-toast";
 import { Button } from "@/components/ui/button";
@@ -10,6 +10,11 @@ import { Loader2, Eye, EyeOff, Shield, Mail, Lock } from "lucide-react";
 
 export default function Login() {
   const [, setLocation] = useLocation();
+  const search = useSearch();
+  const requestedReturnTo = new URLSearchParams(search).get("returnTo");
+  const returnTo = requestedReturnTo?.startsWith("/") && !requestedReturnTo.startsWith("//") && !requestedReturnTo.includes("\\")
+    ? requestedReturnTo
+    : "/";
   const { login, verify2FA, isLoggingIn, isVerifying2FA } = useAuth();
   const { toast } = useToast();
 
@@ -36,7 +41,7 @@ export default function Login() {
           title: "Welcome back!",
           description: "You have successfully logged in.",
         });
-        setLocation("/");
+        setLocation(returnTo);
       }
     } catch (err: any) {
       toast({
@@ -56,7 +61,7 @@ export default function Login() {
         title: "Welcome back!",
         description: "You have successfully logged in.",
       });
-      setLocation("/");
+      setLocation(returnTo);
     } catch (err: any) {
       toast({
         variant: "destructive",

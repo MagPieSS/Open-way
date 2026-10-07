@@ -46,7 +46,7 @@ $env:ADMIN_EMAIL = "you@example.com"; $env:ADMIN_PASSWORD = "choose-a-password";
 | `npm run lint` | Lint the codebase with ESLint |
 | `npm run format` | Format the codebase with Prettier |
 | `npm run test` | Run unit tests with Vitest |
-| `npm run seed:places` | Add or update the five sourced Philadelphia place listings |
+| `npm run seed:places` | Add or update sourced Philadelphia place listings (unknown access details are marked for review) |
 | `npm run db:push` | Push the Drizzle schema to a configured Postgres database |
 
 ## Project layout

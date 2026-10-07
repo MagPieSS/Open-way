@@ -11,6 +11,7 @@ export function AccessibilityLegend({ className = "" }: AccessibilityLegendProps
     { status: "Accessible", bgClass: "bg-accessible", description: "Fully accessible" },
     { status: "Partially Accessible", bgClass: "bg-partial", description: "Some accessibility features" },
     { status: "Not Accessible", bgClass: "bg-not-accessible", description: "Limited or no accessibility" },
+    { status: "Unknown", bgClass: "bg-muted-foreground/50", description: "Access information not confirmed" },
   ];
 
   return (

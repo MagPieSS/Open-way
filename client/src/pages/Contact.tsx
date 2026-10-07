@@ -19,29 +19,11 @@ import {
   FormMessage,
 } from "@/components/ui/form";
 import {
-  Mail,
-  Phone,
-  MapPin,
   Send,
   CheckCircle,
-  Clock,
   MessageCircle,
 } from "lucide-react";
-import { SiFacebook, SiX, SiInstagram } from "react-icons/si";
-import { MapContainer, TileLayer, Marker, Popup } from "react-leaflet";
 import { apiRequest } from "@/lib/queryClient";
-import "leaflet/dist/leaflet.css";
-import L from "leaflet";
-
-const markerIcon = new L.Icon({
-  iconUrl: "https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon.png",
-  iconRetinaUrl: "https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon-2x.png",
-  shadowUrl: "https://unpkg.com/leaflet@1.9.4/dist/images/marker-shadow.png",
-  iconSize: [25, 41],
-  iconAnchor: [12, 41],
-  popupAnchor: [1, -34],
-  shadowSize: [41, 41],
-});
 
 const contactFormSchema = z.object({
   name: z.string().min(2, "Name must be at least 2 characters"),
@@ -52,7 +34,12 @@ const contactFormSchema = z.object({
 
 type ContactFormData = z.infer<typeof contactFormSchema>;
 
-const PHILADELPHIA_CENTER = { lat: 39.9526, lng: -75.1652 };
+const supportHighlights = [
+  "Community feedback and accessibility reports",
+  "Partnership and venue outreach",
+  "Questions about reviews, submissions, or place listings",
+  "General support for neighborhood accessibility advocacy",
+];
 
 export default function Contact() {
   usePageMeta({
@@ -103,7 +90,7 @@ export default function Contact() {
             Contact Us
           </h1>
           <p className="text-muted-foreground text-lg max-w-2xl">
-            Have a question, suggestion, or want to get involved? We'd love to hear from you.
+            Have a question, suggestion, or want to get involved? Please send us a message.
           </p>
         </div>
       </section>
@@ -125,7 +112,7 @@ export default function Contact() {
                       <CheckCircle className="w-16 h-16 text-green-500 mx-auto mb-4" />
                       <h3 className="font-bold text-xl mb-2">Message Sent!</h3>
                       <p className="text-muted-foreground mb-4">
-                        Thank you for reaching out. We'll get back to you within 1-2 business days.
+                        Your message has been recorded. Thank you for reaching out.
                       </p>
                       <Button
                         variant="outline"
@@ -250,136 +237,28 @@ export default function Contact() {
             <div className="space-y-6">
               <Card>
                 <CardHeader>
-                  <CardTitle>Alternative Contact Methods</CardTitle>
+                  <CardTitle>What We Can Help With</CardTitle>
                 </CardHeader>
-                <CardContent className="space-y-4">
-                  <a
-                    href="mailto:hello@openway.org"
-                    className="flex items-center gap-4 p-4 rounded-lg bg-secondary/50 hover:bg-secondary transition-colors"
-                    data-testid="link-email"
-                  >
-                    <div className="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center">
-                      <Mail className="w-5 h-5 text-primary" />
-                    </div>
-                    <div>
-                      <p className="font-medium">Email Us</p>
-                      <p className="text-sm text-muted-foreground">
-                        hello@openway.org
-                      </p>
-                    </div>
-                  </a>
-
-                  <a
-                    href="tel:+12155551234"
-                    className="flex items-center gap-4 p-4 rounded-lg bg-secondary/50 hover:bg-secondary transition-colors"
-                    data-testid="link-phone"
-                  >
-                    <div className="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center">
-                      <Phone className="w-5 h-5 text-primary" />
-                    </div>
-                    <div>
-                      <p className="font-medium">Call Us</p>
-                      <p className="text-sm text-muted-foreground">
-                        (215) 555-1234
-                      </p>
-                    </div>
-                  </a>
-
-                  <div className="flex items-center gap-4 p-4 rounded-lg bg-secondary/50">
-                    <div className="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center">
-                      <Clock className="w-5 h-5 text-primary" />
-                    </div>
-                    <div>
-                      <p className="font-medium">Response Time</p>
-                      <p className="text-sm text-muted-foreground">
-                        Within 1-2 business days
-                      </p>
-                    </div>
-                  </div>
+                <CardContent>
+                  <ul className="space-y-3 text-sm text-muted-foreground">
+                    {supportHighlights.map((item) => (
+                      <li key={item} className="flex items-start gap-2">
+                        <CheckCircle className="w-4 h-4 text-primary mt-0.5 shrink-0" />
+                        <span>{item}</span>
+                      </li>
+                    ))}
+                  </ul>
                 </CardContent>
               </Card>
 
               <Card>
                 <CardHeader>
-                  <CardTitle>Connect With Us</CardTitle>
+                  <CardTitle>Contact Options</CardTitle>
                 </CardHeader>
                 <CardContent>
-                  <div className="flex items-center gap-4">
-                    <a
-                      href="https://facebook.com"
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="w-12 h-12 rounded-full bg-secondary flex items-center justify-center hover:bg-primary/10 transition-colors"
-                      aria-label="Facebook"
-                      data-testid="link-facebook"
-                    >
-                      <SiFacebook className="w-5 h-5" />
-                    </a>
-                    <a
-                      href="https://twitter.com"
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="w-12 h-12 rounded-full bg-secondary flex items-center justify-center hover:bg-primary/10 transition-colors"
-                      aria-label="X (Twitter)"
-                      data-testid="link-twitter"
-                    >
-                      <SiX className="w-5 h-5" />
-                    </a>
-                    <a
-                      href="https://instagram.com"
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="w-12 h-12 rounded-full bg-secondary flex items-center justify-center hover:bg-primary/10 transition-colors"
-                      aria-label="Instagram"
-                      data-testid="link-instagram"
-                    >
-                      <SiInstagram className="w-5 h-5" />
-                    </a>
-                  </div>
-                </CardContent>
-              </Card>
-
-              <Card>
-                <CardHeader>
-                  <CardTitle className="flex items-center gap-2">
-                    <MapPin className="w-5 h-5 text-primary" />
-                    Our Location
-                  </CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <p className="text-muted-foreground mb-4" data-testid="text-address">
-                    Open Way Community Center<br />
-                    1234 Market Street<br />
-                    Philadelphia, PA 19107
+                  <p className="text-muted-foreground">
+                    Please use the message form. Open Way does not currently publish a verified office address, phone number, or social accounts.
                   </p>
-                  <div
-                    className="h-[200px] rounded-lg overflow-hidden"
-                    data-testid="map-container"
-                  >
-                    <MapContainer
-                      center={[PHILADELPHIA_CENTER.lat, PHILADELPHIA_CENTER.lng]}
-                      zoom={14}
-                      style={{ height: "100%", width: "100%" }}
-                      scrollWheelZoom={false}
-                    >
-                      <TileLayer
-                        attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
-                        url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
-                      />
-                      <Marker
-                        position={[PHILADELPHIA_CENTER.lat, PHILADELPHIA_CENTER.lng]}
-                        icon={markerIcon}
-                      >
-                        <Popup>
-                          <strong>Open Way Community Center</strong>
-                          <br />
-                          1234 Market Street
-                          <br />
-                          Philadelphia, PA 19107
-                        </Popup>
-                      </Marker>
-                    </MapContainer>
-                  </div>
                 </CardContent>
               </Card>
             </div>
