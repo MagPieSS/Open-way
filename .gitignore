@@ -35,3 +35,8 @@ Thumbs.db
 # User-uploaded content (not meant to be committed to source control)
 uploads/*
 !uploads/.gitkeep
+
+# Local tool state
+.local/
+.agents/
+.config/
