@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { sanitizeString, encodeHtml } from "./sanitize";
+import { sanitizeString, encodeHtml, decodeLegacyEntities } from "./sanitize";
 
 describe("sanitizeString", () => {
   it("strips HTML tags", () => {
@@ -10,25 +10,17 @@ describe("sanitizeString", () => {
     expect(sanitizeString("<img src=x onerror=alert(1)")).not.toContain("<");
   });
 
-  it("neutralizes javascript: and on*= handlers", () => {
-    const result = sanitizeString("javascript:alert(1) onclick=alert(2)");
-    expect(result).not.toContain("javascript:");
-    expect(result.toLowerCase()).not.toContain("onclick=");
+  // Behaviour change: text used to be HTML-encoded on the way in, so pages showed "&#x27;" and
+  // every edit encoded it again. React escapes text when rendering, so stored text stays as typed.
+  it("keeps quotes and ampersands as typed", () => {
+    expect(sanitizeString(`Tom & Jerry's "great" show`)).toBe(`Tom & Jerry's "great" show`);
   });
 
-  it("neutralizes data: URIs", () => {
-    expect(sanitizeString("data:text/html,<script>x</script>")).toContain("data-blocked:");
-  });
-
-  it("removes angle brackets that survive tag stripping", () => {
-    expect(sanitizeString("a < b > c")).not.toMatch(/[<>]/);
-  });
-
-  it("HTML-encodes quotes and ampersands", () => {
-    const result = sanitizeString(`Tom & Jerry's "great" show`);
-    expect(result).toContain("&amp;");
-    expect(result).toContain("&#x27;");
-    expect(result).toContain("&quot;");
+  // Behaviour change: a bare "<" used to delete the rest of the text, and "data:" / "on…=" were
+  // rewritten. Links are validated separately (http/https only), so prose no longer needs this.
+  it("keeps comparison signs and ordinary words in prose", () => {
+    const text = "Door is < 32 in wide (ADA minimum > 32). Updated data: one=1, I <3 the ramp.";
+    expect(sanitizeString(text)).toBe(text);
   });
 
   it("strips control characters and null bytes", () => {
@@ -45,6 +37,11 @@ describe("sanitizeString", () => {
       "This place has a wheelchair ramp."
     );
   });
+
+  it("is stable when applied twice (edits don't change saved text)", () => {
+    const once = sanitizeString(`It's "fine" & level`);
+    expect(sanitizeString(once)).toBe(once);
+  });
 });
 
 describe("encodeHtml", () => {
@@ -56,5 +53,24 @@ describe("encodeHtml", () => {
 
   it("leaves plain text untouched", () => {
     expect(encodeHtml("plain text")).toBe("plain text");
+  });
+});
+
+describe("decodeLegacyEntities", () => {
+  // The old sanitizer replaced & first, then " and '. Decoding must undo exactly that.
+  const oldEncode = (text: string) =>
+    text.replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/'/g, "&#x27;");
+
+  it.each([
+    [`Grandma's "Philly" kitchen`],
+    ["Tom & Jerry"],
+    ["Someone literally typed &quot; and &amp; here"],
+    ["plain"],
+  ])("restores %s", (original) => {
+    expect(decodeLegacyEntities(oldEncode(original))).toBe(original);
+  });
+
+  it("leaves text with no entities alone", () => {
+    expect(decodeLegacyEntities("12th & Arch Street")).toBe("12th & Arch Street");
   });
 });
