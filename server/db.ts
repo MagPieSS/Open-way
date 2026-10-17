@@ -13,7 +13,9 @@ export const useSqliteFallback = !process.env.DATABASE_URL || !process.env.DATAB
 let sqliteConnection: Database.Database | undefined;
 
 if (useSqliteFallback) {
-  const sqlitePath = path.resolve(process.cwd(), "sqlite.db");
+  // SQLITE_PATH lets tests run against ":memory:" instead of the developer's real sqlite.db.
+  const configuredPath = process.env.SQLITE_PATH || "sqlite.db";
+  const sqlitePath = configuredPath === ":memory:" ? configuredPath : path.resolve(process.cwd(), configuredPath);
   const sqlite = new Database(sqlitePath);
   sqlite.pragma("journal_mode = WAL");
   sqlite.pragma("foreign_keys = ON");
