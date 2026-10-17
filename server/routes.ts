@@ -4,11 +4,11 @@ import path from "path";
 import { mkdir, writeFile } from "fs/promises";
 import { storage } from "./storage";
 import { db } from "./db";
-import { api } from "@shared/routes";
 import { z } from "zod";
 import { eq } from "drizzle-orm";
 import { randomBytes } from "crypto";
-import { ACCESSIBILITY_STATUS, ACCESSIBILITY_FEATURE_TYPES, insertUserSchema, loginSchema, forgotPasswordSchema, resetPasswordSchema, blogPosts as blogPostsTable, reviews as reviewsTable, places as placesTable, communityPosts as communityPostsTable, placeMedia as placeMediaTable, users } from "@shared/schema";
+import { ACCESSIBILITY_STATUS, ACCESSIBILITY_FEATURE_TYPES, insertUserSchema, loginSchema, forgotPasswordSchema, resetPasswordSchema, blogPosts as blogPostsTable, reviews as reviewsTable, places as placesTable, communityPosts as communityPostsTable, placeMedia as placeMediaTable, users, type User, type InsertPlace } from "@shared/schema";
+import { api, placeMediaContributionSchema, reviewUpdateSchema, adminPlaceUpdateSchema } from "@shared/routes";
 import { 
   registerUser, 
   loginUser, 
@@ -22,7 +22,7 @@ import {
   hashPassword,
   isWeakPassword
 } from "./auth";
-import { authRateLimiter, apiRateLimiter, reviewRateLimiter, validateCsrf } from "./middleware";
+import { authRateLimiter, apiRateLimiter, reviewRateLimiter, uploadRateLimiter, validateCsrf } from "./middleware";
 import { geocodeAddress } from "./geocode";
 import { sendPasswordResetEmail, sendVerificationEmail } from "./email";
 import { sanitizeString } from "./sanitize";
@@ -76,30 +76,76 @@ async function saveUploadBuffer(buffer: Buffer, contentType: string, requestedFi
   return `/uploads/${filename}`;
 }
 
-// Middleware to check if user is authenticated
-function requireAuth(req: Request, res: Response, next: NextFunction) {
+
+// Starts a fresh session for a user who just proved who they are. Regenerating the id stops a
+// session id planted before login (session fixation) from becoming an authenticated one.
+function establishSession(req: Request, user: User): Promise<void> {
+  return new Promise((resolve, reject) => {
+    req.session.regenerate((regenerateError) => {
+      if (regenerateError) return reject(regenerateError);
+      req.session.userId = user.id;
+      req.session.email = user.email;
+      req.session.sessionVersion = user.sessionVersion ?? 0;
+      req.session.save((saveError) => (saveError ? reject(saveError) : resolve()));
+    });
+  });
+}
+
+type SessionUserCheck =
+  | { ok: true; user: User }
+  | { ok: false; status: number; message: string };
+
+// Loads the signed-in user and decides whether the session may still act for them.
+async function checkSessionUser(req: Request): Promise<SessionUserCheck> {
   if (!req.session.userId) {
-    return res.status(401).json({ message: "Please log in to continue" });
+    return { ok: false, status: 401, message: "Please log in to continue" };
+  }
+  const user = await storage.getUserById(req.session.userId);
+  // A bumped sessionVersion (password change) ends sessions started before it. Session stores
+  // can't be searched by user id in a driver-neutral way, so the check happens here instead.
+  if (!user || req.session.sessionVersion !== (user.sessionVersion ?? 0)) {
+    req.session.destroy(() => {});
+    return { ok: false, status: 401, message: "Your session has ended. Please log in again." };
+  }
+  if (user.isBanned || !user.isActive) {
+    req.session.destroy(() => {});
+    return { ok: false, status: 403, message: "This account has been suspended." };
+  }
+  return { ok: true, user };
+}
+
+// Middleware to check if user is authenticated (and not banned or signed out elsewhere)
+async function requireAuth(req: Request, res: Response, next: NextFunction) {
+  const check = await checkSessionUser(req);
+  if (!check.ok) {
+    return res.status(check.status).json({ message: check.message });
   }
   next();
 }
 
 // Middleware to check if user is an admin
 async function requireAdmin(req: Request, res: Response, next: NextFunction) {
-  if (!req.session.userId) {
-    return res.status(401).json({ message: "Please log in to continue" });
+  const check = await checkSessionUser(req);
+  if (!check.ok) {
+    return res.status(check.status).json({ message: check.message });
   }
-  
-  try {
-    const user = await storage.getUserById(req.session.userId);
-    if (!user || !user.isAdmin) {
-      return res.status(403).json({ message: "Admin access required" });
-    }
-    next();
-  } catch (error) {
-    console.error("Error checking admin status:", error);
-    return res.status(500).json({ message: "Unable to verify admin status" });
+  if (!check.user.isAdmin) {
+    return res.status(403).json({ message: "Admin access required" });
   }
+  next();
+}
+
+// Links in emails must point at this site, not at whatever Host header the request carried
+// (otherwise a forged Host turns a real reset email into a link to an attacker's site).
+function appBaseUrl(req: Request): string {
+  const configured = process.env.APP_BASE_URL?.trim().replace(/\/+$/, "");
+  return configured || `${req.protocol}://${req.get("host")}`;
+}
+
+// Turns a zod error into the { message, field } shape the client expects.
+function validationError(res: Response, err: z.ZodError) {
+  const issue = err.errors[0];
+  return res.status(400).json({ message: issue.message, field: issue.path.join(".") || undefined });
 }
 
 export async function registerRoutes(
@@ -143,7 +189,7 @@ export async function registerRoutes(
     "/api/uploads/proxy",
     requireAuth,
     validateCsrf,
-    apiRateLimiter,
+    uploadRateLimiter,
     express.raw({ type: () => true, limit: MAX_UPLOAD_SIZE_BYTES }),
     async (req, res) => {
       try {
@@ -162,7 +208,7 @@ export async function registerRoutes(
     "/uploads/:filename",
     requireAuth,
     validateCsrf,
-    apiRateLimiter,
+    uploadRateLimiter,
     express.raw({ type: () => true, limit: MAX_UPLOAD_SIZE_BYTES }),
     async (req, res) => {
       try {
@@ -200,15 +246,15 @@ export async function registerRoutes(
       }
 
       // Auto-login after registration
-      req.session.userId = result.user!.id;
-      req.session.email = result.user!.email;
+      const newUser = await storage.getUserById(result.user!.id);
+      await establishSession(req, newUser!);
 
       // Send email verification link (best-effort; failure doesn't block registration)
       try {
         const token = randomBytes(32).toString("hex");
         const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000); // 24 hours
         await storage.createEmailVerificationToken({ userId: result.user!.id, token, expiresAt });
-        const verifyUrl = `${req.protocol}://${req.get("host")}/verify-email?token=${token}`;
+        const verifyUrl = `${appBaseUrl(req)}/verify-email?token=${token}`;
         const emailResult = await sendVerificationEmail({ to: result.user!.email, verifyUrl, expiresAt });
         if (!emailResult.sent) {
           console.warn(`Verification email not sent via ${emailResult.provider}: ${emailResult.error}`);
@@ -243,10 +289,8 @@ export async function registerRoutes(
         return res.json({ requires2FA: true });
       }
 
-      // Complete login
-      req.session.userId = result.user!.id;
-      req.session.email = result.user!.email;
-      delete req.session.pending2FAUserId;
+      // Complete login (a new session also drops any pending 2FA state)
+      await establishSession(req, result.user!);
 
       res.json({ user: toSafeUser(result.user!) });
     } catch (err) {
@@ -277,11 +321,12 @@ export async function registerRoutes(
 
     // Complete login
     const user = await storage.getUserById(req.session.pending2FAUserId);
-    req.session.userId = user!.id;
-    req.session.email = user!.email;
-    delete req.session.pending2FAUserId;
+    if (!user || user.isBanned || !user.isActive) {
+      return res.status(401).json({ message: "Invalid email or password" });
+    }
+    await establishSession(req, user);
 
-    res.json({ user: toSafeUser(user!) });
+    res.json({ user: toSafeUser(user) });
   });
 
   // Logout
@@ -301,13 +346,12 @@ export async function registerRoutes(
       return res.json({ user: null });
     }
 
-    const user = await storage.getUserById(req.session.userId);
-    if (!user) {
-      req.session.destroy(() => {});
+    const check = await checkSessionUser(req);
+    if (!check.ok) {
       return res.json({ user: null });
     }
 
-    res.json({ user: toSafeUser(user) });
+    res.json({ user: toSafeUser(check.user) });
   });
 
   // ==================== PASSWORD RESET ROUTES ====================
@@ -337,7 +381,7 @@ export async function registerRoutes(
         });
 
         // Build reset URL
-        const resetUrl = `${req.protocol}://${req.get("host")}/reset-password?token=${token}`;
+        const resetUrl = `${appBaseUrl(req)}/reset-password?token=${token}`;
 
         const emailResult = await sendPasswordResetEmail({ to: email, resetUrl, expiresAt });
         if (!emailResult.sent) {
@@ -395,7 +439,7 @@ export async function registerRoutes(
       await storage.markTokenUsed(resetToken.id);
 
       // Note: 2FA is NOT bypassed - they still need to log in with 2FA after resetting password
-      console.log(`Password reset successful for user: ${user.email}`);
+      console.log(`Password reset successful for user id ${user.id}`);
 
       res.json({ message: "Password has been reset successfully. You can now log in with your new password." });
     } catch (err) {
@@ -446,7 +490,7 @@ export async function registerRoutes(
     const token = randomBytes(32).toString("hex");
     const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000);
     await storage.createEmailVerificationToken({ userId: user.id, token, expiresAt });
-    const verifyUrl = `${req.protocol}://${req.get("host")}/verify-email?token=${token}`;
+    const verifyUrl = `${appBaseUrl(req)}/verify-email?token=${token}`;
     const emailResult = await sendVerificationEmail({ to: user.email, verifyUrl, expiresAt });
     if (!emailResult.sent) {
       console.warn(`Verification email not sent via ${emailResult.provider}: ${emailResult.error}`);
@@ -458,7 +502,14 @@ export async function registerRoutes(
   // ==================== 2FA MANAGEMENT ROUTES ====================
 
   // Start 2FA setup
-  app.post("/api/auth/2fa/setup", requireAuth, validateCsrf, async (req, res) => {
+  app.post("/api/auth/2fa/setup", requireAuth, validateCsrf, authRateLimiter, async (req, res) => {
+    // Restarting setup overwrites the secret and switches 2FA off, so a stolen session could use it
+    // to strip the owner's second factor. Turning 2FA off already requires re-authentication.
+    const current = await storage.getUserById(req.session.userId!);
+    if (current?.twoFactorEnabled) {
+      return res.status(400).json({ message: "Two-factor authentication is already on. Turn it off first to set it up again." });
+    }
+
     const result = await enable2FA(req.session.userId!, req.session.email!);
 
     if (!result.success) {
@@ -503,7 +554,16 @@ export async function registerRoutes(
   });
 
   // Regenerate backup codes
-  app.post("/api/auth/2fa/regenerate-backup", requireAuth, validateCsrf, async (req, res) => {
+  app.post("/api/auth/2fa/regenerate-backup", requireAuth, validateCsrf, authRateLimiter, async (req, res) => {
+    const { password } = req.body;
+    if (!password || typeof password !== "string") {
+      return res.status(400).json({ message: "Enter your password to create new backup codes" });
+    }
+    const user = await storage.getUserById(req.session.userId!);
+    if (!user || !(await verifyPassword(password, user.passwordHash))) {
+      return res.status(400).json({ message: "Incorrect password" });
+    }
+
     const result = await regenerateBackupCodes(req.session.userId!);
 
     if (!result.success) {
@@ -570,6 +630,10 @@ export async function registerRoutes(
 
     const newHash = await hashPassword(newPassword);
     await storage.updateUserPassword(req.session.userId!, newHash);
+    // updateUserPassword bumped sessionVersion, which ends other sessions on their next request;
+    // move this one onto the new version so it stays signed in.
+    const updated = await storage.getUserById(req.session.userId!);
+    req.session.sessionVersion = updated?.sessionVersion ?? 0;
 
     res.json({ success: true, message: "Password changed successfully" });
   });
@@ -721,10 +785,16 @@ export async function registerRoutes(
     try {
       const parsedInput = api.places.create.input.parse(req.body);
       const { accessibilityFeatures = [], ...placeInput } = parsedInput;
-      let input = {
-        ...placeInput,
+      const input: InsertPlace & { submittedBy: number; verificationStatus: string; lastCheckedAt: Date } = {
         name: sanitizeString(placeInput.name, 200),
+        category: placeInput.category,
+        accessibilityStatus: placeInput.accessibilityStatus,
         description: sanitizeString(placeInput.description, 2000),
+        address: placeInput.address ? sanitizeString(placeInput.address, 500) : null,
+        phone: placeInput.phone ? sanitizeString(placeInput.phone, 50) : null,
+        website: placeInput.website,
+        hours: placeInput.hours ? sanitizeString(placeInput.hours, 200) : null,
+        imageUrl: placeInput.imageUrl,
         accessibilitySource: placeInput.accessibilitySource
           ? sanitizeString(placeInput.accessibilitySource, 200)
           : "Community submission",
@@ -752,7 +822,7 @@ export async function registerRoutes(
       res.status(201).json(place);
     } catch (err) {
       if (err instanceof z.ZodError) {
-        return res.status(400).json({ message: err.errors[0].message });
+        return validationError(res, err);
       }
       throw err;
     }
@@ -814,45 +884,30 @@ export async function registerRoutes(
   });
 
   // Place Media (users can upload via Object Storage)
-  app.post("/api/place-media/upload", requireAuth, validateCsrf, async (req, res) => {
-    try {
-      const { placeId, caption, objectPath } = req.body;
-      if (!placeId) return res.status(400).json({ message: "Place ID is required" });
-      if (!objectPath) return res.status(400).json({ message: "No image path provided" });
+  // Attach an image (already uploaded through /api/uploads/*) to a place. The legacy
+  // /api/place-media route takes { url } instead of { objectPath } and is handled the same way.
+  const attachPlaceMedia = async (req: Request, res: Response) => {
+    const parsed = placeMediaContributionSchema.safeParse({
+      ...req.body,
+      objectPath: req.body?.objectPath ?? req.body?.url,
+    });
+    if (!parsed.success) return validationError(res, parsed.error);
 
-      const user = await storage.getUserById(req.session.userId!);
-      
-      const media = await storage.createPlaceMedia({
-        placeId: Number(placeId),
-        url: objectPath,
-        caption: caption ? sanitizeString(caption, 200) : undefined,
-        uploadedBy: user?.displayName || user?.email,
-      });
-      
-      res.status(201).json(media);
-    } catch (err: unknown) {
-      console.error("[PRODUCTION] Failed to create place media:", err);
-      const message = err instanceof Error ? err.message : "Failed to upload image";
-      res.status(400).json({ message });
-    }
-  });
+    const place = await storage.getPlace(parsed.data.placeId);
+    if (!place) return res.status(404).json({ message: "Place not found" });
 
-  app.post(api.placeMedia.create.path, requireAuth, validateCsrf, async (req, res) => {
-    try {
-      const input = api.placeMedia.create.input.parse(req.body);
-      const user = await storage.getUserById(req.session.userId!);
-      const media = await storage.createPlaceMedia({
-        ...input,
-        uploadedBy: user?.displayName || user?.email,
-      });
-      res.status(201).json(media);
-    } catch (err) {
-      if (err instanceof z.ZodError) {
-        return res.status(400).json({ message: err.errors[0].message });
-      }
-      throw err;
-    }
-  });
+    const user = await storage.getUserById(req.session.userId!);
+    const media = await storage.createPlaceMedia({
+      placeId: place.id,
+      url: parsed.data.objectPath,
+      caption: parsed.data.caption ? sanitizeString(parsed.data.caption, 200) : null,
+      // Display name only: falling back to the email published login addresses to everyone.
+      uploadedBy: user?.displayName || null,
+    });
+    res.status(201).json(media);
+  };
+  app.post("/api/place-media/upload", requireAuth, validateCsrf, attachPlaceMedia);
+  app.post(api.placeMedia.create.path, requireAuth, validateCsrf, attachPlaceMedia);
 
   // Admin: Get all place media across all places
   app.get("/api/admin/media", requireAdmin, async (req, res) => {
@@ -926,14 +981,17 @@ export async function registerRoutes(
   app.post("/api/community/posts", requireAuth, validateCsrf, async (req, res) => {
     try {
       const { content, parentId } = req.body;
-      if (!content) return res.status(400).json({ message: "Content is required" });
-      
+      if (!content || typeof content !== "string" || !content.trim()) {
+        return res.status(400).json({ message: "Content is required" });
+      }
+
       const user = await storage.getUserById(req.session.userId!);
       const post = await storage.createCommunityPost({
         content: sanitizeString(content, 2000),
         userId: req.session.userId!,
-        authorName: user?.displayName || user?.email,
-        parentId: parentId ? Number(parentId) : null,
+        // Display name only: falling back to the email published login addresses to everyone.
+        authorName: user?.displayName || null,
+        parentId: Number.isInteger(Number(parentId)) && Number(parentId) > 0 ? Number(parentId) : null,
       });
       res.status(201).json(post);
     } catch (err) {
@@ -945,13 +1003,20 @@ export async function registerRoutes(
   app.post(api.reviews.create.path, requireAuth, validateCsrf, reviewRateLimiter, async (req, res) => {
     try {
       const input = api.reviews.create.input.parse(req.body);
-      // Sanitize input content
+      const place = await storage.getPlace(input.placeId);
+      if (!place) {
+        return res.status(404).json({ message: "Place not found" });
+      }
+      const user = await storage.getUserById(req.session.userId!);
       const sanitizedInput = {
-        ...input,
+        placeId: place.id,
         content: sanitizeString(input.content, 2000),
-        authorName: input.authorName ? sanitizeString(input.authorName, 100) : undefined,
-        authorRole: input.authorRole ? sanitizeString(input.authorRole, 100) : undefined,
-        userId: req.session.userId, // Link review to authenticated user
+        rating: input.rating ?? null,
+        imageUrl: input.imageUrl,
+        // The author is the signed-in account; the client can't choose a name or role.
+        authorName: user?.displayName || null,
+        authorRole: null,
+        userId: req.session.userId!,
       };
       const review = await storage.createReview(sanitizedInput);
 
@@ -974,35 +1039,41 @@ export async function registerRoutes(
       res.status(201).json(review);
     } catch (err) {
       if (err instanceof z.ZodError) {
-        return res.status(400).json({ message: err.errors[0].message });
+        return validationError(res, err);
       }
       throw err;
     }
   });
 
-  // Vote review as helpful (rate limited via global apiRateLimiter on all /api routes)
-  app.post('/api/reviews/:id/helpful', async (req, res) => {
+  // Mark a review helpful: one vote per account, and not on your own review.
+  app.post('/api/reviews/:id/helpful', requireAuth, validateCsrf, async (req, res) => {
     const id = Number(req.params.id);
-    const review = await storage.incrementReviewHelpfulCount(id);
+    const review = await storage.getReview(id);
     if (!review) {
       return res.status(404).json({ message: "Review not found" });
     }
-    res.json({ helpfulCount: review.helpfulCount });
+    if (review.userId === req.session.userId) {
+      return res.status(400).json({ message: "You can't mark your own review as helpful" });
+    }
+    const vote = await storage.addHelpfulVote(id, req.session.userId!);
+    if (!vote.added) {
+      return res.status(409).json({ message: "You already marked this review as helpful", helpfulCount: vote.helpfulCount });
+    }
+    res.json({ helpfulCount: vote.helpfulCount });
   });
 
   // Update review (requires authentication, ownership check)
   app.patch('/api/reviews/:id', requireAuth, validateCsrf, async (req, res) => {
     const id = Number(req.params.id);
-    const { content, rating } = req.body;
-    
-    if (!content && rating === undefined) {
-      return res.status(400).json({ message: "Content or rating required" });
+    const parsed = reviewUpdateSchema.safeParse(req.body);
+    if (!parsed.success) {
+      return validationError(res, parsed.error);
     }
-    
+
     const updates: { content?: string; rating?: number } = {};
-    if (content) updates.content = sanitizeString(content, 2000);
-    if (rating !== undefined) updates.rating = rating;
-    
+    if (parsed.data.content) updates.content = sanitizeString(parsed.data.content, 2000);
+    if (parsed.data.rating !== undefined) updates.rating = parsed.data.rating;
+
     const review = await storage.updateReview(id, req.session.userId!, updates);
     if (!review) {
       return res.status(404).json({ message: "Review not found or you don't have permission to edit it" });
@@ -1248,6 +1319,8 @@ export async function registerRoutes(
       const input = api.events.create.input.parse(req.body);
       const event = await storage.createEvent({
         ...input,
+        title: sanitizeString(input.title, 200),
+        description: sanitizeString(input.description, 5000),
         createdBy: req.session.userId!,
       });
       res.status(201).json(event);
@@ -1324,7 +1397,7 @@ export async function registerRoutes(
     res.json(post);
   });
 
-  app.post(api.blogPosts.create.path, requireAuth, validateCsrf, async (req, res) => {
+  app.post(api.blogPosts.create.path, requireAdmin, validateCsrf, async (req, res) => {
     try {
       const input = api.blogPosts.create.input.parse(req.body);
       const post = await storage.createBlogPost(input);
@@ -1369,7 +1442,7 @@ export async function registerRoutes(
   });
 
   // Contact
-  app.get(api.contact.list.path, async (req, res) => {
+  app.get(api.contact.list.path, requireAdmin, async (req, res) => {
     const submissions = await storage.getContactSubmissions();
     res.json(submissions);
   });
@@ -1385,8 +1458,9 @@ export async function registerRoutes(
         subject: input.subject ? sanitizeString(input.subject, 200) : undefined,
         message: sanitizeString(input.message, 5000),
       };
-      const submission = await storage.createContactSubmission(sanitizedInput);
-      res.status(201).json(submission);
+      await storage.createContactSubmission(sanitizedInput);
+      // Don't echo the stored row back; the sender doesn't need its id or status.
+      res.status(201).json({ success: true });
     } catch (err) {
       if (err instanceof z.ZodError) {
         return res.status(400).json({ message: err.errors[0].message });
@@ -1676,21 +1750,20 @@ export async function registerRoutes(
       const place = await storage.getPlace(id);
       if (!place) return res.status(404).json({ message: "Place not found" });
 
-      const updates: Record<string, any> = {};
-      if (req.body.name) updates.name = sanitizeString(req.body.name, 200);
-      if (req.body.description) updates.description = sanitizeString(req.body.description, 5000);
-      if (req.body.accessibilityStatus) updates.accessibilityStatus = sanitizeString(req.body.accessibilityStatus, 50);
-      if (req.body.address) updates.address = sanitizeString(req.body.address, 500);
-      if (req.body.phone) updates.phone = sanitizeString(req.body.phone, 50);
-      if (req.body.website) updates.website = sanitizeString(req.body.website, 500);
-      if (req.body.hours) updates.hours = sanitizeString(req.body.hours, 200);
-      if (req.body.category) updates.category = sanitizeString(req.body.category, 50);
-      if (req.body.imageUrl) updates.imageUrl = sanitizeString(req.body.imageUrl, 1000);
-      if (typeof req.body.isFeatured === "boolean") updates.isFeatured = req.body.isFeatured;
-      if (typeof req.body.latitude === "number") updates.latitude = req.body.latitude;
-      if (typeof req.body.longitude === "number") updates.longitude = req.body.longitude;
+      const parsed = adminPlaceUpdateSchema.safeParse(req.body);
+      if (!parsed.success) return validationError(res, parsed.error);
+      const { markChecked, ...fields } = parsed.data;
 
-      if (updates.address && typeof req.body.latitude !== "number" && typeof req.body.longitude !== "number") {
+      const updates: Partial<InsertPlace> & { verificationStatus?: string; lastCheckedAt?: Date } = { ...fields };
+      if (fields.name) updates.name = sanitizeString(fields.name, 200);
+      if (fields.description) updates.description = sanitizeString(fields.description, 5000);
+      if (fields.address) updates.address = sanitizeString(fields.address, 500);
+      if (fields.phone) updates.phone = sanitizeString(fields.phone, 50);
+      if (fields.hours) updates.hours = sanitizeString(fields.hours, 200);
+      if (fields.accessibilitySource) updates.accessibilitySource = sanitizeString(fields.accessibilitySource, 500);
+      if (markChecked) updates.lastCheckedAt = new Date();
+
+      if (updates.address && fields.latitude === undefined && fields.longitude === undefined) {
         const coords = await geocodeAddress(updates.address);
         if (coords) {
           updates.latitude = coords.latitude;

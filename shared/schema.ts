@@ -26,6 +26,9 @@ export const users = pgTable("users", {
   // Brute-force protection
   failedLoginAttempts: integer("failed_login_attempts").default(0),
   lockedUntil: timestamp("locked_until"),
+  // Copied into the session at sign-in. Incrementing it (e.g. on a password change) ends every
+  // existing session for the account. Independent of passwords, so it also works for OAuth sign-in.
+  sessionVersion: integer("session_version").default(0),
   createdAt: timestamp("created_at").default(sql`CURRENT_TIMESTAMP`),
 });
 
@@ -132,6 +135,16 @@ export const reviews = pgTable("reviews", {
   isFeatured: boolean("is_featured").default(sql`FALSE`),
   createdAt: timestamp("created_at").default(sql`CURRENT_TIMESTAMP`),
 });
+
+// One row per person who marked a review helpful, so each account counts once.
+export const reviewVotes = pgTable("review_votes", {
+  id: serial("id").primaryKey(),
+  reviewId: integer("review_id").references(() => reviews.id).notNull(),
+  userId: integer("user_id").references(() => users.id).notNull(),
+  createdAt: timestamp("created_at").default(sql`CURRENT_TIMESTAMP`),
+}, (table) => [
+  uniqueIndex("review_votes_user_review_unique").on(table.userId, table.reviewId),
+]);
 
 // Petitions
 export const petitions = pgTable("petitions", {
@@ -372,7 +385,7 @@ export const resetPasswordSchema = z.object({
 export type User = typeof users.$inferSelect;
 export type InsertUser = z.infer<typeof insertUserSchema>;
 export type LoginInput = z.infer<typeof loginSchema>;
-export type SafeUser = Omit<User, 'passwordHash' | 'twoFactorSecret' | 'backupCodes' | 'failedLoginAttempts' | 'lockedUntil'>;
+export type SafeUser = Omit<User, 'passwordHash' | 'twoFactorSecret' | 'backupCodes' | 'failedLoginAttempts' | 'lockedUntil' | 'sessionVersion'>;
 
 export type SavedPlace = typeof savedPlaces.$inferSelect;
 export type InsertSavedPlace = z.infer<typeof insertSavedPlaceSchema>;
@@ -449,7 +462,11 @@ export const ACCESSIBILITY_STATUS = {
   ACCESSIBLE: 'Accessible',
   PARTIALLY_ACCESSIBLE: 'Partially Accessible',
   NOT_ACCESSIBLE: 'Not Accessible',
+  // Most listings start here: nobody has reported on the place yet. Unknown is not a barrier.
+  UNKNOWN: 'Unknown',
 } as const;
+
+export const VERIFICATION_STATUSES = ['community', 'venue', 'needs-review', 'verified'] as const;
 
 // Feature types
 export const ACCESSIBILITY_FEATURE_TYPES = {

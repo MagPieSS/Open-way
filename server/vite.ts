@@ -9,10 +9,16 @@ import { nanoid } from "nanoid";
 const viteLogger = createLogger();
 
 export async function setupVite(server: Server, app: Express) {
+  // Keep vite.config.ts's server settings (its fs.deny list) instead of replacing them, and only
+  // switch off Vite's Host-header check when the dev server is deliberately exposed with HOST
+  // (a hosted dev environment reached through a proxy hostname). On localhost the check blocks
+  // DNS-rebinding pages from reading files through /@fs/.
+  const exposed = Boolean(process.env.HOST) && !["127.0.0.1", "localhost", "::1"].includes(process.env.HOST!);
   const serverOptions = {
+    ...viteConfig.server,
     middlewareMode: true,
     hmr: { server, path: "/vite-hmr" },
-    allowedHosts: true as const,
+    ...(exposed ? { allowedHosts: true as const } : {}),
   };
 
   const vite = await createViteServer({

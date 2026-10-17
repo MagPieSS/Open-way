@@ -39,17 +39,21 @@ export const reviewRateLimiter = rateLimit({
   skip: skipInTests,
 });
 
+// Per-account limit on image uploads. Each upload can be 10MB and lands on local disk, so the
+// general 100-requests-a-minute limit would still let one account fill the disk quickly.
+export const uploadRateLimiter = rateLimit({
+  windowMs: 60 * 60 * 1000, // 1 hour
+  max: 30,
+  message: { message: "You've uploaded a lot of images in the last hour. Please try again later." },
+  standardHeaders: true,
+  legacyHeaders: false,
+  keyGenerator: (req) => (req.session?.userId ? `user:${req.session.userId}` : ipKeyGenerator(req.ip || "unknown")),
+  skip: skipInTests,
+});
+
 // Generate CSRF token for session
 export function generateCsrfToken(): string {
   return crypto.randomBytes(32).toString("hex");
-}
-
-// Middleware to ensure CSRF token exists in session
-export function ensureCsrfToken(req: Request, _res: Response, next: NextFunction) {
-  if (!req.session.csrfToken) {
-    req.session.csrfToken = generateCsrfToken();
-  }
-  next();
 }
 
 // CSRF validation middleware for state-changing requests

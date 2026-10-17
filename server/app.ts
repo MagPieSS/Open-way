@@ -13,7 +13,7 @@ import path from "path";
 import fsSync from "fs";
 import { registerRoutes } from "./routes";
 import { pool } from "./db";
-import { apiRateLimiter, ensureCsrfToken } from "./middleware";
+import { apiRateLimiter, generateCsrfToken } from "./middleware";
 
 // Extend express-session types to include our user data
 declare module "express-session" {
@@ -22,6 +22,8 @@ declare module "express-session" {
     email: string;
     pending2FAUserId?: number;
     csrfToken?: string;
+    // users.session_version at sign-in; see checkSessionUser() in routes.ts.
+    sessionVersion?: number;
   }
 }
 
@@ -62,6 +64,13 @@ export async function createApp(): Promise<{ app: Express; httpServer: Server }>
   if (sessionSecret && sessionSecret.length < 32) {
     console.error("FATAL: SESSION_SECRET must be at least 32 characters for security");
     process.exit(1);
+  }
+
+  if (isProduction && !process.env.APP_BASE_URL) {
+    console.warn(
+      "[security] APP_BASE_URL is not set. Password-reset and verification links will be built from " +
+      "the request's Host header, which can be forged. Set APP_BASE_URL to the site's public address."
+    );
   }
 
   // Use provided secret or secure development fallback
@@ -158,7 +167,9 @@ export async function createApp(): Promise<{ app: Express; httpServer: Server }>
     })(req, res, next);
   });
 
-  app.use(express.urlencoded({ extended: false }));
+  // No urlencoded body parser: every client write is JSON via apiRequest(). Parsing form posts
+  // let a cross-site <form> log a visitor into someone else's account (login CSRF), because
+  // cross-site JSON needs a CORS preflight that the CORS config rejects but a form post does not.
 
   // Serve static uploads
   app.use("/uploads", express.static(path.resolve(process.cwd(), "uploads"), { maxAge: "1d" }));
@@ -179,37 +190,24 @@ export async function createApp(): Promise<{ app: Express; httpServer: Server }>
     }
   }
 
-  // Apply CSRF token generation to all requests (after session middleware)
-  app.use(ensureCsrfToken);
-
-  // Endpoint to get CSRF token (needed by frontend)
+  // The token is created only when the client asks for one (apiRequest() does before any write).
+  // Creating it on every request stored a session for every anonymous page view and bot hit.
   app.get("/api/csrf-token", (req, res) => {
+    if (!req.session.csrfToken) {
+      req.session.csrfToken = generateCsrfToken();
+    }
     res.json({ token: req.session.csrfToken });
   });
 
-  // Request logging middleware
+  // Request logging: method, path, status and timing only. Response bodies used to be logged too,
+  // which wrote contact messages, emails and petition signatures into the hosting logs.
   app.use((req, res, next) => {
     const start = Date.now();
     const path = req.path;
-    let capturedJsonResponse: Record<string, any> | undefined = undefined;
-
-    const originalResJson = res.json;
-    res.json = function (bodyJson, ...args) {
-      capturedJsonResponse = bodyJson;
-      return originalResJson.apply(res, [bodyJson, ...args]);
-    };
 
     res.on("finish", () => {
-      const duration = Date.now() - start;
-      if (path.startsWith("/api")) {
-        let logLine = `${req.method} ${path} ${res.statusCode} in ${duration}ms`;
-        // Don't log response bodies for routes that carry PII (auth, admin, uploads)
-        const isSensitiveRoute = path.includes("/auth/") || path.includes("/admin/") || path.includes("/uploads");
-        if (capturedJsonResponse && !isSensitiveRoute) {
-          logLine += ` :: ${JSON.stringify(capturedJsonResponse)}`;
-        }
-
-        log(logLine);
+      if (path.startsWith("/api") && process.env.NODE_ENV !== "test") {
+        log(`${req.method} ${path} ${res.statusCode} in ${Date.now() - start}ms`);
       }
     });
 

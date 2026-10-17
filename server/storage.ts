@@ -3,7 +3,7 @@ import {
   places, reviews, signatures, categories, accessibilityFeatures,
   placeMedia, placeTips, petitions, petitionUpdates, events, resources,
   blogPosts, faqEntries, contactSubmissions, activityLog, partners,
-  users, savedPlaces, communityPosts, passwordResetTokens, reports, emailVerificationTokens,
+  users, savedPlaces, communityPosts, passwordResetTokens, reports, emailVerificationTokens, reviewVotes,
   type Place, type InsertPlace,
   type Review, type InsertReview,
   type Petition, type InsertPetition,
@@ -77,7 +77,8 @@ export interface IStorage {
   createReview(review: InsertReview): Promise<Review>;
   updateReview(id: number, userId: number, updates: { content?: string; rating?: number }): Promise<Review | undefined>;
   deleteReview(id: number, userId: number): Promise<boolean>;
-  incrementReviewHelpfulCount(id: number): Promise<Review | undefined>;
+  addHelpfulVote(reviewId: number, userId: number): Promise<{ added: boolean; helpfulCount: number }>;
+  refreshPlaceRating(placeId: number): Promise<void>;
 
   // Petitions
   getPetitions(): Promise<Petition[]>;
@@ -174,7 +175,7 @@ export interface IStorage {
   deleteExpiredTokens(): Promise<void>;
 
   // Admin User Management
-  getAllUsers(): Promise<Omit<User, 'passwordHash' | 'twoFactorSecret' | 'backupCodes'>[]>;
+  getAllUsers(): Promise<Omit<User, 'passwordHash' | 'twoFactorSecret' | 'backupCodes' | 'sessionVersion'>[]>;
   banUser(id: number, reason: string): Promise<void>;
   unbanUser(id: number): Promise<void>;
   getUserStats(userId: number): Promise<{ reviewCount: number; communityPostCount: number; mediaCount: number }>;
@@ -333,12 +334,7 @@ export class DatabaseStorage implements IStorage {
 
   async createReview(review: InsertReview): Promise<Review> {
     const [newReview] = await db.insert(reviews).values(review).returning();
-    if (review.placeId) {
-      await db.update(places).set({ 
-        reviewCount: sql`${places.reviewCount} + 1`,
-        updatedAt: new Date()
-      }).where(eq(places.id, review.placeId));
-    }
+    await this.refreshPlaceRating(review.placeId);
     return newReview;
   }
 
@@ -347,6 +343,7 @@ export class DatabaseStorage implements IStorage {
       .set(updates)
       .where(and(eq(reviews.id, id), eq(reviews.userId, userId)))
       .returning();
+    if (updated) await this.refreshPlaceRating(updated.placeId);
     return updated;
   }
 
@@ -354,24 +351,43 @@ export class DatabaseStorage implements IStorage {
     const review = await this.getReview(id);
     if (!review || review.userId !== userId) return false;
 
+    await db.delete(reviewVotes).where(eq(reviewVotes.reviewId, id));
     const result = await db.delete(reviews)
       .where(and(eq(reviews.id, id), eq(reviews.userId, userId)))
       .returning();
 
-    if (result.length > 0 && review.placeId) {
-      await db.update(places).set({
-        reviewCount: sql`CASE WHEN ${places.reviewCount} > 0 THEN ${places.reviewCount} - 1 ELSE 0 END`,
-        updatedAt: new Date()
-      }).where(eq(places.id, review.placeId));
-    }
+    if (result.length > 0) await this.refreshPlaceRating(review.placeId);
     return result.length > 0;
   }
 
-  async incrementReviewHelpfulCount(id: number): Promise<Review | undefined> {
-    const [updated] = await db.update(reviews).set({ 
-      helpfulCount: sql`COALESCE(${reviews.helpfulCount}, 0) + 1` 
-    }).where(eq(reviews.id, id)).returning();
-    return updated;
+  async addHelpfulVote(reviewId: number, userId: number): Promise<{ added: boolean; helpfulCount: number }> {
+    const inserted = await db.insert(reviewVotes)
+      .values({ reviewId, userId })
+      .onConflictDoNothing()
+      .returning();
+    if (inserted.length > 0) {
+      await db.update(reviews).set({
+        helpfulCount: sql`COALESCE(${reviews.helpfulCount}, 0) + 1`
+      }).where(eq(reviews.id, reviewId));
+    }
+    const review = await this.getReview(reviewId);
+    return { added: inserted.length > 0, helpfulCount: review?.helpfulCount ?? 0 };
+  }
+
+  // Recomputes the place's rating and review count from its reviews. Incrementing a counter
+  // drifted (edits and deletes never adjusted averageRating at all), so derive both every time.
+  async refreshPlaceRating(placeId: number): Promise<void> {
+    const [row] = await db.select({
+      average: sql<string | number | null>`avg(${reviews.rating})`,
+      count: sql<string | number>`count(*)`,
+    }).from(reviews).where(eq(reviews.placeId, placeId));
+
+    await db.update(places).set({
+      // Postgres returns avg() as a numeric string; SQLite returns a number.
+      averageRating: row.average === null ? null : Number(row.average),
+      reviewCount: Number(row.count),
+      updatedAt: new Date(),
+    }).where(eq(places.id, placeId));
   }
 
   // Petitions
@@ -601,8 +617,12 @@ export class DatabaseStorage implements IStorage {
     return updated;
   }
 
+  // Also bumps sessionVersion, which ends every existing session for the account.
   async updateUserPassword(id: number, passwordHash: string): Promise<void> {
-    await db.update(users).set({ passwordHash }).where(eq(users.id, id));
+    await db.update(users).set({
+      passwordHash,
+      sessionVersion: sql`COALESCE(${users.sessionVersion}, 0) + 1`,
+    }).where(eq(users.id, id));
   }
 
   async updateUser2FA(id: number, enabled: boolean, secret?: string, backupCodes?: string[]): Promise<void> {
@@ -712,7 +732,7 @@ export class DatabaseStorage implements IStorage {
   }
 
   // Admin User Management
-  async getAllUsers(): Promise<Omit<User, 'passwordHash' | 'twoFactorSecret' | 'backupCodes'>[]> {
+  async getAllUsers(): Promise<Omit<User, 'passwordHash' | 'twoFactorSecret' | 'backupCodes' | 'sessionVersion'>[]> {
     const result = await db.select({
       id: users.id,
       email: users.email,
@@ -759,14 +779,10 @@ export class DatabaseStorage implements IStorage {
     const review = await this.getReview(id);
     if (!review) return false;
 
+    await db.delete(reviewVotes).where(eq(reviewVotes.reviewId, id));
     const result = await db.delete(reviews).where(eq(reviews.id, id)).returning();
 
-    if (result.length > 0 && review.placeId) {
-      await db.update(places).set({
-        reviewCount: sql`CASE WHEN ${places.reviewCount} > 0 THEN ${places.reviewCount} - 1 ELSE 0 END`,
-        updatedAt: new Date()
-      }).where(eq(places.id, review.placeId));
-    }
+    if (result.length > 0) await this.refreshPlaceRating(review.placeId);
     return result.length > 0;
   }
 
@@ -784,6 +800,9 @@ export class DatabaseStorage implements IStorage {
     await db.delete(accessibilityFeatures).where(eq(accessibilityFeatures.placeId, id));
     await db.delete(placeMedia).where(eq(placeMedia.placeId, id));
     await db.delete(placeTips).where(eq(placeTips.placeId, id));
+    if (reviewIds.length > 0) {
+      await db.delete(reviewVotes).where(inArray(reviewVotes.reviewId, reviewIds));
+    }
     await db.delete(reviews).where(eq(reviews.placeId, id));
     await db.delete(savedPlaces).where(eq(savedPlaces.placeId, id));
     if (mediaIds.length > 0) {

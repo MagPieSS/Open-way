@@ -260,7 +260,8 @@ export default function Blog() {
               Sample stories are shown because no published community posts are available. These examples are not independent reporting.
             </p>
           )}
-          {user && (
+          {/* Blog posts publish as Open Way content, so only admins can write them (server enforces this too). */}
+          {user?.isAdmin && (
             <Dialog open={showCreateDialog} onOpenChange={setShowCreateDialog}>
               <DialogTrigger asChild>
                 <Button data-testid="button-submit-post">

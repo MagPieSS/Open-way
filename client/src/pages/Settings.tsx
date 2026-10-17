@@ -32,6 +32,8 @@ export default function Settings() {
   const [copiedIndex, setCopiedIndex] = useState<number | null>(null);
   const [showDisableConfirm, setShowDisableConfirm] = useState(false);
   const [disablePassword, setDisablePassword] = useState('');
+  const [showRegenerateConfirm, setShowRegenerateConfirm] = useState(false);
+  const [regeneratePassword, setRegeneratePassword] = useState('');
 
   const handleSetup2FA = async () => {
     setIsLoading(true);
@@ -87,14 +89,20 @@ export default function Settings() {
   };
 
   const handleRegenerateBackupCodes = async () => {
+    if (!regeneratePassword) {
+      toast({ variant: "destructive", title: "Error", description: "Enter your password to confirm" });
+      return;
+    }
     setIsLoading(true);
     try {
-      const result = await regenerateBackupCodes();
+      const result = await regenerateBackupCodes(regeneratePassword);
       setBackupCodes(result.backupCodes);
       setTwoFactorStep('backup');
-      toast({ title: "Success", description: "Backup codes regenerated" });
+      setShowRegenerateConfirm(false);
+      setRegeneratePassword('');
+      toast({ title: "Success", description: "New backup codes created. Your old codes no longer work." });
     } catch (error) {
-      toast({ variant: "destructive", title: "Error", description: "Failed to regenerate backup codes" });
+      toast({ variant: "destructive", title: "Error", description: error instanceof Error ? error.message : "Failed to create new backup codes" });
     } finally {
       setIsLoading(false);
     }
@@ -471,15 +479,16 @@ export default function Settings() {
                     <span className="font-medium">2FA is enabled</span>
                   </div>
                   <div className="flex flex-wrap gap-2">
-                    <Button 
-                      variant="outline" 
-                      onClick={handleRegenerateBackupCodes}
-                      disabled={isLoading}
-                      data-testid="button-regenerate-backup"
-                    >
-                      {isLoading ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : null}
-                      View Backup Codes
-                    </Button>
+                    {!showRegenerateConfirm && (
+                      <Button
+                        variant="outline"
+                        onClick={() => setShowRegenerateConfirm(true)}
+                        disabled={isLoading}
+                        data-testid="button-regenerate-backup"
+                      >
+                        Create new backup codes
+                      </Button>
+                    )}
                     {!showDisableConfirm && (
                       <Button
                         variant="destructive"
@@ -491,6 +500,46 @@ export default function Settings() {
                       </Button>
                     )}
                   </div>
+
+                  {showRegenerateConfirm && (
+                    <div className="bg-secondary/40 border border-border rounded-xl p-4 space-y-3">
+                      <label htmlFor="regenerate-backup-password" className="text-sm font-medium block">
+                        Confirm your password to create new backup codes
+                      </label>
+                      <p id="regenerate-backup-help" className="text-sm text-muted-foreground">
+                        Your current backup codes will stop working.
+                      </p>
+                      <input
+                        id="regenerate-backup-password"
+                        type="password"
+                        value={regeneratePassword}
+                        onChange={(e) => setRegeneratePassword(e.target.value)}
+                        autoComplete="current-password"
+                        aria-describedby="regenerate-backup-help"
+                        className="w-full px-3 py-2 rounded-lg border border-input bg-background text-sm"
+                        data-testid="input-regenerate-backup-password"
+                      />
+                      <div className="flex gap-2">
+                        <Button
+                          onClick={handleRegenerateBackupCodes}
+                          disabled={isLoading}
+                          data-testid="button-confirm-regenerate-backup"
+                        >
+                          {isLoading ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : null}
+                          Create codes
+                        </Button>
+                        <Button
+                          variant="outline"
+                          onClick={() => {
+                            setShowRegenerateConfirm(false);
+                            setRegeneratePassword('');
+                          }}
+                        >
+                          Cancel
+                        </Button>
+                      </div>
+                    </div>
+                  )}
 
                   {showDisableConfirm && (
                     <div className="bg-destructive/5 border border-destructive/20 rounded-xl p-4 space-y-3">

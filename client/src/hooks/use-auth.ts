@@ -1,5 +1,5 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { apiRequest } from "@/lib/queryClient";
+import { apiRequest, clearCsrfToken } from "@/lib/queryClient";
 import type { SafeUser } from "@shared/schema";
 
 interface AuthResponse {
@@ -47,6 +47,8 @@ export function useAuth() {
       return res.json();
     },
     onSuccess: () => {
+      // The server starts a new session at sign-in, so the cached CSRF token is stale.
+      clearCsrfToken();
       queryClient.invalidateQueries({ queryKey: ["/api/auth/me"] });
     },
   });
@@ -58,6 +60,7 @@ export function useAuth() {
     },
     onSuccess: (data) => {
       if (!data.requires2FA) {
+        clearCsrfToken();
         queryClient.invalidateQueries({ queryKey: ["/api/auth/me"] });
       }
     },
@@ -69,6 +72,7 @@ export function useAuth() {
       return res.json();
     },
     onSuccess: () => {
+      clearCsrfToken();
       queryClient.invalidateQueries({ queryKey: ["/api/auth/me"] });
     },
   });
@@ -78,6 +82,7 @@ export function useAuth() {
       await apiRequest("POST", "/api/auth/logout");
     },
     onSuccess: () => {
+      clearCsrfToken();
       queryClient.invalidateQueries({ queryKey: ["/api/auth/me"] });
       queryClient.invalidateQueries();
     },
@@ -111,8 +116,9 @@ export function useAuth() {
   });
 
   const regenerateBackupCodesMutation = useMutation({
-    mutationFn: async (): Promise<BackupCodesResponse> => {
-      const res = await apiRequest("POST", "/api/auth/2fa/regenerate-backup");
+    // The password is required so a hijacked session can't mint new backup codes.
+    mutationFn: async (password: string): Promise<BackupCodesResponse> => {
+      const res = await apiRequest("POST", "/api/auth/2fa/regenerate-backup", { password });
       return res.json();
     },
   });

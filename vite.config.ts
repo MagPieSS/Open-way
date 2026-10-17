@@ -21,7 +21,9 @@ export default defineConfig({
   server: {
     fs: {
       strict: true,
-      deny: ["**/.*"],
+      // Vite's defaults plus dotfiles and the local SQLite database, which sits in the workspace
+      // root and holds password hashes and contact messages.
+      deny: [".env", ".env.*", "*.{crt,pem}", "**/.git/**", "**/.*", "*.db", "*.db-*", "uploads/**"],
     },
   },
 });

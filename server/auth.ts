@@ -118,7 +118,7 @@ export function isWeakPassword(password: string): boolean {
 
 // Create a safe user object (without sensitive fields)
 export function toSafeUser(user: User): SafeUser {
-  const { passwordHash, twoFactorSecret, backupCodes, failedLoginAttempts, lockedUntil, ...safeUser } = user;
+  const { passwordHash, twoFactorSecret, backupCodes, failedLoginAttempts, lockedUntil, sessionVersion, ...safeUser } = user;
   return safeUser;
 }
 
@@ -203,10 +203,6 @@ export async function loginUser(
     return { success: false, error: "Invalid email or password" };
   }
 
-  if (!user.isActive) {
-    return { success: false, error: "This account has been deactivated" };
-  }
-
   if (storage.isAccountLocked(user)) {
     return { success: false, error: "Too many failed login attempts. Please try again in 15 minutes." };
   }
@@ -218,6 +214,12 @@ export async function loginUser(
   }
 
   await storage.resetFailedLogins(user.id);
+
+  // Checked only after the password, so these messages don't reveal account status to someone
+  // who doesn't know the password.
+  if (user.isBanned || !user.isActive) {
+    return { success: false, error: "This account has been suspended." };
+  }
 
   // Check if 2FA is enabled
   if (user.twoFactorEnabled && user.twoFactorSecret) {

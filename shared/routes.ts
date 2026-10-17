@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import { 
-  insertPlaceSchema, insertReviewSchema, insertSignatureSchema,
+  insertSignatureSchema,
   insertCategorySchema, insertAccessibilityFeatureSchema, insertPlaceMediaSchema,
   insertPlaceTipSchema, insertPetitionSchema, insertPetitionUpdateSchema, insertEventSchema,
   insertResourceSchema, insertBlogPostSchema, insertFaqEntrySchema,
@@ -8,8 +8,34 @@ import {
   places, reviews, signatures, categories, accessibilityFeatures,
   placeMedia, placeTips, petitions, petitionUpdates, events, resources,
   blogPosts, faqEntries, contactSubmissions, activityLog, partners,
-  ACCESSIBILITY_FEATURE_TYPES
+  ACCESSIBILITY_FEATURE_TYPES, ACCESSIBILITY_STATUS, PLACE_CATEGORIES, VERIFICATION_STATUSES
 } from './schema';
+
+// Uploaded files are saved as /uploads/<millis>-<24 hex>.<ext> by server/routes.ts. Image fields
+// only accept that shape, so contributions can't point at off-site images (tracking pixels) or
+// at someone else's guessable path.
+export const UPLOAD_PATH_PATTERN = /^\/uploads\/\d+-[a-f0-9]{24}\.(jpg|png|webp|gif)$/;
+
+const PLACE_CATEGORY_SLUGS = PLACE_CATEGORIES.map((c) => c.slug) as [string, ...string[]];
+const ACCESSIBILITY_STATUS_VALUES = Object.values(ACCESSIBILITY_STATUS) as [string, ...string[]];
+
+const optionalText = (max: number) => z.string().trim().max(max).nullish();
+
+// Accepts only http(s) links; an empty string means "no link". Stops javascript: and data: URLs
+// from being stored and later rendered as an href.
+export const optionalHttpUrl = z
+  .union([
+    z.literal(""),
+    z.string().trim().url("Enter a full web address starting with https://")
+      .refine((value) => /^https?:\/\//i.test(value), "Links must start with http:// or https://"),
+  ])
+  .nullish()
+  .transform((value) => value || null);
+
+const optionalUploadPath = z
+  .union([z.literal(""), z.string().regex(UPLOAD_PATH_PATTERN, "Images must be uploaded through Open Way")])
+  .nullish()
+  .transform((value) => value || null);
 
 const accessibilityFeatureContributionSchema = z.object({
   featureType: z.string().refine(
@@ -19,6 +45,78 @@ const accessibilityFeatureContributionSchema = z.object({
   available: z.boolean().default(true),
   description: z.string().max(500).optional(),
 });
+
+// What a community member may send when adding a place. Moderator-only columns (isFeatured,
+// averageRating, verificationStatus, coordinates…) are not listed, so zod strips them.
+export const placeContributionSchema = z.object({
+  name: z.string().trim().min(1, "Name is required").max(200),
+  category: z.preprocess(
+    (value) => (typeof value === "string" ? value.trim().toLowerCase() : value),
+    z.enum(PLACE_CATEGORY_SLUGS, { errorMap: () => ({ message: "Choose a category from the list" }) }),
+  ),
+  accessibilityStatus: z.enum(ACCESSIBILITY_STATUS_VALUES, {
+    errorMap: () => ({ message: "Choose an accessibility status from the list" }),
+  }),
+  description: z.string().trim().min(1, "Description is required").max(2000),
+  address: optionalText(500),
+  phone: optionalText(50),
+  website: optionalHttpUrl,
+  hours: optionalText(200),
+  imageUrl: optionalUploadPath,
+  accessibilitySource: optionalText(200),
+  accessibilityFeatures: z.array(accessibilityFeatureContributionSchema).max(20).optional(),
+});
+
+// What a community member may send when writing a review. The author name comes from the
+// account, and featuring is an admin decision.
+export const reviewContributionSchema = z.object({
+  placeId: z.number().int().positive(),
+  content: z.string().trim().min(1, "Review text is required").max(2000),
+  rating: z.number().int().min(1, "Rating must be 1 to 5").max(5, "Rating must be 1 to 5").nullish(),
+  imageUrl: optionalUploadPath,
+});
+
+export const reviewUpdateSchema = z.object({
+  content: z.string().trim().min(1).max(2000).optional(),
+  rating: z.number().int().min(1, "Rating must be 1 to 5").max(5, "Rating must be 1 to 5").optional(),
+}).refine((value) => value.content !== undefined || value.rating !== undefined, "Content or rating required");
+
+// Community-submitted events go to the moderation queue; featuring and status are admin decisions.
+export const eventContributionSchema = insertEventSchema
+  .omit({ isFeatured: true, status: true, createdBy: true, date: true, endDate: true, registrationUrl: true, imageUrl: true })
+  .extend({
+    title: z.string().trim().min(1, "Title is required").max(200),
+    description: z.string().trim().min(1, "Description is required").max(5000),
+    date: z.coerce.date(),
+    endDate: z.coerce.date().nullish(),
+    registrationUrl: optionalHttpUrl,
+    imageUrl: optionalUploadPath,
+  });
+
+export const placeMediaContributionSchema = z.object({
+  placeId: z.coerce.number().int().positive(),
+  objectPath: z.string().regex(UPLOAD_PATH_PATTERN, "Images must be uploaded through Open Way"),
+  caption: optionalText(200),
+});
+
+// Fields an admin may change on a place. markChecked sets lastCheckedAt to now.
+export const adminPlaceUpdateSchema = z.object({
+  name: z.string().trim().min(1).max(200),
+  description: z.string().trim().min(1).max(5000),
+  accessibilityStatus: z.enum(ACCESSIBILITY_STATUS_VALUES),
+  address: optionalText(500),
+  phone: optionalText(50),
+  website: optionalHttpUrl,
+  hours: optionalText(200),
+  category: z.enum(PLACE_CATEGORY_SLUGS),
+  imageUrl: z.string().trim().regex(/^\/(uploads|images)\/[\w./-]+$/, "Use an uploaded or bundled image path").nullish(),
+  isFeatured: z.boolean(),
+  latitude: z.number().min(-90).max(90),
+  longitude: z.number().min(-180).max(180),
+  verificationStatus: z.enum(VERIFICATION_STATUSES),
+  accessibilitySource: optionalText(500),
+  markChecked: z.boolean(),
+}).partial();
 
 export const errorSchemas = {
   validation: z.object({
@@ -95,9 +193,7 @@ export const api = {
     create: {
       method: 'POST' as const,
       path: '/api/places',
-      input: insertPlaceSchema.extend({
-        accessibilityFeatures: z.array(accessibilityFeatureContributionSchema).max(20).optional(),
-      }),
+      input: placeContributionSchema,
       responses: {
         201: z.custom<typeof places.$inferSelect>(),
         400: errorSchemas.validation,
@@ -181,7 +277,7 @@ export const api = {
     create: {
       method: 'POST' as const,
       path: '/api/reviews',
-      input: insertReviewSchema,
+      input: reviewContributionSchema,
       responses: {
         201: z.custom<typeof reviews.$inferSelect>(),
         400: errorSchemas.validation,
@@ -290,7 +386,7 @@ export const api = {
     create: {
       method: 'POST' as const,
       path: '/api/events',
-      input: insertEventSchema,
+      input: eventContributionSchema,
       responses: {
         201: z.custom<typeof events.$inferSelect>(),
         400: errorSchemas.validation,
@@ -391,13 +487,13 @@ export const api = {
       path: '/api/contact',
       input: insertContactSubmissionSchema,
       responses: {
-        201: z.custom<typeof contactSubmissions.$inferSelect>(),
+        201: z.object({ success: z.literal(true) }),
         400: errorSchemas.validation,
       },
     },
     list: {
       method: 'GET' as const,
-      path: '/api/contact',
+      path: '/api/admin/contact',
       responses: {
         200: z.array(z.custom<typeof contactSubmissions.$inferSelect>()),
       },
@@ -502,12 +598,13 @@ export function buildUrl(path: string, params?: Record<string, string | number>)
   return url;
 }
 
-export type PlaceInput = z.infer<typeof api.places.create.input>;
-export type ReviewInput = z.infer<typeof api.reviews.create.input>;
+// z.input: what callers send (before defaults and transforms run).
+export type PlaceInput = z.input<typeof api.places.create.input>;
+export type ReviewInput = z.input<typeof api.reviews.create.input>;
 export type SignatureInput = z.infer<typeof api.petitions.sign.input>;
 export type PetitionInput = z.infer<typeof api.petitions.create.input>;
 export type CategoryInput = z.infer<typeof api.categories.create.input>;
-export type EventInput = z.infer<typeof api.events.create.input>;
+export type EventInput = z.input<typeof api.events.create.input>;
 export type ResourceInput = z.infer<typeof api.resources.create.input>;
 export type BlogPostInput = z.infer<typeof api.blogPosts.create.input>;
 export type FaqInput = z.infer<typeof api.faq.create.input>;

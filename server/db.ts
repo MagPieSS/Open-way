@@ -10,6 +10,29 @@ config({ path: ".env.local" });
 
 export const useSqliteFallback = !process.env.DATABASE_URL || !process.env.DATABASE_URL.startsWith("postgres");
 
+// The schema is written with drizzle-orm/pg-core, so Drizzle passes JS booleans straight through
+// as bind parameters. Postgres accepts them; better-sqlite3 throws "SQLite3 can only bind numbers,
+// strings, bigints, buffers, and null". That crashed every write that set a boolean column under
+// the fallback (banning a user, verifying an email, enabling 2FA, saving a client-sent isFeatured).
+// Converting at the statement level fixes every query at once instead of at each call site.
+function bindBooleansAsIntegers(sqlite: Database.Database): void {
+  const toSqliteParam = (value: unknown) => (typeof value === "boolean" ? (value ? 1 : 0) : value);
+  const originalPrepare = sqlite.prepare.bind(sqlite);
+
+  sqlite.prepare = ((source: string) => {
+    const statement = originalPrepare(source);
+    const run = statement.run.bind(statement);
+    const get = statement.get.bind(statement);
+    const all = statement.all.bind(statement);
+    const iterate = statement.iterate.bind(statement);
+    statement.run = (...params: unknown[]) => run(...params.map(toSqliteParam));
+    statement.get = (...params: unknown[]) => get(...params.map(toSqliteParam));
+    statement.all = (...params: unknown[]) => all(...params.map(toSqliteParam));
+    statement.iterate = (...params: unknown[]) => iterate(...params.map(toSqliteParam));
+    return statement;
+  }) as typeof sqlite.prepare;
+}
+
 let sqliteConnection: Database.Database | undefined;
 
 if (useSqliteFallback) {
@@ -19,6 +42,7 @@ if (useSqliteFallback) {
   const sqlite = new Database(sqlitePath);
   sqlite.pragma("journal_mode = WAL");
   sqlite.pragma("foreign_keys = ON");
+  bindBooleansAsIntegers(sqlite);
 
   const tableDefinitions = [
     `CREATE TABLE IF NOT EXISTS users (
@@ -37,6 +61,7 @@ if (useSqliteFallback) {
       email_verified BOOLEAN DEFAULT false,
       failed_login_attempts INTEGER DEFAULT 0,
       locked_until TIMESTAMP,
+      session_version INTEGER DEFAULT 0,
       created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
     )`,
     `CREATE TABLE IF NOT EXISTS email_verification_tokens (
@@ -270,6 +295,15 @@ if (useSqliteFallback) {
       FOREIGN KEY (reporter_id) REFERENCES users(id),
       FOREIGN KEY (resolved_by) REFERENCES users(id)
     )`,
+    `CREATE TABLE IF NOT EXISTS review_votes (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      review_id INTEGER NOT NULL,
+      user_id INTEGER NOT NULL,
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY (review_id) REFERENCES reviews(id),
+      FOREIGN KEY (user_id) REFERENCES users(id),
+      UNIQUE(user_id, review_id)
+    )`,
     `CREATE TABLE IF NOT EXISTS saved_places (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       user_id INTEGER NOT NULL,
@@ -296,6 +330,7 @@ if (useSqliteFallback) {
     ["email_verified", "BOOLEAN DEFAULT false"],
     ["failed_login_attempts", "INTEGER DEFAULT 0"],
     ["locked_until", "TIMESTAMP"],
+    ["session_version", "INTEGER DEFAULT 0"],
   ];
   for (const [column, definition] of userColumnMigrations) {
     if (!columnExists("users", column)) {
