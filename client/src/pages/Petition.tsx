@@ -1047,11 +1047,18 @@ export function PetitionDetail() {
                   <ul className="text-sm text-muted-foreground space-y-2">
                     <li className="flex items-center gap-2">
                       <Sparkles className="w-4 h-4 text-primary flex-shrink-0" />
-                      1 in 4 Americans has a disability
-                    </li>
-                    <li className="flex items-center gap-2">
-                      <Sparkles className="w-4 h-4 text-primary flex-shrink-0" />
-                      Only 40% of public spaces are fully accessible
+                      <span>
+                        More than 1 in 4 U.S. adults have some type of disability (
+                        <a
+                          href="https://www.cdc.gov/disability-and-health/articles-documents/disability-impacts-all-of-us-infographic.html"
+                          className="underline"
+                          target="_blank"
+                          rel="noopener noreferrer"
+                        >
+                          CDC<span className="sr-only"> (opens in a new tab)</span>
+                        </a>
+                        )
+                      </span>
                     </li>
                     <li className="flex items-center gap-2">
                       <Sparkles className="w-4 h-4 text-primary flex-shrink-0" />

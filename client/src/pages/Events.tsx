@@ -56,76 +56,12 @@ const CATEGORY_ICONS: Record<string, typeof Users> = {
 
 const CATEGORIES = ["All", "Workshop", "Community", "Advocacy", "Healthcare", "Social"];
 
+// One shared empty list so memoized filters don't recompute on every render.
+const NO_EVENTS: Event[] = [];
+
 const SORT_OPTIONS = [
   { label: "Soonest First", value: "soonest" },
   { label: "Latest First", value: "latest" },
-];
-
-const fallbackEvents: Event[] = [
-  {
-    id: 1,
-    title: "Accessible Transit & City Access Workshop",
-    description: "A practical workshop for riders, caregivers, and community advocates covering accessible SEPTA routes, trip planning, and equitable transit access.",
-    date: new Date("2026-10-12T18:00:00-04:00"),
-    endDate: new Date("2026-10-12T20:00:00-04:00"),
-    location: "Philadelphia Public Library, Parkway Central",
-    address: "1901 Vine St, Philadelphia, PA 19103",
-    category: "Workshop",
-    imageUrl: "https://images.unsplash.com/photo-1522202176988-66273c2fd55f?auto=format&fit=crop&w=1200&q=80",
-    registrationUrl: null,
-    isFeatured: true,
-    status: "active",
-    createdBy: null,
-    createdAt: new Date("2024-01-01T00:00:00Z"),
-  },
-  {
-    id: 2,
-    title: "Inclusive Community Walk + Story Circle",
-    description: "Join neighbors for a slow, accessible neighborhood walk and discussion about everyday access barriers in public spaces.",
-    date: new Date("2026-10-20T10:00:00-04:00"),
-    endDate: new Date("2026-10-20T12:00:00-04:00"),
-    location: "Penn's Landing",
-    address: "101 S Christopher Columbus Blvd, Philadelphia, PA 19106",
-    category: "Community",
-    imageUrl: "https://images.unsplash.com/photo-1517457373958-b7bdd4587205?auto=format&fit=crop&w=1200&q=80",
-    registrationUrl: null,
-    isFeatured: false,
-    status: "active",
-    createdBy: null,
-    createdAt: new Date("2024-01-02T00:00:00Z"),
-  },
-  {
-    id: 3,
-    title: "Disability Rights Advocacy Night",
-    description: "A community forum on local policy, ADA enforcement, and how residents can push for more accessible streets and public spaces.",
-    date: new Date("2026-11-04T18:30:00-05:00"),
-    endDate: new Date("2026-11-04T20:30:00-05:00"),
-    location: "The Community Room at The Bourse",
-    address: "111 S 3rd St, Philadelphia, PA 19106",
-    category: "Advocacy",
-    imageUrl: "https://images.unsplash.com/photo-1552664730-d307ca884978?auto=format&fit=crop&w=1200&q=80",
-    registrationUrl: null,
-    isFeatured: false,
-    status: "active",
-    createdBy: null,
-    createdAt: new Date("2024-01-03T00:00:00Z"),
-  },
-  {
-    id: 4,
-    title: "Accessible Fitness & Mobility Meetup",
-    description: "An inclusive fitness meetup focused on mobility, joint-friendly exercise, and adaptive equipment in public recreation settings.",
-    date: new Date("2026-11-15T09:00:00-05:00"),
-    endDate: new Date("2026-11-15T11:00:00-05:00"),
-    location: "FDR Park Recreation Center",
-    address: "1501 S Broad St, Philadelphia, PA 19146",
-    category: "Healthcare",
-    imageUrl: "https://images.unsplash.com/photo-1517836357463-d25dfeac3438?auto=format&fit=crop&w=1200&q=80",
-    registrationUrl: null,
-    isFeatured: false,
-    status: "active",
-    createdBy: null,
-    createdAt: new Date("2024-01-04T00:00:00Z"),
-  },
 ];
 
 export default function Events() {
@@ -162,8 +98,9 @@ export default function Events() {
     queryKey: ["/api/events"],
   });
 
-  const eventsToUse = events && events.length > 0 ? events : fallbackEvents;
-  const usingSampleEvents = !isLoading && !error && (!events || events.length === 0);
+  // No placeholder events: made-up events at real venues and dates could send someone to a
+  // place for something that isn't happening.
+  const eventsToUse = events ?? NO_EVENTS;
 
   const newEventSchema = z.object({
     title: z.string().trim().min(3, "Title must be at least 3 characters").max(200, "Title is too long"),
@@ -368,12 +305,7 @@ export default function Events() {
           <p className="text-muted-foreground text-lg max-w-2xl mx-auto mb-6">
             Join workshops, community gatherings, and advocacy events supporting accessibility in Philadelphia
           </p>
-          {usingSampleEvents && (
-            <p className="mx-auto mb-6 max-w-2xl rounded-md border border-amber-500/40 bg-amber-500/10 px-4 py-3 text-sm text-foreground" role="status" data-testid="sample-events-notice">
-              Demo events are shown because no published events are available. Dates and details are examples only; registration is not available.
-            </p>
-          )}
-          {user && (
+{user && (
             <Dialog open={showCreateDialog} onOpenChange={setShowCreateDialog}>
               <DialogTrigger asChild>
                 <Button data-testid="button-submit-event">
@@ -653,7 +585,7 @@ export default function Events() {
                       ? "Try selecting a different category"
                       : showPast
                       ? "No events to display"
-                      : "Check back soon for upcoming events"}
+                      : "No events have been published yet. Know of an accessible event in Philadelphia? Submit it for review."}
                   </p>
                 </div>
               ) : (

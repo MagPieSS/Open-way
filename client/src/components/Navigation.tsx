@@ -49,7 +49,7 @@ export function Navigation() {
       label: "Help",
       items: [
         { href: "/resources", label: "Resources", icon: BookOpen },
-        { href: "/benchmarks", label: "Research", icon: Compass },
+        { href: "/benchmarks", label: "Roadmap", icon: Compass },
         { href: "/faq", label: "FAQ", icon: HelpCircle },
         { href: "/contact", label: "Contact", icon: Mail },
         { href: "/about", label: "About", icon: Info },

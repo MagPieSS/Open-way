@@ -154,7 +154,7 @@ export default function Home() {
       {/* Trust Bar */}
       <section className="bg-secondary py-6 border-b border-border">
         <div className="max-w-7xl mx-auto px-4 flex flex-wrap items-center justify-center gap-8 text-muted-foreground">
-          <span className="text-sm font-medium">Featuring locations from:</span>
+          <span className="text-sm font-medium">Listings include places like:</span>
           <div className="flex items-center gap-2">
             <Train className="w-5 h-5" />
             <span className="font-semibold">SEPTA</span>
@@ -167,6 +167,7 @@ export default function Home() {
             <Building2 className="w-5 h-5" />
             <span className="font-semibold">Free Library of Philadelphia</span>
           </div>
+          <span className="w-full text-center text-xs">Open Way is independent and not affiliated with these organizations.</span>
         </div>
       </section>
 
@@ -231,7 +232,7 @@ export default function Home() {
             <FeatureCard 
               icon={Users}
               title="Community Voices"
-              description="Read honest reviews from people with disabilities about what places are really like."
+              description="Read what visitors report about getting in and around a place, and add what you find."
               color="text-accent"
               link="/community"
             />
@@ -381,7 +382,7 @@ export default function Home() {
       <section className="py-16 bg-gradient-to-r from-primary to-accent text-white">
         <div className="max-w-4xl mx-auto px-4 text-center">
           <h2 className="font-display font-bold text-3xl md:text-4xl mb-4">Ready to Take Action?</h2>
-          <p className="text-white/90 mb-8 text-lg">Join thousands of advocates working toward a more accessible Philadelphia.</p>
+          <p className="text-white/90 mb-8 text-lg">Help build a more accessible Philadelphia, one report at a time.</p>
           <div className="flex flex-col sm:flex-row gap-4 justify-center">
             <Link href="/submit" className="px-8 py-4 rounded-full bg-white text-primary font-bold text-lg shadow-lg hover:shadow-xl transition-all" data-testid="button-cta-share-review">
               Share Your Review

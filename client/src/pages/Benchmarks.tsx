@@ -24,7 +24,7 @@ const goodPatterns = [
   {
     title: "Quick, task-first search",
     description:
-      "Wheelmap and accessibleGO make it obvious that the user is trying to answer a practical question: 'Can I actually get there and use this place?' Open Way already has robust search and filters, so the next layer is making it easier to search by specific access needs.",
+      "Wheelmap and accessibleGO make it obvious that the user is trying to answer a practical question: 'Can I actually get there and use this place?' The next step for Open Way is making it easier to search by specific access needs.",
     icon: Search,
   },
   {
@@ -90,8 +90,8 @@ const additions = [
     detail: "Allow a user to save a route plan or a place list with notes, making the experience feel more useful than a plain directory.",
   },
   {
-    title: "Accessibility confidence score",
-    detail: "Present an understandable summary such as 'High confidence — recent reviews support this', without over-claiming certainty.",
+    title: "Evidence on every feature",
+    detail: "For each feature, show who reported it (the venue or visitors), how many people confirmed it and when, instead of one overall score that can't fit everyone's needs.",
   },
 ];
 
@@ -105,7 +105,7 @@ const priorities = [
 
 export default function Benchmarks() {
   usePageMeta({
-    title: "Open Way Benchmark Research",
+    title: "Product Notes and Roadmap",
     description:
       "What similar accessibility and discovery sites do well, what they do poorly, and the best additions for Open Way.",
   });
@@ -114,10 +114,10 @@ export default function Benchmarks() {
     <div className="min-h-screen bg-background">
       <section className="bg-gradient-to-r from-primary/10 to-accent/10 py-12 px-4 border-b border-border">
         <div className="max-w-6xl mx-auto">
-          <SectionLabel>Research & Strategy</SectionLabel>
+          <SectionLabel>Product notes</SectionLabel>
           <h1 className="font-display font-bold text-4xl mt-2 mb-4">What the best directory products teach us</h1>
           <p className="text-muted-foreground text-lg max-w-3xl">
-            We reviewed comparable discovery and accessibility products, including Wheelmap, accessibleGO, and large map-driven review platforms. The strongest patterns are clarity, need-based search, and trust, while the weakest patterns are clutter and generic search that ignores the user’s actual access needs.
+            Notes from an informal look at other accessibility and discovery products, including Wheelmap, accessibleGO, and general map and review apps. These are our observations, not a formal study. The strongest patterns are clarity, need-based search, and trust; the weakest are clutter and generic search that ignores what a visitor actually needs.
           </p>
         </div>
       </section>
@@ -128,12 +128,12 @@ export default function Benchmarks() {
             <CardHeader>
               <CardTitle className="flex items-center gap-2 text-lg">
                 <MapPinned className="w-5 h-5 text-primary" />
-                Sites reviewed
+                Compared with
               </CardTitle>
             </CardHeader>
             <CardContent>
-              <p className="text-4xl font-bold">3+</p>
-              <p className="text-muted-foreground mt-2">Accessibility and discovery products benchmarked</p>
+              <p className="text-2xl font-bold">Wheelmap, accessibleGO</p>
+              <p className="text-muted-foreground mt-2">plus general map and review apps</p>
             </CardContent>
           </Card>
 
