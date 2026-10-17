@@ -22,7 +22,7 @@ import {
   hashPassword,
   isWeakPassword
 } from "./auth";
-import { authRateLimiter, apiRateLimiter, reviewRateLimiter, validateCsrf } from "./index";
+import { authRateLimiter, apiRateLimiter, reviewRateLimiter, validateCsrf } from "./middleware";
 import { geocodeAddress } from "./geocode";
 import { sendPasswordResetEmail, sendVerificationEmail } from "./email";
 import { sanitizeString } from "./sanitize";

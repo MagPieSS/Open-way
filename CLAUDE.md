@@ -21,18 +21,24 @@ npx vitest run -t "locks the account"       # single test by name
 $env:ADMIN_EMAIL="you@example.com"; $env:ADMIN_PASSWORD="pw"; npx tsx scripts/create-admin.ts
 ```
 
-No client-side test setup exists (vitest runs in `node` environment), so tests cover server modules only.
+No client-side test setup exists (vitest runs in `node` environment), so tests cover server modules and
+pure shared/client logic (e.g. `shared/accessibility.ts`, `client/src/lib/*`) only.
 
 ## Architecture
 
-One Express process serves both the API and the client: `server/index.ts` builds the middleware stack,
-`registerRoutes()` mounts every `/api/*` endpoint, then in development `server/vite.ts` attaches Vite as
-middleware and in production `server/static.ts` serves `dist/public`. The catch-all client route must stay
-last, which is why `setupVite`/`serveStatic` run after route registration.
+One Express process serves both the API and the client: `server/app.ts` `createApp()` builds the middleware
+stack, `registerRoutes()` mounts every `/api/*` endpoint and the error handler; `server/index.ts` then, in
+development, attaches Vite as middleware (`server/vite.ts`) or in production serves `dist/public`
+(`server/static.ts`), and listens. The catch-all client route must stay last, which is why
+`setupVite`/`serveStatic` run after `createApp()`.
 
-Server layers: `index.ts` (security, session, CSRF, logging) → `routes.ts` (HTTP handlers, ~2.7k lines) →
-`storage.ts` (`IStorage` / `DatabaseStorage`, all data access) → `db.ts` (driver selection). Routes import
-the rate limiters and `validateCsrf` back from `index.ts`, so those exports must stay there.
+Server layers: `app.ts` (security, session, CSRF, logging) → `routes.ts` (HTTP handlers) → `storage.ts`
+(`IStorage` / `DatabaseStorage`, all data access) → `db.ts` (driver selection). Rate limiters and
+`validateCsrf` live in `server/middleware.ts`; limiters are skipped when `NODE_ENV=test`.
+
+Route tests (`server/*.test.ts` using `server/test-helpers.ts`) run the real app on an ephemeral port against
+an in-memory SQLite database (`SQLITE_PATH=:memory:` is set in `vitest.config.ts`), so they never touch
+`sqlite.db`. Prefer a route test for anything involving auth, validation or permissions.
 
 `shared/` is the contract used by both sides. `shared/schema.ts` holds the Drizzle tables, `drizzle-zod`
 insert schemas, and inferred types; `shared/routes.ts` exports an `api` object mapping each endpoint to its
