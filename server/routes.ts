@@ -1,7 +1,5 @@
 import express, { type Express, type Request, type Response, type NextFunction } from "express";
 import type { Server } from "http";
-import path from "path";
-import { mkdir, writeFile } from "fs/promises";
 import { storage } from "./storage";
 import { db } from "./db";
 import { z } from "zod";
@@ -29,52 +27,15 @@ import { sanitizeString } from "./sanitize";
 import { haversineDistanceMiles } from "./geo";
 import { checkReviewForSpam } from "./spam-detection";
 
-const MAX_UPLOAD_SIZE_BYTES = 10 * 1024 * 1024;
-const ALLOWED_UPLOAD_TYPES: Record<string, string> = {
-  "image/jpeg": "jpg",
-  "image/png": "png",
-  "image/webp": "webp",
-  "image/gif": "gif",
-};
-
-function getUploadContentType(req: Request): string {
-  return String(req.headers["content-type"] || "").split(";")[0].trim().toLowerCase();
-}
-
-function createUploadFilename(contentType: string): string {
-  const extension = ALLOWED_UPLOAD_TYPES[contentType];
-  return `${Date.now()}-${randomBytes(12).toString("hex")}.${extension}`;
-}
-
-function isSafeUploadFilename(filename: string, contentType: string): boolean {
-  const expectedExtension = ALLOWED_UPLOAD_TYPES[contentType];
-  if (!expectedExtension) return false;
-  const escapedExtension = expectedExtension.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-  return new RegExp(`^\\d+-[a-f0-9]{24}\\.${escapedExtension}$`).test(filename);
-}
-
-async function saveUploadBuffer(buffer: Buffer, contentType: string, requestedFilename?: string): Promise<string> {
-  if (!ALLOWED_UPLOAD_TYPES[contentType]) {
-    throw new Error("Unsupported image type. Use JPG, PNG, WebP, or GIF.");
-  }
-  if (buffer.length === 0) {
-    throw new Error("No file data received");
-  }
-  if (buffer.length > MAX_UPLOAD_SIZE_BYTES) {
-    throw new Error("File is too large. Maximum size is 10MB.");
-  }
-
-  const uploadDir = path.resolve(process.cwd(), "uploads");
-  await mkdir(uploadDir, { recursive: true });
-
-  const filename = requestedFilename && isSafeUploadFilename(requestedFilename, contentType)
-    ? requestedFilename
-    : createUploadFilename(contentType);
-  const absolutePath = path.join(uploadDir, filename);
-  await writeFile(absolutePath, buffer, { flag: "wx" });
-
-  return `/uploads/${filename}`;
-}
+import {
+  MAX_UPLOAD_SIZE_BYTES,
+  ALLOWED_UPLOAD_TYPES,
+  getUploadContentType,
+  createUploadFilename,
+  isSafeUploadFilename,
+  saveUploadBuffer,
+  uploadErrorMessage,
+} from "./uploads";
 
 
 // Starts a fresh session for a user who just proved who they are. Regenerating the id stops a
@@ -198,8 +159,7 @@ export async function registerRoutes(
         res.json({ success: true, objectPath });
       } catch (error) {
         console.error("Proxy upload failed:", error);
-        const message = error instanceof Error ? error.message : "Upload failed";
-        res.status(400).json({ error: message });
+        res.status(400).json({ error: uploadErrorMessage(error) });
       }
     }
   );
@@ -221,8 +181,7 @@ export async function registerRoutes(
         res.json({ success: true, objectPath });
       } catch (error) {
         console.error("Direct upload failed:", error);
-        const message = error instanceof Error ? error.message : "Upload failed";
-        res.status(400).json({ error: message });
+        res.status(400).json({ error: uploadErrorMessage(error) });
       }
     }
   );

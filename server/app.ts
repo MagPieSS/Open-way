@@ -14,6 +14,7 @@ import fsSync from "fs";
 import { registerRoutes } from "./routes";
 import { pool } from "./db";
 import { apiRateLimiter, generateCsrfToken } from "./middleware";
+import { uploadsDir } from "./uploads";
 
 // Extend express-session types to include our user data
 declare module "express-session" {
@@ -172,7 +173,7 @@ export async function createApp(): Promise<{ app: Express; httpServer: Server }>
   // cross-site JSON needs a CORS preflight that the CORS config rejects but a form post does not.
 
   // Serve static uploads
-  app.use("/uploads", express.static(path.resolve(process.cwd(), "uploads"), { maxAge: "1d" }));
+  app.use("/uploads", express.static(uploadsDir(), { maxAge: "1d" }));
 
   // Serve stock images from attached_assets folder
   const assetsPath = path.resolve(process.cwd(), "attached_assets");

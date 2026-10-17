@@ -1,5 +1,6 @@
 import { defineConfig } from "vitest/config";
 import path from "path";
+import os from "os";
 
 export default defineConfig({
   resolve: {
@@ -16,6 +17,8 @@ export default defineConfig({
       SQLITE_PATH: ":memory:",
       DATABASE_URL: "",
       NODE_ENV: "test",
+      // Route tests upload images; keep them out of the project's uploads/ folder.
+      UPLOADS_DIR: path.join(os.tmpdir(), "openway-test-uploads"),
     },
     include: ["**/*.test.ts"],
     exclude: ["node_modules/**", "dist/**"],

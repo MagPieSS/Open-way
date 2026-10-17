@@ -63,7 +63,7 @@ export class TestClient {
   // freshly fetched X-CSRF-Token on anything that isn't a GET.
   async request(method: string, path: string, body?: unknown, extraHeaders: Record<string, string> = {}): Promise<TestResponse> {
     const headers: Record<string, string> = { ...extraHeaders };
-    if (body !== undefined) headers["content-type"] = "application/json";
+    if (body !== undefined && !headers["content-type"]) headers["content-type"] = "application/json";
     if (method !== "GET") {
       headers["x-csrf-token"] = await this.csrfToken();
     }
@@ -84,7 +84,14 @@ export class TestClient {
 
   private async send(method: string, path: string, body: unknown, headers: Record<string, string>): Promise<TestResponse> {
     if (this.cookie) headers.cookie = this.cookie;
-    const payload = body === undefined ? undefined : typeof body === "string" ? body : JSON.stringify(body);
+    let payload: string | Uint8Array | undefined;
+    if (body === undefined) {
+      payload = undefined;
+    } else if (typeof body === "string" || body instanceof Uint8Array) {
+      payload = body;
+    } else {
+      payload = JSON.stringify(body);
+    }
     const res = await fetch(this.baseUrl + path, { method, headers, body: payload, redirect: "manual" });
     for (const setCookie of res.headers.getSetCookie()) {
       const [pair] = setCookie.split(";");
