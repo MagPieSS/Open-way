@@ -2,20 +2,20 @@ import { usePlace, usePlaces } from "@/hooks/use-places";
 import { useAuth } from "@/hooks/use-auth";
 import { useParams, Link } from "wouter";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { 
-  Loader2, ArrowLeft, MapPin, Calendar, CheckCircle, AlertTriangle, XCircle, 
-  User, ThumbsUp, Share2, Copy, Navigation, Lightbulb, MessageSquare, Star,
-  Eye, Ear, Move, Sparkles, X, Bookmark, BookmarkCheck, Upload, Plus
+import {
+  Loader2, ArrowLeft, MapPin, Calendar, CheckCircle, AlertTriangle, XCircle, HelpCircle,
+  User, Share2, Copy, Navigation, Lightbulb, MessageSquare, Star,
+  Bookmark, BookmarkCheck, Upload
 } from "lucide-react";
 import { SiX, SiFacebook } from "react-icons/si";
 import { useSettings } from "@/hooks/use-settings";
 import { usePageMeta } from "@/hooks/use-page-meta";
-import { ACCESSIBILITY_STATUS, type AccessibilityFeature, type PlaceMedia, type PlaceTip } from "@shared/schema";
+import { ACCESSIBILITY_STATUS, type PlaceMedia, type PlaceTip } from "@shared/schema";
 import { format } from "date-fns";
 import { AccessibilityMap } from "@/components/AccessibilityMap";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/hooks/use-toast";
-import { useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { apiRequest } from "@/lib/queryClient";
 
 import { Pencil, Trash2 } from "lucide-react";
@@ -23,46 +23,10 @@ import { ReportButton } from "@/components/ReportButton";
 import { PlaceImage } from "@/components/PlaceImage";
 import { useUpload } from "@/hooks/use-upload";
 import { getVerificationBadgeLabel } from "@/lib/accessibility-filtering";
+import { PlaceAccessibility } from "@/components/accessibility/PlaceAccessibility";
 
-const FEATURE_GROUPS: Record<string, { label: string; icon: typeof Move; features: string[] }> = {
-  mobility: {
-    label: "Mobility",
-    icon: Move,
-    features: ["ramp", "elevator", "accessible_restroom", "wheelchair_rental", "accessible_parking", "tactile_paving"],
-  },
-  visual: {
-    label: "Visual",
-    icon: Eye,
-    features: ["braille_signage", "large_print", "audio_guide"],
-  },
-  hearing: {
-    label: "Hearing",
-    icon: Ear,
-    features: ["hearing_loop", "sign_language"],
-  },
-  sensory: {
-    label: "Sensory",
-    icon: Sparkles,
-    features: ["quiet_hours", "sensory_room", "service_animal_friendly"],
-  },
-};
-
-const FEATURE_LABELS: Record<string, string> = {
-  ramp: "Wheelchair Ramp",
-  elevator: "Elevator Access",
-  accessible_restroom: "Accessible Restroom",
-  braille_signage: "Braille Signage",
-  audio_guide: "Audio Guide",
-  wheelchair_rental: "Wheelchair Rental",
-  service_animal_friendly: "Service Animal Friendly",
-  accessible_parking: "Accessible Parking",
-  tactile_paving: "Tactile Paving",
-  hearing_loop: "Hearing Loop",
-  sign_language: "Sign Language Services",
-  large_print: "Large Print Materials",
-  quiet_hours: "Quiet Hours",
-  sensory_room: "Sensory Room",
-};
+// Matches the server's upload limit (server/uploads.ts).
+const MAX_PHOTO_BYTES = 10 * 1024 * 1024;
 
 function useMedia(placeId: number) {
   return useQuery<PlaceMedia[]>({
@@ -70,18 +34,6 @@ function useMedia(placeId: number) {
     queryFn: async () => {
       const res = await fetch(`/api/places/${placeId}/media`);
       if (!res.ok) throw new Error("Failed to fetch media");
-      return res.json();
-    },
-    enabled: !!placeId,
-  });
-}
-
-function useFeatures(placeId: number) {
-  return useQuery<AccessibilityFeature[]>({
-    queryKey: ["/api/places", placeId, "features"],
-    queryFn: async () => {
-      const res = await fetch(`/api/places/${placeId}/features`);
-      if (!res.ok) throw new Error("Failed to fetch features");
       return res.json();
     },
     enabled: !!placeId,
@@ -118,16 +70,15 @@ export default function PlaceDetail() {
     enabled: !!id,
   });
   const { data: media, isLoading: isLoadingMedia, error: mediaError } = useMedia(id);
-  const { data: features, isLoading: isLoadingFeatures, error: featuresError } = useFeatures(id);
-  const { data: tips, isLoading: isLoadingTips, error: tipsError } = useTips(id);
+const { data: tips, isLoading: isLoadingTips, error: tipsError } = useTips(id);
   const { data: allPlaces } = usePlaces();
   const { textSize } = useSettings();
   const { toast } = useToast();
   const { user } = useAuth();
   const queryClient = useQueryClient();
 
-  const [hoveredImage, setHoveredImage] = useState<number | null>(null);
-  const [editingReviewId, setEditingReviewId] = useState<number | null>(null);
+  const photoInputRef = useRef<HTMLInputElement>(null);
+const [editingReviewId, setEditingReviewId] = useState<number | null>(null);
   const [editingTipId, setEditingTipId] = useState<number | null>(null);
   const [editContent, setEditContent] = useState("");
   const [editRating, setEditRating] = useState<number | undefined>(undefined);
@@ -136,21 +87,7 @@ export default function PlaceDetail() {
 
   const uploadMutation = useMutation({
     mutationFn: async ({ objectPath, placeId, caption }: { objectPath: string; placeId: number; caption?: string }) => {
-      const csrfRes = await fetch("/api/csrf-token");
-      const { token } = await csrfRes.json();
-      
-      const res = await fetch("/api/place-media/upload", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "x-csrf-token": token,
-        },
-        body: JSON.stringify({ placeId, objectPath, caption }),
-      });
-      if (!res.ok) {
-        const error = await res.json();
-        throw new Error(error.message || "Upload failed");
-      }
+      const res = await apiRequest("POST", "/api/place-media/upload", { placeId, objectPath, caption });
       return res.json();
     },
     onSuccess: () => {
@@ -166,10 +103,12 @@ export default function PlaceDetail() {
 
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
+    // Clear the input so choosing the same file again still triggers a change.
+    e.target.value = "";
     if (!file) return;
-    
-    if (file.size > 5 * 1024 * 1024) {
-      toast({ variant: "destructive", title: "File too large", description: "Max size is 5MB" });
+
+    if (file.size > MAX_PHOTO_BYTES) {
+      toast({ variant: "destructive", title: "File too large", description: "Max size is 10MB" });
       return;
     }
 
@@ -309,6 +248,11 @@ export default function PlaceDetail() {
     }
   };
 
+  const mapCenter = useMemo<[number, number]>(
+    () => [place?.latitude ? Number(place.latitude) : 39.9526, place?.longitude ? Number(place.longitude) : -75.1652],
+    [place?.latitude, place?.longitude],
+  );
+
   const relatedPlaces = allPlaces
     ?.filter((p) => p.category === place?.category && p.id !== id)
     .slice(0, 4) || [];
@@ -395,10 +339,10 @@ export default function PlaceDetail() {
 
   const getStatusColor = (status: string) => {
     switch (status) {
-      case ACCESSIBILITY_STATUS.ACCESSIBLE: return "text-green-700 bg-green-100";
-      case ACCESSIBILITY_STATUS.PARTIALLY_ACCESSIBLE: return "text-yellow-800 bg-yellow-100";
-      case ACCESSIBILITY_STATUS.NOT_ACCESSIBLE: return "text-red-700 bg-red-100";
-      default: return "text-gray-700 bg-gray-100";
+      case ACCESSIBILITY_STATUS.ACCESSIBLE: return "text-green-800 bg-green-100";
+      case ACCESSIBILITY_STATUS.PARTIALLY_ACCESSIBLE: return "text-yellow-900 bg-yellow-100";
+      case ACCESSIBILITY_STATUS.NOT_ACCESSIBLE: return "text-red-800 bg-red-100";
+      default: return "text-gray-800 bg-gray-100";
     }
   };
 
@@ -407,16 +351,11 @@ export default function PlaceDetail() {
       case ACCESSIBILITY_STATUS.ACCESSIBLE: return CheckCircle;
       case ACCESSIBILITY_STATUS.PARTIALLY_ACCESSIBLE: return AlertTriangle;
       case ACCESSIBILITY_STATUS.NOT_ACCESSIBLE: return XCircle;
-      default: return AlertTriangle;
+      default: return HelpCircle;
     }
   };
 
   const StatusIcon = getStatusIcon(place.accessibilityStatus);
-
-  const groupedFeatures = Object.entries(FEATURE_GROUPS).map(([key, group]) => {
-    const groupFeatures = features?.filter((f) => group.features.includes(f.featureType)) || [];
-    return { key, ...group, features: groupFeatures };
-  }).filter((g) => g.features.length > 0);
 
   return (
     <div className="min-h-screen bg-background pb-20" data-testid="place-detail-page">
@@ -425,13 +364,12 @@ export default function PlaceDetail() {
         <PlaceImage src={place.imageUrl} category={place.category} alt={place.name} className="w-full h-full object-cover" loading="eager" />
         <div className="absolute inset-0 bg-gradient-to-t from-background to-transparent" />
         
-        <Link href="/places">
-          <button 
-            className="absolute top-6 left-4 md:left-8 px-4 py-2 bg-background/80 backdrop-blur rounded-lg font-bold shadow-sm hover:bg-background transition-colors flex items-center gap-2"
-            data-testid="button-back"
-          >
-            <ArrowLeft className="w-5 h-5" /> Back
-          </button>
+        <Link
+          href="/places"
+          className="absolute top-6 left-4 md:left-8 px-4 py-2 bg-background/80 backdrop-blur rounded-lg font-bold shadow-sm hover:bg-background transition-colors flex items-center gap-2"
+          data-testid="button-back"
+        >
+          <ArrowLeft className="w-5 h-5" aria-hidden="true" /> Back to places
         </Link>
       </div>
 
@@ -447,9 +385,12 @@ export default function PlaceDetail() {
                 {place.name}
               </h1>
               <div className={`flex items-center gap-2 px-4 py-2 rounded-full w-fit font-bold ${getStatusColor(place.accessibilityStatus)}`} data-testid="badge-accessibility-status">
-                <StatusIcon className="w-5 h-5" />
-                {place.accessibilityStatus}
+                <StatusIcon className="w-5 h-5" aria-hidden="true" />
+                Overall, as reported: {place.accessibilityStatus}
               </div>
+              <p className="mt-2 text-sm text-muted-foreground max-w-prose">
+                One overall label can't fit every need. Check the features below.
+              </p>
               {(place.accessibilitySource || place.lastCheckedAt || place.verificationStatus) && (
                 <div className="mt-3 flex flex-wrap items-center gap-2 text-sm text-muted-foreground" data-testid="place-data-provenance">
                   {place.verificationStatus && (
@@ -458,7 +399,7 @@ export default function PlaceDetail() {
                     </span>
                   )}
                   {place.accessibilitySource && (
-                    <span className="rounded-md bg-secondary px-2 py-1">
+                    <span className="rounded-md bg-secondary px-2 py-1 [overflow-wrap:anywhere]">
                       Source: {place.accessibilitySource}
                     </span>
                   )}
@@ -495,25 +436,28 @@ export default function PlaceDetail() {
                 size="icon" 
                 variant="outline" 
                 onClick={() => handleShare("twitter")}
+                aria-label="Share on X"
                 data-testid="button-share-twitter"
               >
-                <SiX className="w-4 h-4" />
+                <SiX className="w-4 h-4" aria-hidden="true" />
               </Button>
               <Button 
                 size="icon" 
                 variant="outline" 
                 onClick={() => handleShare("facebook")}
+                aria-label="Share on Facebook"
                 data-testid="button-share-facebook"
               >
-                <SiFacebook className="w-4 h-4" />
+                <SiFacebook className="w-4 h-4" aria-hidden="true" />
               </Button>
               <Button 
                 size="icon" 
                 variant="outline" 
                 onClick={() => handleShare("copy")}
+                aria-label="Copy link to this place"
                 data-testid="button-copy-link"
               >
-                <Copy className="w-4 h-4" />
+                <Copy className="w-4 h-4" aria-hidden="true" />
               </Button>
               <Button 
                 variant="outline" 
@@ -527,34 +471,45 @@ export default function PlaceDetail() {
             </div>
           </div>
 
+          {/* Accessibility comes first: it is what people come to the page to find out. */}
+          <PlaceAccessibility placeId={place.id} placeName={place.name} />
+
           {/* Photo Gallery */}
           <div className="mb-10" data-testid="photo-gallery-section">
-            <div className="flex items-center justify-between mb-4">
-              <h3 className="text-foreground font-bold text-xl">Photos</h3>
+            <div className="flex items-center justify-between mb-2">
+              <h2 className="text-foreground font-bold text-xl">Photos</h2>
               {user && (
-                <div className="relative">
-                  <input 
-                    type="file" 
-                    id="photo-upload" 
-                    className="hidden" 
-                    accept="image/*"
+                <div>
+                  {/* A real button opens the file picker so it works from the keyboard. */}
+                  <input
+                    ref={photoInputRef}
+                    type="file"
+                    id="photo-upload"
+                    className="sr-only"
+                    tabIndex={-1}
+                    accept="image/jpeg,image/png,image/webp,image/gif"
                     onChange={handleFileUpload}
                     disabled={uploading}
                   />
-                  <Button 
-                    variant="outline" 
-                    size="sm" 
-                    asChild
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="gap-2"
+                    onClick={() => photoInputRef.current?.click()}
                     disabled={uploading}
                   >
-                    <label htmlFor="photo-upload" className="cursor-pointer gap-2">
-                      {uploading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Upload className="w-4 h-4" />}
-                      Upload Photo
-                    </label>
+                    {uploading ? <Loader2 className="w-4 h-4 animate-spin" aria-hidden="true" /> : <Upload className="w-4 h-4" aria-hidden="true" />}
+                    Upload Photo
                   </Button>
                 </div>
               )}
             </div>
+            {user && (
+              <p className="text-sm text-muted-foreground mb-4">
+                Photos of entrances, doors, restrooms and paths help most. Please avoid photographing people.
+                Location and camera details are removed from uploads.
+              </p>
+            )}
             {isLoadingMedia ? (
               <div className="flex items-center justify-center py-8">
                 <Loader2 className="animate-spin text-primary" />
@@ -562,28 +517,22 @@ export default function PlaceDetail() {
             ) : media && media.length > 0 ? (
               <div className="flex gap-4 overflow-x-auto pb-4" data-testid="photo-gallery">
                 {media.map((item, index) => (
-                  <div 
-                    key={item.id} 
-                    className="relative flex-shrink-0 w-48 h-32 rounded-xl overflow-hidden cursor-pointer"
-                    onMouseEnter={() => setHoveredImage(item.id)}
-                    onMouseLeave={() => setHoveredImage(null)}
+                  <figure
+                    key={item.id}
+                    className="flex-shrink-0 w-48"
                     data-testid={`gallery-image-${item.id}`}
                   >
-                    <img 
-                      src={item.url} 
-                      alt={item.caption || `Photo ${index + 1}`}
-                      className="w-full h-full object-cover"
+                    <img
+                      src={item.url}
+                      alt={item.caption || `Photo ${index + 1} of ${place.name}`}
+                      className="w-48 h-32 rounded-xl object-cover"
                     />
-                    <div 
-                      className={`absolute inset-x-0 bottom-0 bg-black/70 text-white text-sm p-2 transition-opacity flex items-center justify-between gap-2 ${
-                        hoveredImage === item.id ? "opacity-100" : "opacity-0"
-                      }`}
-                      style={{ visibility: hoveredImage === item.id ? "visible" : "hidden" }}
-                    >
-                      <span className="truncate">{item.caption || ""}</span>
+                    {/* Caption and report are always shown; they were hover-only before, out of reach by keyboard. */}
+                    <figcaption className="mt-1 flex items-center justify-between gap-2 text-sm">
+                      <span className="truncate text-muted-foreground">{item.caption || ""}</span>
                       <ReportButton contentType="photo" contentId={item.id} />
-                    </div>
-                  </div>
+                    </figcaption>
+                  </figure>
                 ))}
               </div>
             ) : (
@@ -595,68 +544,18 @@ export default function PlaceDetail() {
 
           {/* About */}
           <div className={`prose max-w-none text-muted-foreground mb-10 text-${textSize}`}>
-            <h3 className="text-foreground font-bold text-xl mb-2">About this place</h3>
-            <p data-testid="text-place-description">{place.description}</p>
-          </div>
-
-          {/* Accessibility Checklist */}
-          <div className="mb-10" data-testid="accessibility-checklist-section">
-            <h3 className="text-foreground font-bold text-xl mb-4">Accessibility Features</h3>
-            {isLoadingFeatures ? (
-              <div className="flex items-center justify-center py-8">
-                <Loader2 className="animate-spin text-primary" />
-              </div>
-            ) : groupedFeatures.length > 0 ? (
-              <div className="grid gap-6 md:grid-cols-2">
-                {groupedFeatures.map((group) => {
-                  const GroupIcon = group.icon;
-                  return (
-                    <div key={group.key} className="bg-secondary/30 rounded-xl p-4" data-testid={`feature-group-${group.key}`}>
-                      <div className="flex items-center gap-2 mb-3">
-                        <GroupIcon className="w-5 h-5 text-primary" />
-                        <h4 className="font-bold text-foreground">{group.label}</h4>
-                      </div>
-                      <ul className="space-y-2">
-                        {group.features.map((feature) => (
-                          <li 
-                            key={feature.id} 
-                            className="flex items-start gap-2"
-                            data-testid={`feature-item-${feature.id}`}
-                          >
-                            {feature.available ? (
-                              <CheckCircle className="w-5 h-5 text-green-600 flex-shrink-0 mt-0.5" />
-                            ) : (
-                              <X className="w-5 h-5 text-red-600 flex-shrink-0 mt-0.5" />
-                            )}
-                            <div>
-                              <span className={`font-medium ${feature.available ? "text-foreground" : "text-muted-foreground line-through"}`}>
-                                {FEATURE_LABELS[feature.featureType] || feature.featureType}
-                              </span>
-                              {feature.description && (
-                                <p className="text-sm text-muted-foreground">{feature.description}</p>
-                              )}
-                            </div>
-                          </li>
-                        ))}
-                      </ul>
-                    </div>
-                  );
-                })}
-              </div>
-            ) : (
-              <div className="bg-secondary/30 rounded-xl p-6 text-center text-muted-foreground" data-testid="no-features-message">
-                No accessibility features have been documented for this location yet.
-              </div>
-            )}
+            <h2 className="text-foreground font-bold text-xl mb-2">About this place</h2>
+            {/* Long URLs (photo credits, sources) must wrap or they push the page sideways on phones. */}
+            <p className="[overflow-wrap:anywhere]" data-testid="text-place-description">{place.description}</p>
           </div>
 
           {/* Tips Section */}
           <div className="mb-10" data-testid="tips-section">
             <div className="flex items-center justify-between gap-4 flex-wrap mb-4">
-              <h3 className="text-foreground font-bold text-xl flex items-center gap-2">
-                <Lightbulb className="w-5 h-5 text-primary" />
+              <h2 className="text-foreground font-bold text-xl flex items-center gap-2">
+                <Lightbulb className="w-5 h-5 text-primary" aria-hidden="true" />
                 Community Tips
-              </h3>
+              </h2>
               <Link href={`/submit?placeId=${place.id}&type=tip`}>
                 <Button variant="outline" size="sm" data-testid="button-add-tip">
                   Add a Tip
@@ -680,6 +579,7 @@ export default function PlaceDetail() {
                         <textarea
                           value={editContent}
                           onChange={(e) => setEditContent(e.target.value)}
+                          aria-label="Edit your tip"
                           className="w-full p-3 rounded-lg border border-border bg-background text-foreground resize-none"
                           rows={2}
                           data-testid={`textarea-edit-tip-${tip.id}`}
@@ -713,7 +613,8 @@ export default function PlaceDetail() {
                               {format(new Date(tip.createdAt || new Date()), "MMM d, yyyy")}
                             </span>
                           </div>
-                          {user && (user.displayName === tip.author || user.email === tip.author || user.isAdmin) && (
+                          {/* The server only lets the tip's own author edit or delete it. */}
+                          {user && tip.userId === user.id && (
                             <div className="flex items-center gap-1">
                               <Button
                                 size="icon"
@@ -723,9 +624,10 @@ export default function PlaceDetail() {
                                   setEditingTipId(tip.id);
                                   setEditContent(tip.content);
                                 }}
+                                aria-label="Edit your tip"
                                 data-testid={`button-edit-tip-${tip.id}`}
                               >
-                                <Pencil className="w-3 h-3" />
+                                <Pencil className="w-3 h-3" aria-hidden="true" />
                               </Button>
                               <Button
                                 size="icon"
@@ -736,14 +638,18 @@ export default function PlaceDetail() {
                                     deleteTipMutation.mutate(tip.id);
                                   }
                                 }}
+                                aria-label="Delete your tip"
                                 data-testid={`button-delete-tip-${tip.id}`}
                               >
-                                <Trash2 className="w-3 h-3" />
+                                <Trash2 className="w-3 h-3" aria-hidden="true" />
                               </Button>
                             </div>
                           )}
                         </div>
                         <p className="text-foreground">{tip.content}</p>
+                        <div className="mt-2">
+                          <ReportButton contentType="tip" contentId={tip.id} />
+                        </div>
                       </>
                     )}
                   </div>
@@ -759,10 +665,10 @@ export default function PlaceDetail() {
           {/* Reviews Section */}
           <div className="mb-10" data-testid="reviews-section">
             <div className="flex items-center justify-between gap-4 flex-wrap mb-4">
-              <h3 className="text-foreground font-bold text-xl flex items-center gap-2">
-                <MessageSquare className="w-5 h-5 text-primary" />
+              <h2 className="text-foreground font-bold text-xl flex items-center gap-2">
+                <MessageSquare className="w-5 h-5 text-primary" aria-hidden="true" />
                 Reviews {reviews && reviews.length > 0 && `(${reviews.length})`}
-              </h3>
+              </h2>
               <Link href={`/submit?placeId=${place.id}&type=review`}>
                 <Button variant="outline" size="sm" data-testid="button-add-review">
                   Write a Review
@@ -784,6 +690,7 @@ export default function PlaceDetail() {
                     {editingReviewId === review.id ? (
                       <div className="space-y-3">
                         <textarea
+                          aria-label="Edit your review"
                           className="w-full rounded-lg border border-border bg-background p-3 text-foreground min-h-[80px]"
                           value={editContent}
                           onChange={(e) => setEditContent(e.target.value)}
@@ -826,10 +733,16 @@ export default function PlaceDetail() {
                           </div>
                           <div className="flex items-center gap-2">
                             {review.rating && (
-                              <div className="flex items-center gap-1" data-testid={`rating-${review.id}`}>
+                              <div
+                                className="flex items-center gap-1"
+                                role="img"
+                                aria-label={`Rated ${review.rating} out of 5`}
+                                data-testid={`rating-${review.id}`}
+                              >
                                 {Array.from({ length: 5 }).map((_, i) => (
                                   <Star
                                     key={i}
+                                    aria-hidden="true"
                                     className={`w-4 h-4 ${i < review.rating ? "text-yellow-500 fill-yellow-500" : "text-muted-foreground/30"}`}
                                   />
                                 ))}
@@ -844,8 +757,8 @@ export default function PlaceDetail() {
                         {review.imageUrl && review.imageUrl.trim() !== "" && (
                           <img
                             src={review.imageUrl}
-                            alt="Review"
-                            className="mt-3 rounded-lg max-h-48 object-cover"
+                            alt={`Photo from a review of ${place.name}`}
+className="mt-3 rounded-lg max-h-48 object-cover"
                             data-testid={`img-review-${review.id}`}
                           />
                         )}
@@ -861,9 +774,10 @@ export default function PlaceDetail() {
                                   setEditContent(review.content);
                                   setEditRating(review.rating ?? undefined);
                                 }}
+                                aria-label="Edit your review"
                                 data-testid={`button-edit-review-${review.id}`}
                               >
-                                <Pencil className="w-3 h-3" />
+                                <Pencil className="w-3 h-3" aria-hidden="true" />
                               </Button>
                               <Button
                                 size="icon"
@@ -874,9 +788,10 @@ export default function PlaceDetail() {
                                     deleteReviewMutation.mutate(review.id);
                                   }
                                 }}
+                                aria-label="Delete your review"
                                 data-testid={`button-delete-review-${review.id}`}
                               >
-                                <Trash2 className="w-3 h-3" />
+                                <Trash2 className="w-3 h-3" aria-hidden="true" />
                               </Button>
                             </div>
                           )}
@@ -896,24 +811,20 @@ export default function PlaceDetail() {
           {/* Location Map */}
           <div className="mb-10" data-testid="location-map-section">
             <div className="flex items-center justify-between gap-4 flex-wrap mb-4">
-              <h3 className="text-foreground font-bold text-xl">Location</h3>
+              <h2 className="text-foreground font-bold text-xl">Location</h2>
               {getDirectionsUrl() && (
-                <a 
-                  href={getDirectionsUrl()!} 
-                  target="_blank" 
-                  rel="noopener noreferrer"
-                  className="inline-block"
-                >
-                  <Button variant="outline" size="sm" className="gap-2" data-testid="button-get-directions">
-                    <Navigation className="w-4 h-4" /> Get Directions
-                  </Button>
-                </a>
+                <Button variant="outline" size="sm" className="gap-2" asChild data-testid="button-get-directions">
+                  <a href={getDirectionsUrl()!} target="_blank" rel="noopener noreferrer">
+                    <Navigation className="w-4 h-4" aria-hidden="true" /> Get Directions
+                    <span className="sr-only"> (opens Google Maps in a new tab)</span>
+                  </a>
+                </Button>
               )}
             </div>
             <div className="h-[300px] rounded-2xl overflow-hidden border border-border">
               <AccessibilityMap 
                 places={[place]} 
-                center={[place.latitude ? Number(place.latitude) : 39.9526, place.longitude ? Number(place.longitude) : -75.1652]} 
+                center={mapCenter}
                 zoom={15}
               />
             </div>
@@ -928,16 +839,15 @@ export default function PlaceDetail() {
           {/* Related Places */}
           {relatedPlaces.length > 0 && (
             <div data-testid="related-places-section">
-              <h3 className="text-foreground font-bold text-xl mb-4">Other {place.category} nearby</h3>
+              <h2 className="text-foreground font-bold text-xl mb-4">More places in {place.category}</h2>
               <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
                 {relatedPlaces.map((p) => (
                   <Link key={p.id} href={`/places/${p.id}`}>
                     <div className="group cursor-pointer" data-testid={`related-place-card-${p.id}`}>
                       <div className="aspect-video rounded-xl overflow-hidden bg-muted mb-2 relative">
                         <PlaceImage src={p.imageUrl} category={p.category} alt={p.name} className="w-full h-full object-cover group-hover:scale-105 transition-transform" />
-                        <div className={`absolute top-2 right-2 w-3 h-3 rounded-full shadow-sm ${getStatusColor(p.accessibilityStatus).split(' ')[1]}`} />
-                      </div>
-                      <h4 className="font-bold text-sm truncate group-hover:text-primary transition-colors">{p.name}</h4>
+</div>
+                      <h3 className="font-bold text-sm truncate group-hover:text-primary transition-colors">{p.name}</h3>
                     </div>
                   </Link>
                 ))}

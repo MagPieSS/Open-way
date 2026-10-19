@@ -4,8 +4,38 @@ import { Moon, Sun, Type, Eye, Zap, BookOpen, AlignJustify, Link2, Focus, Shield
 import { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/hooks/use-toast";
+import { usePageMeta } from "@/hooks/use-page-meta";
+
+// Defined outside Settings so it isn't a new component type on every render; when it was inside,
+// React remounted the button after each toggle and keyboard focus fell back to the page.
+function ToggleSwitch({ checked, onToggle, label, testId }: { checked: boolean; onToggle: () => void; label: string; testId: string }) {
+  return (
+    <button
+      type="button"
+      role="switch"
+      aria-checked={checked}
+      aria-label={label}
+      onClick={onToggle}
+      data-testid={testId}
+      className={`
+        w-14 h-8 rounded-full transition-colors relative flex-shrink-0
+        focus:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2
+        ${checked ? 'bg-primary' : 'bg-input'}
+      `}
+    >
+      <span
+        aria-hidden="true"
+        className={`
+          w-6 h-6 rounded-full bg-white shadow-sm absolute top-1 transition-transform
+          ${checked ? 'left-7' : 'left-1'}
+        `}
+      />
+    </button>
+  );
+}
 
 export default function Settings() {
+  usePageMeta({ title: "Accessibility Settings" });
   const { 
     theme, setTheme, 
     highContrast, toggleHighContrast,
@@ -151,23 +181,6 @@ export default function Settings() {
     "2": "Maximum",
   };
 
-  const ToggleSwitch = ({ checked, onToggle, testId }: { checked: boolean; onToggle: () => void; testId: string }) => (
-    <button 
-      onClick={onToggle}
-      data-testid={testId}
-      className={`
-        w-14 h-8 rounded-full transition-colors relative
-        ${checked ? 'bg-primary' : 'bg-input'}
-      `}
-      aria-pressed={checked}
-    >
-      <div className={`
-        w-6 h-6 rounded-full bg-white shadow-sm absolute top-1 transition-transform
-        ${checked ? 'left-7' : 'left-1'}
-      `} />
-    </button>
-  );
-
   return (
     <div className="min-h-screen bg-background py-12 px-4 sm:px-6 lg:px-8">
       <div className="max-w-2xl mx-auto">
@@ -195,6 +208,7 @@ export default function Settings() {
               <div className="flex bg-secondary rounded-lg p-1">
                 <button 
                   onClick={() => setTheme('light')}
+                  aria-pressed={theme === 'light'}
                   data-testid="button-theme-light"
                   className={`px-4 py-2 rounded-md font-medium transition-all ${theme === 'light' ? 'bg-background shadow-sm text-foreground' : 'text-muted-foreground'}`}
                 >
@@ -202,6 +216,7 @@ export default function Settings() {
                 </button>
                 <button 
                   onClick={() => setTheme('dark')}
+                  aria-pressed={theme === 'dark'}
                   data-testid="button-theme-dark"
                   className={`px-4 py-2 rounded-md font-medium transition-all ${theme === 'dark' ? 'bg-background shadow-sm text-foreground' : 'text-muted-foreground'}`}
                 >
@@ -231,6 +246,7 @@ export default function Settings() {
                 <button
                   key={font.value}
                   onClick={() => setFontFamily(font.value)}
+                  aria-pressed={fontFamily === font.value}
                   data-testid={`button-font-${font.value}`}
                   className={`
                     p-4 rounded-xl border-2 text-left transition-all
@@ -267,6 +283,7 @@ export default function Settings() {
                 <button
                   key={size.value}
                   onClick={() => setTextSize(size.value)}
+                  aria-pressed={textSize === size.value}
                   data-testid={`button-textsize-${size.value}`}
                   className={`
                     py-3 rounded-xl border-2 font-bold transition-all flex flex-col items-center
@@ -302,6 +319,7 @@ export default function Settings() {
                 <button
                   key={spacing.value}
                   onClick={() => setLineSpacing(spacing.value)}
+                  aria-pressed={lineSpacing === spacing.value}
                   data-testid={`button-spacing-${spacing.value}`}
                   className={`
                     py-4 rounded-xl border-2 font-bold transition-all flex flex-col items-center
@@ -328,7 +346,7 @@ export default function Settings() {
                 <p className="text-sm text-muted-foreground">Increase visual distinction</p>
               </div>
             </div>
-            <ToggleSwitch checked={highContrast} onToggle={toggleHighContrast} testId="toggle-high-contrast" />
+            <ToggleSwitch checked={highContrast} onToggle={toggleHighContrast} label="High contrast" testId="toggle-high-contrast" />
           </div>
 
           {/* Link Underlines */}
@@ -342,7 +360,7 @@ export default function Settings() {
                 <p className="text-sm text-muted-foreground">Make all links clearly visible</p>
               </div>
             </div>
-            <ToggleSwitch checked={linkUnderlines} onToggle={toggleLinkUnderlines} testId="toggle-link-underlines" />
+            <ToggleSwitch checked={linkUnderlines} onToggle={toggleLinkUnderlines} label="Always show link underlines" testId="toggle-link-underlines" />
           </div>
 
           {/* Enhanced Focus */}
@@ -356,7 +374,7 @@ export default function Settings() {
                 <p className="text-sm text-muted-foreground">Larger, more visible focus outlines</p>
               </div>
             </div>
-            <ToggleSwitch checked={enhancedFocus} onToggle={toggleEnhancedFocus} testId="toggle-enhanced-focus" />
+            <ToggleSwitch checked={enhancedFocus} onToggle={toggleEnhancedFocus} label="Enhanced focus indicators" testId="toggle-enhanced-focus" />
           </div>
 
           {/* Read Aloud */}
@@ -371,7 +389,7 @@ export default function Settings() {
                   <p className="text-sm text-muted-foreground">Have page content read to you</p>
                 </div>
               </div>
-              <ToggleSwitch checked={readAloudEnabled} onToggle={toggleReadAloud} testId="toggle-read-aloud" />
+              <ToggleSwitch checked={readAloudEnabled} onToggle={toggleReadAloud} label="Read aloud" testId="toggle-read-aloud" />
             </div>
 
             {readAloudEnabled && (
@@ -441,7 +459,7 @@ export default function Settings() {
                 <p className="text-sm text-muted-foreground">Minimize animations</p>
               </div>
             </div>
-            <ToggleSwitch checked={reducedMotion} onToggle={toggleReducedMotion} testId="toggle-reduced-motion" />
+            <ToggleSwitch checked={reducedMotion} onToggle={toggleReducedMotion} label="Reduced motion" testId="toggle-reduced-motion" />
           </div>
 
           {/* Two-Factor Authentication */}

@@ -41,18 +41,19 @@ async function main() {
     }
 
     const existingFeatures = await storage.getAccessibilityFeatures(place.id);
-    const existingFeatureTypes = new Set(
-      existingFeatures.map((feature) => feature.featureType),
-    );
 
     for (const feature of features) {
-      if (existingFeatureTypes.has(feature.featureType)) continue;
+      const existingFeature = existingFeatures.find((f) => f.featureType === feature.featureType);
+      if (existingFeature) {
+        // Bring the seeded fact up to date (status, source, check date) without duplicating it.
+        if (update) await storage.updateAccessibilityFeature(existingFeature.id, feature);
+        continue;
+      }
 
       await storage.createAccessibilityFeature({
         ...feature,
         placeId: place.id,
       });
-      existingFeatureTypes.add(feature.featureType);
       addedFeatureCount += 1;
     }
   }

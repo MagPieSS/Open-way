@@ -18,10 +18,11 @@ describe("seedDatabase", () => {
     }
   });
 
-  it("only claims accessibility where the venue's own page is cited", async () => {
+  it("only lists places whose accessibility comes from the venue's own page", async () => {
     const places = await storage.getPlaces();
-    for (const place of places.filter((p) => p.accessibilityStatus !== "Unknown")) {
+    for (const place of places) {
       expect(place.verificationStatus, place.name).toBe("venue");
+      expect(place.accessibilityStatus, place.name).not.toBe("Unknown");
     }
   });
 

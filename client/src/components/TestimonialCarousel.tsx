@@ -1,11 +1,15 @@
 import { useState, useEffect } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { ChevronLeft, ChevronRight, Quote } from "lucide-react";
+import { ChevronLeft, ChevronRight, Quote, Pause, Play } from "lucide-react";
 import { useSettings } from "@/hooks/use-settings";
 import type { Review } from "@shared/schema";
 
 export function TestimonialCarousel() {
   const [current, setCurrent] = useState(0);
+  // Auto-advance can be paused (WCAG 2.2.2); it also stops while the pointer or keyboard focus is
+  // in the carousel, and never runs with reduced motion on.
+  const [paused, setPaused] = useState(false);
+  const [interacting, setInteracting] = useState(false);
   const { reducedMotion } = useSettings();
 
   const { data: reviews, isLoading } = useQuery<Review[]>({
@@ -20,14 +24,14 @@ export function TestimonialCarousel() {
   const testimonials = (reviews ?? []).filter((r) => r.content);
 
   useEffect(() => {
-    if (reducedMotion || testimonials.length < 2) return;
+    if (reducedMotion || paused || interacting || testimonials.length < 2) return;
 
     const timer = setInterval(() => {
       setCurrent((prev) => (prev + 1) % testimonials.length);
     }, 6000);
 
     return () => clearInterval(timer);
-  }, [reducedMotion, testimonials.length]);
+  }, [reducedMotion, paused, interacting, testimonials.length]);
 
   if (isLoading || testimonials.length === 0) {
     return null;
@@ -40,11 +44,21 @@ export function TestimonialCarousel() {
   const testimonial = testimonials[safeCurrent];
 
   return (
-    <div className="relative max-w-3xl mx-auto" data-testid="testimonial-carousel">
+    <section
+      className="relative max-w-3xl mx-auto"
+      aria-roledescription="carousel"
+      aria-label="Featured reviews"
+      onMouseEnter={() => setInteracting(true)}
+      onMouseLeave={() => setInteracting(false)}
+      onFocus={() => setInteracting(true)}
+      onBlur={(e) => { if (!e.currentTarget.contains(e.relatedTarget as Node)) setInteracting(false); }}
+      data-testid="testimonial-carousel"
+    >
       <div className="bg-card rounded-2xl p-8 md:p-12 shadow-lg border border-border relative overflow-hidden">
         <Quote className="absolute top-6 left-6 w-12 h-12 text-primary/10" aria-hidden="true" />
 
-        <div className="relative z-10 text-center">
+        <div className="relative z-10 text-center" aria-live={paused || interacting || reducedMotion ? "polite" : "off"}>
+          <p className="sr-only">Review {safeCurrent + 1} of {testimonials.length}</p>
           <p className="text-xl md:text-2xl text-foreground italic mb-6 leading-relaxed">
             "{testimonial.content}"
           </p>
@@ -59,13 +73,23 @@ export function TestimonialCarousel() {
 
       {testimonials.length > 1 && (
         <div className="flex items-center justify-center gap-4 mt-6">
+          {!reducedMotion && (
+            <button
+              onClick={() => setPaused(!paused)}
+              className="p-2 rounded-full bg-secondary hover:bg-secondary/80 transition-colors focus:outline-none focus:ring-2 focus:ring-primary"
+              aria-label={paused ? "Play automatic rotation" : "Pause automatic rotation"}
+              data-testid="button-testimonial-pause"
+            >
+              {paused ? <Play className="w-5 h-5" aria-hidden="true" /> : <Pause className="w-5 h-5" aria-hidden="true" />}
+            </button>
+          )}
           <button
             onClick={prev}
             className="p-2 rounded-full bg-secondary hover:bg-secondary/80 transition-colors focus:outline-none focus:ring-2 focus:ring-primary"
             aria-label="Previous testimonial"
             data-testid="button-testimonial-prev"
           >
-            <ChevronLeft className="w-5 h-5" />
+            <ChevronLeft className="w-5 h-5" aria-hidden="true" />
           </button>
 
           <div className="flex gap-2">
@@ -73,12 +97,17 @@ export function TestimonialCarousel() {
               <button
                 key={idx}
                 onClick={() => setCurrent(idx)}
-                className={`w-2.5 h-2.5 rounded-full transition-colors ${
-                  idx === safeCurrent ? "bg-primary" : "bg-secondary hover:bg-primary/50"
-                }`}
-                aria-label={`Go to testimonial ${idx + 1}`}
+                className="w-6 h-6 flex items-center justify-center rounded-full focus:outline-none focus:ring-2 focus:ring-primary"
+                aria-label={`Show review ${idx + 1}`}
+                aria-current={idx === safeCurrent ? "true" : undefined}
                 data-testid={`button-testimonial-dot-${idx}`}
-              />
+              >
+                {/* 10px dot inside a 24px target (WCAG 2.5.8) */}
+                <span
+                  aria-hidden="true"
+                  className={`w-2.5 h-2.5 rounded-full transition-colors ${idx === safeCurrent ? "bg-primary" : "bg-muted-foreground/40"}`}
+                />
+              </button>
             ))}
           </div>
 
@@ -88,10 +117,10 @@ export function TestimonialCarousel() {
             aria-label="Next testimonial"
             data-testid="button-testimonial-next"
           >
-            <ChevronRight className="w-5 h-5" />
+            <ChevronRight className="w-5 h-5" aria-hidden="true" />
           </button>
         </div>
       )}
-    </div>
+    </section>
   );
 }

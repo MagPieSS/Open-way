@@ -14,6 +14,9 @@ export default defineConfig({
     },
   },
   root: path.resolve(import.meta.dirname, "client"),
+  // Read VITE_* settings from the repo root (.env.local), like the server does; only VITE_-prefixed
+  // variables are exposed to the client.
+  envDir: path.resolve(import.meta.dirname),
   build: {
     outDir: path.resolve(import.meta.dirname, "dist/public"),
     emptyOutDir: true,

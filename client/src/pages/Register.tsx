@@ -7,8 +7,10 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { Loader2, Eye, EyeOff, User, Mail, Lock, CheckCircle, XCircle } from "lucide-react";
+import { usePageMeta } from "@/hooks/use-page-meta";
 
 export default function Register() {
+  usePageMeta({ title: "Create an Account" });
   const [, setLocation] = useLocation();
   const { register, isRegistering } = useAuth();
   const { toast } = useToast();
@@ -91,6 +93,7 @@ export default function Register() {
                 <User className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
                 <Input
                   id="displayName"
+                  autoComplete="nickname"
                   type="text"
                   placeholder="Your name"
                   value={displayName}
@@ -108,6 +111,7 @@ export default function Register() {
                 <Mail className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
                 <Input
                   id="email"
+                  autoComplete="email"
                   type="email"
                   placeholder="you@example.com"
                   value={email}
@@ -125,6 +129,7 @@ export default function Register() {
                 <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
                 <Input
                   id="password"
+                  autoComplete="new-password"
                   type={showPassword ? "text" : "password"}
                   placeholder="Create a strong password"
                   value={password}
@@ -136,7 +141,9 @@ export default function Register() {
                 <button
                   type="button"
                   onClick={() => setShowPassword(!showPassword)}
-                  className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                  className="absolute right-2 top-1/2 -translate-y-1/2 p-1 rounded text-muted-foreground hover:text-foreground"
+                  aria-label={showPassword ? "Hide password" : "Show password"}
+                  aria-pressed={showPassword}
                   data-testid="button-toggle-password"
                 >
                   {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}

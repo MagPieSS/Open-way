@@ -22,6 +22,10 @@ import { format } from "date-fns";
 import type { Place, Review, CommunityPost, PlaceMedia, Report, Signature, Petition, Event } from "@shared/schema";
 import { usePagination } from "@/hooks/use-pagination";
 import { PaginationControls } from "@/components/PaginationControls";
+import { PendingReportsQueue } from "@/components/admin/PendingReportsQueue";
+import { VERIFICATION_STATUSES } from "@shared/schema";
+import { getVerificationBadgeLabel } from "@/lib/accessibility-filtering";
+import { usePageMeta } from "@/hooks/use-page-meta";
 
 interface AdminStats {
   totalUsers: number;
@@ -78,12 +82,21 @@ interface UserRecord {
 }
 
 export default function AdminDashboard() {
+  usePageMeta({ title: "Admin Dashboard" });
   const { user, isLoading: authLoading } = useAuth();
   const [, navigate] = useLocation();
   const { toast } = useToast();
 
   const [editPlace, setEditPlace] = useState<Place | null>(null);
-  const [editForm, setEditForm] = useState({ name: "", description: "", accessibilityStatus: "", address: "" });
+  const [editForm, setEditForm] = useState({
+    name: "",
+    description: "",
+    accessibilityStatus: "",
+    address: "",
+    verificationStatus: "community",
+    accessibilitySource: "",
+    markChecked: false,
+  });
   const [banUser, setBanUser] = useState<UserRecord | null>(null);
   const [banReason, setBanReason] = useState("");
   const [deleteConfirm, setDeleteConfirm] = useState<{ type: string; id: number; name: string } | null>(null);
@@ -366,6 +379,9 @@ export default function AdminDashboard() {
       description: place.description,
       accessibilityStatus: place.accessibilityStatus,
       address: place.address || "",
+      verificationStatus: place.verificationStatus || "community",
+      accessibilitySource: place.accessibilitySource || "",
+      markChecked: false,
     });
     setEditPlace(place);
   }
@@ -413,7 +429,12 @@ export default function AdminDashboard() {
               <TabsTrigger value="petitions" data-testid="tab-petitions">Petitions</TabsTrigger>
               <TabsTrigger value="events" data-testid="tab-events">Events</TabsTrigger>
               <TabsTrigger value="reports" data-testid="tab-reports">Reports</TabsTrigger>
+              <TabsTrigger value="accessibility-reports" data-testid="tab-accessibility-reports">Accessibility reports</TabsTrigger>
             </TabsList>
+
+            <TabsContent value="accessibility-reports" data-testid="tab-content-accessibility-reports">
+              <PendingReportsQueue />
+            </TabsContent>
 
             <TabsContent value="overview" data-testid="tab-content-overview">
               {statsLoading ? (
@@ -991,13 +1012,15 @@ export default function AdminDashboard() {
                       <CardContent className="pt-4 space-y-3">
                         <div className="flex items-center gap-2 flex-wrap">
                           <Badge variant="outline" data-testid={`badge-report-type-${report.id}`}>
-                            {report.contentType === "community_post" ? "Community Post" : report.contentType === "photo" ? "Photo" : "Review"}
+                            {REPORT_TYPE_LABELS[report.contentType] ?? report.contentType}
                           </Badge>
                           {getReportStatusBadge(report.status)}
                           {report.placeName && (
                             <span className="text-xs text-muted-foreground flex items-center gap-1">
-                              <MapPin className="w-3 h-3" />
-                              {report.placeName}
+                              <MapPin className="w-3 h-3" aria-hidden="true" />
+                              {report.contentType === "place" ? (
+                                <a href={`/places/${report.contentId}`} className="underline text-primary">{report.placeName}</a>
+                              ) : report.placeName}
                             </span>
                           )}
                         </div>
@@ -1043,7 +1066,7 @@ export default function AdminDashboard() {
                                 )}
                               </div>
                             )}
-                            {report.contentType === "community_post" && report.reportedContent.content && (
+                            {(report.contentType === "community_post" || report.contentType === "tip") && report.reportedContent.content && (
                               <div className="space-y-1">
                                 <p className="text-sm text-foreground">{report.reportedContent.content}</p>
                                 {report.reportedContent.authorName && (
@@ -1067,11 +1090,9 @@ export default function AdminDashboard() {
 
                         <div className="flex items-center justify-between gap-4 flex-wrap pt-1 border-t border-border">
                           <div className="flex items-center gap-3 text-xs text-muted-foreground flex-wrap">
-                            {report.reporterEmail && (
-                              <span data-testid={`text-report-reporter-${report.id}`}>
-                                Reporter: {report.reporterEmail}
-                              </span>
-                            )}
+                            <span data-testid={`text-report-reporter-${report.id}`}>
+                              Reporter: {report.reporterEmail ?? "signed-out visitor"}
+                            </span>
                             {report.createdAt && (
                               <span>{format(new Date(report.createdAt), "MMM d, yyyy")}</span>
                             )}
@@ -1130,28 +1151,30 @@ export default function AdminDashboard() {
           </DialogHeader>
           <div className="space-y-4 py-4">
             <div className="space-y-2">
-              <label className="text-sm font-medium">Name</label>
+              <label htmlFor="edit-place-name" className="text-sm font-medium">Name</label>
               <Input
+                id="edit-place-name"
                 value={editForm.name}
                 onChange={(e) => setEditForm((prev) => ({ ...prev, name: e.target.value }))}
                 data-testid="input-edit-place-name"
               />
             </div>
             <div className="space-y-2">
-              <label className="text-sm font-medium">Description</label>
+              <label htmlFor="edit-place-description" className="text-sm font-medium">Description</label>
               <Textarea
+                id="edit-place-description"
                 value={editForm.description}
                 onChange={(e) => setEditForm((prev) => ({ ...prev, description: e.target.value }))}
                 data-testid="input-edit-place-description"
               />
             </div>
             <div className="space-y-2">
-              <label className="text-sm font-medium">Accessibility Status</label>
+              <label id="edit-place-status-label" className="text-sm font-medium">Overall accessibility</label>
               <Select
                 value={editForm.accessibilityStatus}
                 onValueChange={(value) => setEditForm((prev) => ({ ...prev, accessibilityStatus: value }))}
               >
-                <SelectTrigger data-testid="select-edit-place-status">
+                <SelectTrigger aria-labelledby="edit-place-status-label" data-testid="select-edit-place-status">
                   <SelectValue placeholder="Select status" />
                 </SelectTrigger>
                 <SelectContent>
@@ -1162,13 +1185,49 @@ export default function AdminDashboard() {
               </Select>
             </div>
             <div className="space-y-2">
-              <label className="text-sm font-medium">Address</label>
+              <label htmlFor="edit-place-address" className="text-sm font-medium">Address</label>
               <Input
+                id="edit-place-address"
                 value={editForm.address}
                 onChange={(e) => setEditForm((prev) => ({ ...prev, address: e.target.value }))}
                 data-testid="input-edit-place-address"
               />
             </div>
+            <div className="space-y-2">
+              <label id="edit-place-verification-label" className="text-sm font-medium">Where the listing comes from</label>
+              <Select
+                value={editForm.verificationStatus}
+                onValueChange={(value) => setEditForm((prev) => ({ ...prev, verificationStatus: value }))}
+              >
+                <SelectTrigger aria-labelledby="edit-place-verification-label" data-testid="select-edit-place-verification">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {VERIFICATION_STATUSES.map((status) => (
+                    <SelectItem key={status} value={status}>{getVerificationBadgeLabel(status)}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-2">
+              <label htmlFor="edit-place-source" className="text-sm font-medium">Source (link or description)</label>
+              <Input
+                id="edit-place-source"
+                value={editForm.accessibilitySource}
+                onChange={(e) => setEditForm((prev) => ({ ...prev, accessibilitySource: e.target.value }))}
+                data-testid="input-edit-place-source"
+              />
+            </div>
+            <label className="flex items-center gap-2 text-sm min-h-[24px]">
+              <input
+                type="checkbox"
+                checked={editForm.markChecked}
+                onChange={(e) => setEditForm((prev) => ({ ...prev, markChecked: e.target.checked }))}
+                className="w-4 h-4"
+                data-testid="checkbox-edit-place-checked"
+              />
+              I checked this listing against its source today
+            </label>
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setEditPlace(null)} data-testid="button-cancel-edit-place">
@@ -1249,3 +1308,11 @@ export default function AdminDashboard() {
     </div>
   );
 }
+
+const REPORT_TYPE_LABELS: Record<string, string> = {
+  community_post: "Community post",
+  photo: "Photo",
+  review: "Review",
+  tip: "Tip",
+  place: "Listing problem",
+};

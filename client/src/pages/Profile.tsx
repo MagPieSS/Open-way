@@ -15,8 +15,10 @@ import {
   Bookmark, Settings, ShieldCheck, ShieldOff
 } from "lucide-react";
 import { format } from "date-fns";
+import { usePageMeta } from "@/hooks/use-page-meta";
 
 export default function Profile() {
+  usePageMeta({ title: "Your Profile" });
   const { user, isLoading: authLoading } = useAuth();
   const [, setLocation] = useLocation();
   const { toast } = useToast();
@@ -228,6 +230,7 @@ export default function Profile() {
                       size="icon"
                       onClick={handleSaveName}
                       disabled={updateDisplayNameMutation.isPending}
+                      aria-label="Save display name"
                       data-testid="button-save-name"
                     >
                       <Save className="w-4 h-4" />
@@ -236,6 +239,7 @@ export default function Profile() {
                       size="icon"
                       variant="outline"
                       onClick={() => setIsEditingName(false)}
+                      aria-label="Cancel editing display name"
                       data-testid="button-cancel-edit-name"
                     >
                       <X className="w-4 h-4" />

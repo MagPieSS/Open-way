@@ -8,8 +8,9 @@ import {
   places, reviews, signatures, categories, accessibilityFeatures,
   placeMedia, placeTips, petitions, petitionUpdates, events, resources,
   blogPosts, faqEntries, contactSubmissions, activityLog, partners,
-  ACCESSIBILITY_FEATURE_TYPES, ACCESSIBILITY_STATUS, PLACE_CATEGORIES, VERIFICATION_STATUSES
+  ACCESSIBILITY_STATUS, PLACE_CATEGORIES, VERIFICATION_STATUSES
 } from './schema';
+import { FEATURE_KEYS, FEATURE_STATUSES, type FeatureSummary } from './accessibility';
 
 // Uploaded files are saved as /uploads/<millis>-<24 hex>.<ext> by server/routes.ts. Image fields
 // only accept that shape, so contributions can't point at off-site images (tracking pixels) or
@@ -37,14 +38,62 @@ const optionalUploadPath = z
   .nullish()
   .transform((value) => value || null);
 
+const featureTypeSchema = z.enum(FEATURE_KEYS as [string, ...string[]], {
+  errorMap: () => ({ message: "Unknown accessibility feature" }),
+});
+
+// A feature described while adding a place. `status` is preferred; `available` is the older
+// yes/no form and is still accepted.
 const accessibilityFeatureContributionSchema = z.object({
-  featureType: z.string().refine(
-    (value) => Object.values(ACCESSIBILITY_FEATURE_TYPES).includes(value as typeof ACCESSIBILITY_FEATURE_TYPES[keyof typeof ACCESSIBILITY_FEATURE_TYPES]),
-    "Unknown accessibility feature"
-  ),
-  available: z.boolean().default(true),
+  featureType: featureTypeSchema,
+  status: z.enum(FEATURE_STATUSES).optional(),
+  available: z.boolean().optional(),
   description: z.string().max(500).optional(),
 });
+
+// The longest ago a visit can be reported. Older first-hand memories are too likely to be out of
+// date to count as a current report.
+export const MAX_VISIT_AGE_YEARS = 5;
+
+// A visitor's report about one or more features of a place. Deliberately has no fields about the
+// reporter's disability or identity. `website` is a honeypot: people never see or fill it.
+export const observationSubmissionSchema = z.object({
+  reports: z.array(z.object({
+    featureType: featureTypeSchema,
+    status: z.enum(FEATURE_STATUSES),
+    note: z.string().trim().max(500).nullish(),
+  })).min(1, "Choose at least one feature").max(FEATURE_KEYS.length),
+  // A date-only value ("2026-10-01") becomes noon UTC, which is the same calendar day in every US
+  // timezone; midnight UTC would show as the previous day in Philadelphia.
+  visitedOn: z.preprocess(
+    (value) => (typeof value === "string" && /^\d{4}-\d{2}-\d{2}$/.test(value) ? `${value}T12:00:00Z` : value),
+    z.coerce.date(),
+  )
+    .refine((date) => date.getTime() <= Date.now() + 24 * 60 * 60 * 1000, "The visit date can't be in the future")
+    .refine((date) => date.getFullYear() >= new Date().getFullYear() - MAX_VISIT_AGE_YEARS, `Visits more than ${MAX_VISIT_AGE_YEARS} years ago can't be reported`)
+    .optional(),
+  website: z.string().optional(),
+});
+
+export const PLACE_PROBLEM_REASONS = ["closed", "wrong_info", "duplicate", "harmful", "other"] as const;
+
+export const placeProblemReportSchema = z.object({
+  reason: z.enum(PLACE_PROBLEM_REASONS, { errorMap: () => ({ message: "Choose what's wrong" }) }),
+  details: z.string().trim().max(1000).nullish(),
+  website: z.string().optional(),
+});
+
+// A place as returned by GET /api/places: the row plus its feature summaries, and the distance
+// when the request included a location.
+export type PlaceListItem = typeof places.$inferSelect & {
+  distanceMiles?: number;
+  features: FeatureSummary[];
+};
+
+export interface PlaceAccessibilityResponse {
+  features: FeatureSummary[];
+  recentReports: Array<{ featureType: string; status: string; note: string | null; observedAt: string }>;
+}
 
 // What a community member may send when adding a place. Moderator-only columns (isFeatured,
 // averageRating, verificationStatus, coordinates…) are not listed, so zod strips them.

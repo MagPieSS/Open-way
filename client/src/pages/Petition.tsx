@@ -22,6 +22,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from 
 import { Progress } from "@/components/ui/progress";
 import { formatDistanceToNow } from "date-fns";
 import type { Petition as PetitionType } from "@shared/schema";
+import { usePageMeta } from "@/hooks/use-page-meta";
 
 function getMilestones(goal: number): number[] {
   const milestones: number[] = [];
@@ -172,6 +173,7 @@ function ShareProgressCard({ signatures, goal, progressPercent }: { signatures: 
           variant="outline"
           size="icon"
           onClick={handleCopyLink}
+          aria-label={copied ? "Link copied" : "Copy link to this petition"}
           data-testid="button-copy-link"
         >
           {copied ? <Check className="w-4 h-4 text-green-500" /> : <Copy className="w-4 h-4" />}
@@ -712,6 +714,7 @@ function PetitionCard({ petition }: { petition: PetitionType }) {
 }
 
 export default function PetitionListPage() {
+  usePageMeta({ title: "Petitions" });
   const { data: petitions, isLoading } = usePetitions();
   const { textSize, reducedMotion } = useSettings();
 
@@ -793,6 +796,7 @@ export default function PetitionListPage() {
 }
 
 export function PetitionDetail() {
+  usePageMeta({ title: "Petition" });
   const [, params] = useRoute("/petitions/:id");
   const petitionId = params?.id ? Number(params.id) : 0;
   const { data: petition, isLoading: petitionLoading } = usePetition(petitionId);

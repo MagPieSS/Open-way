@@ -51,6 +51,18 @@ export const uploadRateLimiter = rateLimit({
   skip: skipInTests,
 });
 
+// Accessibility reports and listing problem reports. Signed-out visitors can send these, so the
+// limit is per account when signed in and per IP otherwise.
+export const contributionRateLimiter = rateLimit({
+  windowMs: 60 * 60 * 1000, // 1 hour
+  max: 20,
+  message: { message: "You've sent a lot of reports in the last hour. Please try again later." },
+  standardHeaders: true,
+  legacyHeaders: false,
+  keyGenerator: (req) => (req.session?.userId ? `user:${req.session.userId}` : ipKeyGenerator(req.ip || "unknown")),
+  skip: skipInTests,
+});
+
 // Generate CSRF token for session
 export function generateCsrfToken(): string {
   return crypto.randomBytes(32).toString("hex");

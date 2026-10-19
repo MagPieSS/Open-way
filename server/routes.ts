@@ -5,8 +5,8 @@ import { db } from "./db";
 import { z } from "zod";
 import { eq } from "drizzle-orm";
 import { randomBytes } from "crypto";
-import { ACCESSIBILITY_STATUS, ACCESSIBILITY_FEATURE_TYPES, insertUserSchema, loginSchema, forgotPasswordSchema, resetPasswordSchema, blogPosts as blogPostsTable, reviews as reviewsTable, places as placesTable, communityPosts as communityPostsTable, placeMedia as placeMediaTable, users, type User, type InsertPlace } from "@shared/schema";
-import { api, placeMediaContributionSchema, reviewUpdateSchema, adminPlaceUpdateSchema } from "@shared/routes";
+import { ACCESSIBILITY_STATUS, ACCESSIBILITY_FEATURE_TYPES, insertUserSchema, loginSchema, forgotPasswordSchema, resetPasswordSchema, blogPosts as blogPostsTable, reviews as reviewsTable, places as placesTable, communityPosts as communityPostsTable, placeMedia as placeMediaTable, placeTips as placeTipsTable, users, type User, type InsertPlace } from "@shared/schema";
+import { api, placeMediaContributionSchema, reviewUpdateSchema, adminPlaceUpdateSchema, observationSubmissionSchema, placeProblemReportSchema, type PlaceAccessibilityResponse } from "@shared/routes";
 import { 
   registerUser, 
   loginUser, 
@@ -20,13 +20,16 @@ import {
   hashPassword,
   isWeakPassword
 } from "./auth";
-import { authRateLimiter, apiRateLimiter, reviewRateLimiter, uploadRateLimiter, validateCsrf } from "./middleware";
+import { authRateLimiter, apiRateLimiter, reviewRateLimiter, uploadRateLimiter, contributionRateLimiter, validateCsrf } from "./middleware";
 import { geocodeAddress } from "./geocode";
 import { sendPasswordResetEmail, sendVerificationEmail } from "./email";
 import { sanitizeString } from "./sanitize";
 import { haversineDistanceMiles } from "./geo";
 import { checkReviewForSpam } from "./spam-detection";
+import { summarizeByPlace } from "./accessibility-summary";
+import { FEATURE_KEYS, unknownSummary, type FeatureStatus } from "@shared/accessibility";
 import { seedDatabase } from "./seed";
+import { getElevatorOutages, FeedUnavailableError } from "./septa";
 
 import {
   MAX_UPLOAD_SIZE_BYTES,
@@ -102,6 +105,24 @@ async function requireAdmin(req: Request, res: Response, next: NextFunction) {
 function appBaseUrl(req: Request): string {
   const configured = process.env.APP_BASE_URL?.trim().replace(/\/+$/, "");
   return configured || `${req.protocol}://${req.get("host")}`;
+}
+
+// For endpoints signed-out visitors may use. Returns the user id (or null when signed out), or
+// sends an error and returns undefined when a signed-in session is no longer allowed to act.
+async function optionalSessionUserId(req: Request, res: Response): Promise<number | null | undefined> {
+  if (!req.session.userId) return null;
+  const check = await checkSessionUser(req);
+  if (!check.ok) {
+    res.status(check.status).json({ message: check.message });
+    return undefined;
+  }
+  return check.user.id;
+}
+
+// Bots fill in every field; people never see the hidden "website" field. Submissions that fill it
+// are dropped but answered like a normal pending submission, so the bot learns nothing.
+function isHoneypotFilled(value: unknown): boolean {
+  return typeof value === "string" && value.trim().length > 0;
 }
 
 // Turns a zod error into the { message, field } shape the client expects.
@@ -603,7 +624,12 @@ export async function registerRoutes(
   // Get user's saved places with full place details
   app.get("/api/saved-places", requireAuth, async (req, res) => {
     const savedPlaces = await storage.getSavedPlacesWithDetails(req.session.userId!);
-    res.json(savedPlaces);
+    const [allFeatures, publishedObservations] = await Promise.all([
+      storage.getAllAccessibilityFeatures(),
+      storage.getPublishedObservations(),
+    ]);
+    const summaries = summarizeByPlace(allFeatures, publishedObservations);
+    res.json(savedPlaces.map((p) => ({ ...p, features: summaries.get(p.id) ?? [] })));
   });
 
   // Save a place
@@ -722,7 +748,12 @@ export async function registerRoutes(
         withDistance.sort((a, b) => (a.distanceMiles ?? Infinity) - (b.distanceMiles ?? Infinity));
       }
 
-      res.json(withDistance);
+      const [allFeatures, publishedObservations] = await Promise.all([
+        storage.getAllAccessibilityFeatures(),
+        storage.getPublishedObservations(),
+      ]);
+      const summaries = summarizeByPlace(allFeatures, publishedObservations);
+      res.json(withDistance.map((p) => ({ ...p, features: summaries.get(p.id) ?? [] })));
     } catch (err) {
       console.error("[PRODUCTION] Failed to load places:", err);
       res.status(500).json({ message: "Failed to load places" });
@@ -770,15 +801,17 @@ export async function registerRoutes(
         }
       }
       const place = await storage.createPlace(input);
-      for (const feature of accessibilityFeatures) {
-        await storage.createAccessibilityFeature({
-          placeId: place.id,
-          featureType: feature.featureType,
-          available: feature.available,
-          description: feature.description ? sanitizeString(feature.description, 500) : undefined,
-          verifiedAt: null,
-        });
-      }
+      // What the submitter describes is their own visit report, dated today, not a fact on the
+      // listing: it then counts, ages and can be contradicted like any other report.
+      await storage.createObservations(accessibilityFeatures.map((feature) => ({
+        placeId: place.id,
+        featureType: feature.featureType,
+        status: feature.status ?? (feature.available === false ? "no" : "yes"),
+        note: feature.description ? sanitizeString(feature.description, 500) : null,
+        observedAt: new Date(),
+        userId: req.session.userId!,
+        moderationStatus: "published",
+      })));
       res.status(201).json(place);
     } catch (err) {
       if (err instanceof z.ZodError) {
@@ -786,6 +819,90 @@ export async function registerRoutes(
       }
       throw err;
     }
+  });
+
+  // Everything known about each feature of a place, plus recent visitor reports. Features nobody
+  // has reported on are included as "unknown" so the page can ask about them.
+  app.get("/api/places/:id/accessibility", async (req, res) => {
+    const place = await storage.getPlace(Number(req.params.id));
+    if (!place) return res.status(404).json({ message: "Place not found" });
+
+    const [listing, observations] = await Promise.all([
+      storage.getAccessibilityFeatures(place.id),
+      storage.getPublishedObservations(place.id),
+    ]);
+    const known = summarizeByPlace(listing, observations).get(place.id) ?? [];
+    const features = FEATURE_KEYS.map((key) => known.find((s) => s.featureType === key) ?? unknownSummary(key));
+
+    const response: PlaceAccessibilityResponse = {
+      features,
+      // No user ids or names: what was reported matters here, not who reported it.
+      recentReports: observations.slice(0, 20).map((o) => ({
+        featureType: o.featureType,
+        status: o.status,
+        note: o.note,
+        observedAt: o.observedAt.toISOString(),
+      })),
+    };
+    res.json(response);
+  });
+
+  // A visitor reports what they found. Signed-in reports publish straight away; reports from
+  // signed-out visitors wait for a moderator.
+  app.post("/api/places/:id/observations", validateCsrf, contributionRateLimiter, async (req, res) => {
+    const place = await storage.getPlace(Number(req.params.id));
+    if (!place) return res.status(404).json({ message: "Place not found" });
+
+    const userId = await optionalSessionUserId(req, res);
+    if (userId === undefined) return;
+
+    const parsed = observationSubmissionSchema.safeParse(req.body);
+    if (!parsed.success) return validationError(res, parsed.error);
+
+    const moderationStatus = userId ? "published" : "pending";
+    if (isHoneypotFilled(parsed.data.website)) {
+      console.warn(`[spam] Dropped an accessibility report for place ${place.id}: honeypot field filled`);
+      return res.status(201).json({ moderationStatus: "pending", count: parsed.data.reports.length });
+    }
+
+    const observedAt = parsed.data.visitedOn ?? new Date();
+    const created = await storage.createObservations(parsed.data.reports.map((report) => ({
+      placeId: place.id,
+      featureType: report.featureType,
+      status: report.status as FeatureStatus,
+      note: report.note ? sanitizeString(report.note, 500) : null,
+      observedAt,
+      userId,
+      moderationStatus,
+    })));
+    res.status(201).json({ moderationStatus, count: created.length });
+  });
+
+  // Report a problem with the listing itself (closed, wrong, duplicate, harmful). Open to
+  // signed-out visitors; every report goes to the moderation queue.
+  app.post("/api/places/:id/problem-reports", validateCsrf, contributionRateLimiter, async (req, res) => {
+    const place = await storage.getPlace(Number(req.params.id));
+    if (!place) return res.status(404).json({ message: "Place not found" });
+
+    const userId = await optionalSessionUserId(req, res);
+    if (userId === undefined) return;
+
+    const parsed = placeProblemReportSchema.safeParse(req.body);
+    if (!parsed.success) return validationError(res, parsed.error);
+
+    if (isHoneypotFilled(parsed.data.website)) {
+      console.warn(`[spam] Dropped a problem report for place ${place.id}: honeypot field filled`);
+      return res.status(201).json({ success: true });
+    }
+
+    const details = parsed.data.details ? `: ${sanitizeString(parsed.data.details, 1000)}` : "";
+    await storage.createReport({
+      reporterId: userId,
+      contentType: "place",
+      contentId: place.id,
+      reason: `${parsed.data.reason}${details}`,
+    });
+    res.status(201).json({ success: true });
   });
 
   app.get(api.places.features.path, async (req, res) => {
@@ -1480,6 +1597,19 @@ export async function registerRoutes(
     }
   });
 
+  // Live SEPTA elevator outages (cached briefly). When the feed can't be read we say so with a
+  // 503 rather than return an empty list, which would read as "every elevator is working".
+  app.get("/api/transit/elevator-outages", async (_req, res) => {
+    try {
+      const result = await getElevatorOutages();
+      res.json({ status: "ok", ...result });
+    } catch (error) {
+      if (!(error instanceof FeedUnavailableError)) throw error;
+      console.warn(`[septa] ${error.message}`);
+      res.status(503).json({ status: "unavailable", message: "SEPTA's live elevator status couldn't be loaded right now." });
+    }
+  });
+
   // Global Search
   app.get('/api/search', async (req, res) => {
     const query = req.query.q as string;
@@ -1565,7 +1695,7 @@ export async function registerRoutes(
       const baseUrl = `${req.protocol}://${req.get("host")}`;
       const staticPaths = [
         "/", "/places", "/community", "/petitions", "/events", "/resources",
-        "/blog", "/faq", "/contact", "/about",
+        "/blog", "/faq", "/contact", "/about", "/guides", "/transit/elevators",
       ];
 
       const [places, blogPosts, events] = await Promise.all([
@@ -1775,9 +1905,9 @@ export async function registerRoutes(
         return res.status(400).json({ message: "contentType, contentId, and reason are required" });
       }
 
-      const validContentTypes = ['photo', 'review', 'community_post'];
+      const validContentTypes = ['photo', 'review', 'community_post', 'tip'];
       if (!validContentTypes.includes(contentType)) {
-        return res.status(400).json({ message: "contentType must be one of: photo, review, community_post" });
+        return res.status(400).json({ message: "contentType must be one of: photo, review, community_post, tip" });
       }
 
       const report = await storage.createReport({
@@ -1822,14 +1952,28 @@ export async function registerRoutes(
             if (post) {
               reportedContent = { content: post.content, authorName: post.authorName };
             }
+          } else if (report.contentType === "tip") {
+            const [tip] = await db.select().from(placeTipsTable).where(eq(placeTipsTable.id, report.contentId));
+            if (tip) {
+              const [place] = await db.select({ name: placesTable.name }).from(placesTable).where(eq(placesTable.id, tip.placeId));
+              reportedContent = { content: tip.content, authorName: tip.author };
+              placeName = place?.name ?? null;
+            }
+          } else if (report.contentType === "place") {
+            const [place] = await db.select({ name: placesTable.name }).from(placesTable).where(eq(placesTable.id, report.contentId));
+            reportedContent = place ? { placeId: report.contentId } : null;
+            placeName = place?.name ?? null;
           }
         } catch {
           // Reported content may have been deleted since the report was filed; leave reportedContent null.
         }
 
         try {
-          const [reporter] = await db.select({ email: users.email }).from(users).where(eq(users.id, report.reporterId));
-          reporterEmail = reporter?.email ?? null;
+          // Signed-out visitors can report listing problems, so there may be no reporter.
+          if (report.reporterId !== null) {
+            const [reporter] = await db.select({ email: users.email }).from(users).where(eq(users.id, report.reporterId));
+            reporterEmail = reporter?.email ?? null;
+          }
         } catch {
           // Reporter lookup failed; leave reporterEmail null rather than failing the whole list.
         }
@@ -1877,6 +2021,27 @@ export async function registerRoutes(
   });
 
   // Admin: Dashboard stats
+  // Admin: visitor accessibility reports waiting for review (sent while signed out)
+  app.get("/api/admin/observations", requireAdmin, async (req, res) => {
+    const status = typeof req.query.status === "string" ? req.query.status : "pending";
+    const observations = await storage.getObservationsByStatus(status);
+    const places = await storage.getPlaces();
+    const placeNames = new Map(places.map((p) => [p.id, p.name]));
+    res.json(observations.map((o) => ({ ...o, placeName: placeNames.get(o.placeId) ?? "Unknown place" })));
+  });
+
+  // Admin: publish or reject a visitor accessibility report
+  app.patch("/api/admin/observations/:id", requireAdmin, validateCsrf, async (req, res) => {
+    const id = Number(req.params.id);
+    const { moderationStatus } = req.body;
+    if (!["published", "rejected"].includes(moderationStatus)) {
+      return res.status(400).json({ message: "moderationStatus must be 'published' or 'rejected'" });
+    }
+    const updated = await storage.setObservationModeration(id, moderationStatus);
+    if (!updated) return res.status(404).json({ message: "Report not found" });
+    res.json(updated);
+  });
+
   app.get("/api/admin/stats", requireAdmin, async (req, res) => {
     try {
       const [allUsers, allPlaces, allReviews, allMedia, pendingReports, allPetitions, allEvents] = await Promise.all([

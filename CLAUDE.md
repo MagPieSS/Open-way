@@ -48,15 +48,18 @@ method/path/input schema/response schemas plus `buildUrl()`. Server handlers reg
 ### Dual-database setup (read before touching schema or queries)
 
 `shared/schema.ts` is written entirely in `drizzle-orm/pg-core`. When `DATABASE_URL` is unset or non-Postgres,
-`server/db.ts` opens `sqlite.db` instead, creates tables from **hand-written `CREATE TABLE` DDL in that file**,
+`server/db.ts` opens `sqlite.db` (or `SQLITE_PATH`) instead, creates tables from **hand-written `CREATE TABLE` DDL in that file**,
 applies its own ad-hoc column migrations, and casts the SQLite Drizzle instance to `NodePgDatabase`. Consequences:
 
 - A new table or column needs edits in **both** `shared/schema.ts` and the `tableDefinitions` array (plus a
   migration entry for existing local DBs) in `server/db.ts`. `npm run db:push` does not touch SQLite.
 - Column defaults must use the raw-SQL form (``sql`CURRENT_TIMESTAMP` `` / ``sql`FALSE` ``), not `.defaultNow()` or a JS
   boolean — the Postgres-flavored forms don't bind under better-sqlite3 and crash inserts at runtime.
-- Compare booleans through the local `boolEq()` helper in `server/storage.ts`; better-sqlite3 rejects raw
-  `true`/`false` binds, so `eq(places.isFeatured, true)` throws under the fallback.
+- `adaptParamsForSqlite()` in `server/db.ts` converts every bound JS boolean to 1/0 and every pg-style
+  timestamp (`…T…Z`) to SQLite's `YYYY-MM-DD HH:MM:SS` UTC form. Without it, boolean writes threw and
+  timestamps read back as Invalid Date (account lockout and token expiry silently stopped working).
+  Booleans read back as 1/0, so test them for truthiness. The older `boolEq()` helper in `storage.ts` is
+  now redundant but harmless.
 - Keep query SQL portable (see the `CASE WHEN` / `gte` / `lt` usage in `storage.ts`); the type checker cannot
   catch dialect drift because of the cast.
 - `server/storage.integration.test.ts` exists specifically to catch this class of bug by writing to the real
@@ -69,13 +72,29 @@ makes env vars available, so nothing should read `process.env` config before tha
 
 Session-based auth (`openway.sid` cookie, bcrypt, optional TOTP 2FA in `server/auth.ts`; 2FA secrets and backup
 codes are encrypted with `TWO_FACTOR_ENCRYPTION_KEY`, falling back to a key derived from `SESSION_SECRET`).
-Postgres uses `connect-pg-simple`; without it sessions fall back to an in-memory store (dev only).
+Postgres uses `connect-pg-simple`; without it sessions fall back to an in-memory store (dev only). Password
+sign-in is planned to be replaced by Google OAuth.
+
+Sign-in goes through `establishSession()` in `routes.ts`, which regenerates the session and stores
+`users.session_version`. `requireAuth`/`requireAdmin` reload the user on every request and end the session if
+the user is banned, inactive, or their `session_version` changed (bumped by a password change). The CSRF
+token is created on demand by `GET /api/csrf-token`, so anonymous reads don't create sessions.
 
 State-changing endpoints compose `requireAuth`/`requireAdmin` (defined in `routes.ts`) with `validateCsrf` and a
 rate limiter. `validateCsrf` only enforces for authenticated sessions; the client side of it lives in
 `client/src/lib/queryClient.ts`, where `apiRequest()` fetches `/api/csrf-token`, caches it, sends
 `X-CSRF-Token`, and retries once on a 403 mentioning a security token. Non-GET requests should go through
 `apiRequest()` rather than raw `fetch`.
+
+### Accessibility information model (read before touching places or features)
+
+`shared/accessibility.ts` is the core of the product: the feature catalog, `summarizeFeature()` (status +
+evidence + freshness per feature) and the need filters. Facts from the venue live in `accessibility_features`
+(`source_type` `venue`/`community`); visitor reports live in `accessibility_observations`, with signed-out
+reports `pending` until an admin publishes them. Never derive a place-wide verdict from features, never show
+"unknown" as a barrier, and never present a venue's claim or a single report as confirmed. The rules and the
+research behind them are tested in `shared/accessibility.test.ts` and documented in `docs/research.md`.
+`GET /api/places` and `/api/saved-places` embed summaries for every place (no per-place requests).
 
 ### Client data fetching
 
@@ -100,15 +119,24 @@ fonts, and respect `reducedMotion` in framer-motion animations.
 
 ### Other notable behavior
 
-- `registerRoutes()` seeds demo content only when `OPENWAY_SEED_ON_STARTUP=true`; leave it off by default.
-- Uploads are stored on local disk under `uploads/` and served at `/uploads`; `routes.ts` enforces the allowed
-  MIME types, 10MB cap, and generated filename pattern. `/api/uploads/proxy` is deliberately excluded from the
-  JSON body parser in `index.ts` so it can read the raw buffer.
+- `registerRoutes()` runs `server/seed.ts` only when `OPENWAY_SEED_ON_STARTUP=true`. It adds sourced places
+  (`server/seed-data/places.ts`, shared with `npm run seed:places`), FAQ and resources, and never invents
+  reviews, posts, events or accessibility claims. `server/seed.test.ts` enforces this.
+- Places with no accessibility information aren't listed: there is no `Unknown` place status.
+  `scripts/remove-unknown-places.ts` removes legacy rows (dry run by default).
+- Uploads are stored on local disk under `uploads/` (or `UPLOADS_DIR`) and served at `/uploads`;
+  `server/uploads.ts` enforces the allowed types, 10MB cap and generated filename pattern, and
+  `server/images.ts` re-encodes every image with sharp to strip EXIF/GPS. Image fields elsewhere only accept
+  `/uploads/<millis>-<24 hex>.<ext>` paths (`UPLOAD_PATH_PATTERN` in `shared/routes.ts`).
+  `/api/uploads/proxy` is excluded from the JSON body parser in `app.ts` so it can read the raw buffer.
+- Map tiles default to OpenStreetMap (`VITE_MAP_TILE_URL` overrides); CARTO's free tiles now need a key.
+- `server/septa.ts` proxies SEPTA's elevator outage feed with a 3-minute cache. A failed fetch is a 503 /
+  "unavailable", never an empty list, because an empty list reads as "all elevators working".
 - Email (password reset, verification) goes through Resend in `server/email.ts`; without `RESEND_API_KEY` +
   `RESET_EMAIL_FROM` it logs to the console in dev and silently no-ops in production.
 - `script/build.ts` keeps an explicit allowlist of server deps to bundle; everything else stays external. Adding
   a server dependency that must be bundled means adding it there.
-- `express-async-errors` is imported first in `index.ts` on purpose — Express 4 would otherwise crash the
+- `express-async-errors` is imported first in `app.ts` on purpose — Express 4 would otherwise crash the
   process on a rejected promise in an async handler. `uncaughtException` intentionally exits.
 - Path aliases `@/*` (client/src), `@shared/*`, `@assets/*` are declared in `tsconfig.json`, `vite.config.ts`,
   and `vitest.config.ts` — all three need updating if aliases change.

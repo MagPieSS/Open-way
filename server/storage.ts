@@ -4,12 +4,14 @@ import {
   placeMedia, placeTips, petitions, petitionUpdates, events, resources,
   blogPosts, faqEntries, contactSubmissions, activityLog, partners,
   users, savedPlaces, communityPosts, passwordResetTokens, reports, emailVerificationTokens, reviewVotes,
+  accessibilityObservations,
   type Place, type InsertPlace,
   type Review, type InsertReview,
   type Petition, type InsertPetition,
   type Signature, type InsertSignature,
   type Category, type InsertCategory,
   type AccessibilityFeature, type InsertAccessibilityFeature,
+  type AccessibilityObservation, type InsertAccessibilityObservation,
   type PlaceMedia, type InsertPlaceMedia,
   type PlaceTip, type InsertPlaceTip,
   type PetitionUpdate, type InsertPetitionUpdate,
@@ -55,7 +57,15 @@ export interface IStorage {
 
   // Accessibility Features
   getAccessibilityFeatures(placeId: number): Promise<AccessibilityFeature[]>;
+  getAllAccessibilityFeatures(): Promise<AccessibilityFeature[]>;
   createAccessibilityFeature(feature: InsertAccessibilityFeature): Promise<AccessibilityFeature>;
+  updateAccessibilityFeature(id: number, feature: Partial<InsertAccessibilityFeature>): Promise<AccessibilityFeature | undefined>;
+
+  // Visitor reports about features
+  createObservations(observations: InsertAccessibilityObservation[]): Promise<AccessibilityObservation[]>;
+  getPublishedObservations(placeId?: number): Promise<AccessibilityObservation[]>;
+  getObservationsByStatus(moderationStatus: string): Promise<AccessibilityObservation[]>;
+  setObservationModeration(id: number, moderationStatus: string): Promise<AccessibilityObservation | undefined>;
 
   // Place Media
   getPlaceMedia(placeId: number): Promise<PlaceMedia[]>;
@@ -245,10 +255,16 @@ export class DatabaseStorage implements IStorage {
     return updated;
   }
 
+  // Matches name, description, address (street, neighborhood words, ZIP) and category. The query's
+  // own % and _ are escaped so they match literally instead of acting as wildcards.
   async searchPlaces(query: string): Promise<Place[]> {
-    const lowercaseQuery = query.toLowerCase();
+    const escaped = query.toLowerCase().replace(/[\\%_]/g, (char) => `\\${char}`);
+    const pattern = `%${escaped}%`;
     return await db.select().from(places).where(
-      sql`lower(${places.name}) LIKE ${`%${lowercaseQuery}%`} OR lower(${places.description}) LIKE ${`%${lowercaseQuery}%`}`
+      sql`lower(${places.name}) LIKE ${pattern} ESCAPE '\\'
+        OR lower(${places.description}) LIKE ${pattern} ESCAPE '\\'
+        OR lower(coalesce(${places.address}, '')) LIKE ${pattern} ESCAPE '\\'
+        OR lower(${places.category}) LIKE ${pattern} ESCAPE '\\'`
     );
   }
 
@@ -261,9 +277,46 @@ export class DatabaseStorage implements IStorage {
     return await db.select().from(accessibilityFeatures).where(eq(accessibilityFeatures.placeId, placeId));
   }
 
+  async getAllAccessibilityFeatures(): Promise<AccessibilityFeature[]> {
+    return await db.select().from(accessibilityFeatures);
+  }
+
   async createAccessibilityFeature(feature: InsertAccessibilityFeature): Promise<AccessibilityFeature> {
-    const [newFeature] = await db.insert(accessibilityFeatures).values(feature).returning();
+    // Keep the legacy yes/no flag in step with the status for anything still reading it.
+    const values = feature.status ? { ...feature, available: feature.status !== "no" } : feature;
+    const [newFeature] = await db.insert(accessibilityFeatures).values(values).returning();
     return newFeature;
+  }
+
+  async updateAccessibilityFeature(id: number, feature: Partial<InsertAccessibilityFeature>): Promise<AccessibilityFeature | undefined> {
+    const values = feature.status ? { ...feature, available: feature.status !== "no" } : feature;
+    const [updated] = await db.update(accessibilityFeatures).set(values).where(eq(accessibilityFeatures.id, id)).returning();
+    return updated;
+  }
+
+  async createObservations(observations: InsertAccessibilityObservation[]): Promise<AccessibilityObservation[]> {
+    if (observations.length === 0) return [];
+    return await db.insert(accessibilityObservations).values(observations).returning();
+  }
+
+  async getPublishedObservations(placeId?: number): Promise<AccessibilityObservation[]> {
+    const published = eq(accessibilityObservations.moderationStatus, "published");
+    const where = placeId === undefined ? published : and(published, eq(accessibilityObservations.placeId, placeId));
+    return await db.select().from(accessibilityObservations).where(where).orderBy(desc(accessibilityObservations.observedAt));
+  }
+
+  async getObservationsByStatus(moderationStatus: string): Promise<AccessibilityObservation[]> {
+    return await db.select().from(accessibilityObservations)
+      .where(eq(accessibilityObservations.moderationStatus, moderationStatus))
+      .orderBy(desc(accessibilityObservations.createdAt));
+  }
+
+  async setObservationModeration(id: number, moderationStatus: string): Promise<AccessibilityObservation | undefined> {
+    const [updated] = await db.update(accessibilityObservations)
+      .set({ moderationStatus })
+      .where(eq(accessibilityObservations.id, id))
+      .returning();
+    return updated;
   }
 
   // Place Media
@@ -798,6 +851,8 @@ export class DatabaseStorage implements IStorage {
     const reviewIds = reviewRows.map((r) => r.id);
 
     await db.delete(accessibilityFeatures).where(eq(accessibilityFeatures.placeId, id));
+    await db.delete(accessibilityObservations).where(eq(accessibilityObservations.placeId, id));
+    await db.delete(reports).where(and(eq(reports.contentType, "place"), eq(reports.contentId, id)));
     await db.delete(placeMedia).where(eq(placeMedia.placeId, id));
     await db.delete(placeTips).where(eq(placeTips.placeId, id));
     if (reviewIds.length > 0) {

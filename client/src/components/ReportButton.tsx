@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { useMutation } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/hooks/use-auth";
@@ -9,9 +9,16 @@ import { apiRequest } from "@/lib/queryClient";
 import { Flag } from "lucide-react";
 
 interface ReportButtonProps {
-  contentType: "photo" | "review" | "community_post";
+  contentType: "photo" | "review" | "community_post" | "tip";
   contentId: number;
 }
+
+const CONTENT_NAMES: Record<ReportButtonProps["contentType"], string> = {
+  photo: "photo",
+  review: "review",
+  community_post: "post",
+  tip: "tip",
+};
 
 export function ReportButton({ contentType, contentId }: ReportButtonProps) {
   const [open, setOpen] = useState(false);
@@ -47,20 +54,23 @@ export function ReportButton({ contentType, contentId }: ReportButtonProps) {
         onClick={() => setOpen(true)}
         data-testid={`button-report-${contentType}-${contentId}`}
       >
-        <Flag className="w-3.5 h-3.5 mr-1.5" />
-        Report
+        <Flag className="w-3.5 h-3.5 mr-1.5" aria-hidden="true" />
+        Report<span className="sr-only"> this {CONTENT_NAMES[contentType]}</span>
       </Button>
 
       <Dialog open={open} onOpenChange={setOpen}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Report Content</DialogTitle>
+            <DialogTitle>Report this {CONTENT_NAMES[contentType]}</DialogTitle>
+            <DialogDescription>
+              Please describe why this content should be reviewed by our team.
+            </DialogDescription>
           </DialogHeader>
-          <p className="text-sm text-muted-foreground">
-            Please describe why this content should be reviewed by our team.
-          </p>
+          <label htmlFor={`report-reason-${contentType}-${contentId}`} className="text-sm font-medium">
+            What's the problem?
+          </label>
           <Textarea
-            placeholder="Describe the issue..."
+            id={`report-reason-${contentType}-${contentId}`}
             value={reason}
             onChange={(e) => setReason(e.target.value)}
             data-testid="input-report-reason"

@@ -54,6 +54,21 @@ describe("storage writes against the real SQLite fallback", () => {
     expect(Array.isArray(results)).toBe(true);
   });
 
+  // Timestamps written from JS used to read back as Invalid Date under SQLite, which silently
+  // disabled account lockouts and token expiry.
+  it("reads back a timestamp it wrote", async () => {
+    const when = new Date("2026-03-04T05:06:07.000Z");
+    await storage.updatePlace(createdPlaceId!, { lastCheckedAt: when } as never);
+    const place = await storage.getPlace(createdPlaceId!);
+    expect(place?.lastCheckedAt?.getTime()).toBe(when.getTime());
+  });
+
+  it("locks an account after repeated failed logins", async () => {
+    for (let i = 0; i < 5; i++) await storage.recordFailedLogin(createdUserId!);
+    const user = await storage.getUserById(createdUserId!);
+    expect(storage.isAccountLocked(user!)).toBe(true);
+  });
+
   it("deletes the place it created and cleans up related rows", async () => {
     const deleted = await storage.deletePlace(createdPlaceId!);
     expect(deleted).toBe(true);

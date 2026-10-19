@@ -7,8 +7,10 @@ import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { Loader2, Lock, Eye, EyeOff, CheckCircle, XCircle } from "lucide-react";
 import { apiRequest } from "@/lib/queryClient";
+import { usePageMeta } from "@/hooks/use-page-meta";
 
 export default function ResetPassword() {
+  usePageMeta({ title: "Reset Password" });
   const [, setLocation] = useLocation();
   const search = useSearch();
   const { toast } = useToast();

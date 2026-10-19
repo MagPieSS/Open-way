@@ -7,8 +7,10 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { Loader2, Eye, EyeOff, Shield, Mail, Lock } from "lucide-react";
+import { usePageMeta } from "@/hooks/use-page-meta";
 
 export default function Login() {
+  usePageMeta({ title: "Sign In" });
   const [, setLocation] = useLocation();
   const search = useSearch();
   const requestedReturnTo = new URLSearchParams(search).get("returnTo");
@@ -90,6 +92,7 @@ export default function Login() {
                 <Label htmlFor="2fa-code">Verification Code</Label>
                 <Input
                   id="2fa-code"
+                  autoComplete="one-time-code"
                   type="text"
                   placeholder="Enter code"
                   value={twoFactorCode}
@@ -154,6 +157,7 @@ export default function Login() {
                 <Mail className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
                 <Input
                   id="email"
+                  autoComplete="email"
                   type="email"
                   placeholder="you@example.com"
                   value={email}
@@ -176,6 +180,7 @@ export default function Login() {
                 <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
                 <Input
                   id="password"
+                  autoComplete="current-password"
                   type={showPassword ? "text" : "password"}
                   placeholder="Enter your password"
                   value={password}
@@ -187,7 +192,9 @@ export default function Login() {
                 <button
                   type="button"
                   onClick={() => setShowPassword(!showPassword)}
-                  className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                  className="absolute right-2 top-1/2 -translate-y-1/2 p-1 rounded text-muted-foreground hover:text-foreground"
+                  aria-label={showPassword ? "Hide password" : "Show password"}
+                  aria-pressed={showPassword}
                   data-testid="button-toggle-password"
                 >
                   {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}

@@ -9,8 +9,10 @@ import { Bookmark, MapPin, LogIn, Trash2 } from "lucide-react";
 import { Place } from "@shared/schema";
 import { apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
+import { usePageMeta } from "@/hooks/use-page-meta";
 
 export default function SavedPlaces() {
+  usePageMeta({ title: "Saved Places" });
   const { user, isLoading: authLoading } = useAuth();
   const queryClient = useQueryClient();
   const { toast } = useToast();

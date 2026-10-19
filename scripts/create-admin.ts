@@ -7,7 +7,8 @@ import path from "path";
 // Usage: ADMIN_EMAIL=you@example.com ADMIN_PASSWORD=yourpassword npx tsx scripts/create-admin.ts
 // If ADMIN_PASSWORD is omitted, a random password is generated and printed once.
 async function main() {
-  const dbPath = path.resolve(process.cwd(), "sqlite.db");
+  // Same database the app uses: SQLITE_PATH if set (see server/db.ts), else ./sqlite.db.
+  const dbPath = path.resolve(process.cwd(), process.env.SQLITE_PATH || "sqlite.db");
   const sqlite = new Database(dbPath);
 
   const email = (process.env.ADMIN_EMAIL || "admin@openway.local").toLowerCase();

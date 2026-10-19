@@ -25,6 +25,7 @@ import { useAuth } from "@/hooks/use-auth";
 import { ReportButton } from "@/components/ReportButton";
 import type { CommunityPost } from "@shared/schema";
 import { Link } from "wouter";
+import { usePageMeta } from "@/hooks/use-page-meta";
 
 const SORT_OPTIONS = [
   { label: "Newest", value: "newest" },
@@ -207,6 +208,7 @@ function PostCard({
 }
 
 export default function Community() {
+  usePageMeta({ title: "Community" });
   const queryClient = useQueryClient();
   const { toast } = useToast();
   const { user } = useAuth();

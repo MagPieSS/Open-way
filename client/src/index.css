@@ -19,12 +19,12 @@
   --secondary-foreground: 222 47% 11%;
 
   --muted: 210 40% 96%;
-  --muted-foreground: 215 16% 47%;
+  --muted-foreground: 215 16% 42%; /* 5.7:1 on white (was 4.4:1 on the page background) */
   
   --accent: 330 81% 60%; /* Pink */
   --accent-foreground: 0 0% 100%;
 
-  --destructive: 0 84% 60%;
+  --destructive: 0 84% 42%; /* 6.1:1 on white (was 3.8:1) */
   --destructive-foreground: 210 40% 98%;
 
   --border: 214 32% 91%;
@@ -42,9 +42,14 @@
   --radius: 0.75rem;
 
   /* Status Colors (HSL) */
-  --status-accessible: 142 76% 36%; /* Green */
-  --status-partial: 45 93% 47%; /* Yellow */
-  --status-not-accessible: 0 72% 51%; /* Red */
+  --status-accessible: 142 76% 28%; /* Green: white text 5.2:1 (was 3.3:1) */
+  --status-partial: 45 93% 47%; /* Yellow: black text 10.6:1 */
+  --status-not-accessible: 0 72% 51%; /* Red: white text 4.8:1 */
+
+  /* Feature status text on cards and the page background (all at least 5.4:1) */
+  --fact-yes: 142 76% 26%;
+  --fact-limited: 30 90% 30%;
+  --fact-no: 0 72% 40%;
 }
 
 /* Dark Mode Overrides */
@@ -52,14 +57,19 @@
   --background: 222 47% 11%;
   --foreground: 210 40% 98%;
 
-  --primary: 243 75% 65%;
-  --primary-foreground: 0 0% 100%;
+  /* Lighter indigo so primary-coloured text and links reach 5.3:1 on dark surfaces (was 3.4:1);
+     text on primary buttons switches to dark navy (6.2:1). */
+  --primary: 243 80% 75%;
+  --primary-foreground: 222 47% 11%;
 
   --secondary: 217 19% 20%;
   --secondary-foreground: 210 40% 98%;
 
   --muted: 217 19% 20%;
   --muted-foreground: 215 20% 65%;
+  --fact-yes: 142 60% 60%;
+  --fact-limited: 45 90% 60%;
+  --fact-no: 0 85% 72%;
 
   --accent: 330 81% 65%;
   --accent-foreground: 0 0% 100%;
@@ -87,6 +97,9 @@
   --secondary-foreground: 0 0% 100%;
   --muted: 0 0% 20%;
   --muted-foreground: 0 0% 90%;
+  --fact-yes: 120 100% 70%;
+  --fact-limited: 60 100% 60%;
+  --fact-no: 0 100% 78%;
   --border: 0 0% 100%;
   --input: 0 0% 100%;
   --ring: 60 100% 50%;
@@ -139,9 +152,11 @@ html.text-size-xl { font-size: 20px; }
 .bg-partial { background-color: hsl(var(--status-partial)); color: black; }
 .bg-not-accessible { background-color: hsl(var(--status-not-accessible)); color: white; }
 
-.text-accessible { color: hsl(var(--status-accessible)); }
-.text-partial { color: hsl(var(--status-partial)); }
-.text-not-accessible { color: hsl(var(--status-not-accessible)); }
+/* Status as text uses the darker fact colors: the badge colors are too light for text
+   (yellow text on white was 2.0:1). */
+.text-accessible, .text-fact-yes { color: hsl(var(--fact-yes)); }
+.text-partial, .text-fact-limited { color: hsl(var(--fact-limited)); }
+.text-not-accessible, .text-fact-no { color: hsl(var(--fact-no)); }
 
 /* Dropdown animation */
 @keyframes dropdown-in {
@@ -348,4 +363,57 @@ html.text-size-xl { font-size: 20px; }
 .leaflet-top,
 .leaflet-bottom {
   z-index: 40 !important;
+}
+
+/* Map popups follow the theme. Leaflet's default white popup put near-white text on white in
+   dark and high-contrast modes. */
+.leaflet-popup-content-wrapper,
+.leaflet-popup-tip {
+  background: hsl(var(--card));
+  color: hsl(var(--foreground));
+}
+.leaflet-container a.leaflet-popup-close-button {
+  color: hsl(var(--foreground));
+}
+
+/* Keep focused elements clear of the fixed 64px header when the page scrolls to them
+   (WCAG 2.4.11 Focus Not Obscured). */
+html {
+  scroll-padding-top: 5rem;
+}
+
+/* Reduced motion: the operating-system setting, or the in-app setting (adds .reduce-motion). */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+.reduce-motion *, .reduce-motion *::before, .reduce-motion *::after {
+  animation-duration: 0.01ms !important;
+  animation-iteration-count: 1 !important;
+  transition-duration: 0.01ms !important;
+  scroll-behavior: auto !important;
+}
+
+/* Brand gradient for the home hero and banner. Ends on a darker pink than --accent so white text
+   stays at least 5.8:1 across it (it was 3.6:1 on --accent). High contrast uses a solid colour
+   so black text works everywhere. */
+.bg-brand-gradient {
+  background-image: linear-gradient(135deg, hsl(var(--primary)) 0%, hsl(var(--primary)) 50%, hsl(330 81% 42%) 100%);
+}
+.dark .bg-brand-gradient {
+  /* Dark text in dark mode, so the gradient ends on a light pink. */
+  background-image: linear-gradient(135deg, hsl(var(--primary)) 0%, hsl(var(--primary)) 50%, hsl(330 81% 78%) 100%);
+}
+.high-contrast .bg-brand-gradient {
+  background-image: none;
+  background-color: hsl(var(--primary));
+}
+
+/* OpenStreetMap tiles have no dark style; invert them so dark mode isn't a bright map. */
+.dark .leaflet-tile-pane {
+  filter: invert(1) hue-rotate(180deg) brightness(0.9) contrast(0.9);
 }

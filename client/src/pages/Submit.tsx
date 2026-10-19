@@ -2,7 +2,9 @@ import { useState, useRef } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { insertPlaceSchema, insertReviewSchema, ACCESSIBILITY_STATUS, ACCESSIBILITY_FEATURE_TYPES, PLACE_CATEGORIES } from "@shared/schema";
+import { insertReviewSchema, ACCESSIBILITY_STATUS, PLACE_CATEGORIES } from "@shared/schema";
+import { FEATURES, FEATURE_GROUPS, KEY_FEATURES } from "@shared/accessibility";
+import { FeatureQuestion, type Answer } from "@/components/accessibility/ShareReportDialog";
 import { useCreatePlace } from "@/hooks/use-places";
 import { useCreateReview } from "@/hooks/use-reviews";
 import { usePlaces } from "@/hooks/use-places";
@@ -16,6 +18,7 @@ import { Card } from "@/components/ui/card";
 import * as z from "zod";
 import { Link, useSearch } from "wouter";
 import { apiRequest } from "@/lib/queryClient";
+import { usePageMeta } from "@/hooks/use-page-meta";
 
 const ACCESSIBILITY_SOURCE_OPTIONS = [
   "Personal visit",
@@ -25,23 +28,26 @@ const ACCESSIBILITY_SOURCE_OPTIONS = [
   "Public agency data",
 ];
 
-const FEATURE_CHECKLIST = [
-  { type: ACCESSIBILITY_FEATURE_TYPES.RAMP, label: "Wheelchair ramp" },
-  { type: ACCESSIBILITY_FEATURE_TYPES.ELEVATOR, label: "Elevator access" },
-  { type: ACCESSIBILITY_FEATURE_TYPES.ACCESSIBLE_RESTROOM, label: "Accessible restroom" },
-  { type: ACCESSIBILITY_FEATURE_TYPES.ACCESSIBLE_PARKING, label: "Accessible parking" },
-  { type: ACCESSIBILITY_FEATURE_TYPES.WHEELCHAIR_RENTAL, label: "Wheelchair rental" },
-  { type: ACCESSIBILITY_FEATURE_TYPES.BRAILLE_SIGNAGE, label: "Braille signage" },
-  { type: ACCESSIBILITY_FEATURE_TYPES.AUDIO_GUIDE, label: "Audio guide" },
-  { type: ACCESSIBILITY_FEATURE_TYPES.HEARING_LOOP, label: "Hearing loop" },
-  { type: ACCESSIBILITY_FEATURE_TYPES.SIGN_LANGUAGE, label: "Sign language services" },
-  { type: ACCESSIBILITY_FEATURE_TYPES.LARGE_PRINT, label: "Large print materials" },
-  { type: ACCESSIBILITY_FEATURE_TYPES.SERVICE_ANIMAL_FRIENDLY, label: "Service animal friendly" },
-  { type: ACCESSIBILITY_FEATURE_TYPES.QUIET_HOURS, label: "Quiet hours" },
-  { type: ACCESSIBILITY_FEATURE_TYPES.SENSORY_ROOM, label: "Sensory room" },
-];
+// What the form asks for; the server applies its own stricter checks (placeContributionSchema).
+const placeFormSchema = z.object({
+  name: z.string().trim().min(1, "Enter the place's name").max(200, "Name is too long"),
+  category: z.string().min(1, "Choose a category"),
+  address: z.string().trim().max(500, "Address is too long").optional(),
+  accessibilityStatus: z.string().min(1, "Choose the overall accessibility"),
+  accessibilitySource: z.string(),
+  description: z.string().trim().min(1, "Add a short description").max(2000, "Description is too long"),
+  imageUrl: z.string().optional(),
+});
+type PlaceFormValues = z.infer<typeof placeFormSchema>;
+
+const STATUS_HELP: Record<string, string> = {
+  [ACCESSIBILITY_STATUS.ACCESSIBLE]: "You could get in and use the main areas without barriers.",
+  [ACCESSIBILITY_STATUS.PARTIALLY_ACCESSIBLE]: "Some things work, others don't (say which below).",
+  [ACCESSIBILITY_STATUS.NOT_ACCESSIBLE]: "There are barriers to getting in or using the place.",
+};
 
 export default function Submit() {
+  usePageMeta({ title: "Contribute" });
   const search = useSearch();
   const queryParams = new URLSearchParams(search);
   const preselectedPlaceId = queryParams.get("placeId");
@@ -129,7 +135,8 @@ function PlaceForm() {
   const createPlace = useCreatePlace();
   const [uploadedImageUrl, setUploadedImageUrl] = useState<string | null>(null);
   const [imagePreview, setImagePreview] = useState<string | null>(null);
-  const [featureSelections, setFeatureSelections] = useState<Record<string, { description: string }>>({});
+  const [featureAnswers, setFeatureAnswers] = useState<Record<string, Answer>>({});
+  const [featureNotes, setFeatureNotes] = useState<Record<string, string>>({});
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const { uploadFile, isUploading, progress } = useUpload({
@@ -149,12 +156,13 @@ function PlaceForm() {
     },
   });
 
-  const form = useForm<z.infer<typeof insertPlaceSchema>>({
-    resolver: zodResolver(insertPlaceSchema),
+  const form = useForm<PlaceFormValues>({
+    resolver: zodResolver(placeFormSchema),
     defaultValues: {
       name: "",
       category: "",
-      accessibilityStatus: ACCESSIBILITY_STATUS.ACCESSIBLE,
+      // No default: picking "Accessible" for people inflated claims about places.
+      accessibilityStatus: "",
       description: "",
       imageUrl: "",
       address: "",
@@ -183,12 +191,14 @@ function PlaceForm() {
     }
   };
 
-  const onSubmit = (data: z.infer<typeof insertPlaceSchema>) => {
-    const accessibilityFeatures = Object.entries(featureSelections).map(([featureType, value]) => ({
-      featureType,
-      available: true,
-      description: value.description.trim() || undefined,
-    }));
+  const onSubmit = (data: PlaceFormValues) => {
+    const accessibilityFeatures = Object.entries(featureAnswers)
+      .filter(([, status]) => status !== "")
+      .map(([featureType, status]) => ({
+        featureType,
+        status: status as Exclude<Answer, "">,
+        description: featureNotes[featureType]?.trim() || undefined,
+      }));
 
     const submitData = {
       ...data,
@@ -214,41 +224,41 @@ function PlaceForm() {
     });
   };
 
-  const toggleFeature = (featureType: string) => {
-    setFeatureSelections((current) => {
-      if (current[featureType]) {
-        const next = { ...current };
-        delete next[featureType];
-        return next;
-      }
-      return { ...current, [featureType]: { description: "" } };
-    });
-  };
-
-  const updateFeatureDescription = (featureType: string, description: string) => {
-    setFeatureSelections((current) => ({
-      ...current,
-      [featureType]: { description },
-    }));
-  };
+  const errors = form.formState.errors;
+  const featureQuestion = (key: string) => (
+    <FeatureQuestion
+      key={key}
+      featureKey={key}
+      answer={featureAnswers[key] ?? ""}
+      note={featureNotes[key] ?? ""}
+      onAnswer={(value) => setFeatureAnswers((prev) => ({ ...prev, [key]: value }))}
+      onNote={(value) => setFeatureNotes((prev) => ({ ...prev, [key]: value }))}
+    />
+  );
 
   return (
     <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6">
       <div>
-        <label className="block font-bold mb-2">Place Name</label>
+        <label htmlFor="place-name" className="block font-bold mb-2">Place name</label>
         <input
+          id="place-name"
           {...form.register("name")}
+          aria-invalid={!!errors.name}
+          aria-describedby={errors.name ? "place-name-error" : undefined}
           className="w-full p-4 rounded-md border-2 border-border bg-background focus:ring-2 focus:ring-primary focus:border-transparent outline-none transition-all"
           placeholder="e.g. City Library"
           data-testid="input-place-name"
         />
-        {form.formState.errors.name && <p className="text-destructive text-sm mt-1">{form.formState.errors.name.message}</p>}
+        {errors.name && <p id="place-name-error" className="text-destructive text-sm mt-1">{errors.name.message}</p>}
       </div>
 
       <div>
-        <label className="block font-bold mb-2">Category</label>
+        <label htmlFor="place-category" className="block font-bold mb-2">Category</label>
         <select
+          id="place-category"
           {...form.register("category")}
+          aria-invalid={!!errors.category}
+          aria-describedby={errors.category ? "place-category-error" : undefined}
           className="w-full p-4 rounded-md border-2 border-border bg-background focus:ring-2 focus:ring-primary focus:border-transparent outline-none transition-all appearance-none"
           data-testid="select-place-category"
         >
@@ -259,48 +269,53 @@ function PlaceForm() {
             </option>
           ))}
         </select>
-        {form.formState.errors.category && <p className="text-destructive text-sm mt-1">{form.formState.errors.category.message}</p>}
+        {errors.category && <p id="place-category-error" className="text-destructive text-sm mt-1">{errors.category.message}</p>}
       </div>
 
       <div>
-        <label className="block font-bold mb-2">Address</label>
+        <label htmlFor="place-address" className="block font-bold mb-2">Address</label>
         <input
+          id="place-address"
           {...form.register("address")}
+          autoComplete="street-address"
           className="w-full p-4 rounded-md border-2 border-border bg-background focus:ring-2 focus:ring-primary focus:border-transparent outline-none transition-all"
           placeholder="e.g. 123 Main Street, Philadelphia, PA 19103"
           data-testid="input-place-address"
         />
       </div>
 
-      <div>
-        <label className="block font-bold mb-2">Accessibility Status</label>
+      <fieldset aria-describedby={errors.accessibilityStatus ? "place-status-error" : undefined}>
+        <legend className="block font-bold mb-2">Overall accessibility, from what you know</legend>
         <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
           {Object.values(ACCESSIBILITY_STATUS).map((status) => (
             <label key={status} className={`
-              cursor-pointer rounded-md p-4 border-2 transition-all flex flex-col items-center text-center gap-2
-              ${form.watch("accessibilityStatus") === status 
-                ? 'border-primary bg-primary/5 shadow-md' 
+              cursor-pointer rounded-md p-4 border-2 transition-all flex flex-col gap-1
+              has-[:focus-visible]:outline has-[:focus-visible]:outline-2 has-[:focus-visible]:outline-primary
+              ${form.watch("accessibilityStatus") === status
+                ? 'border-primary bg-primary/5 shadow-md'
                 : 'border-border'}
             `}>
-              <input
-                type="radio"
-                value={status}
-                {...form.register("accessibilityStatus")}
-                className="sr-only"
-                data-testid={`radio-status-${status.toLowerCase().replace(/\s+/g, '-')}`}
-              />
-              <span className={`font-bold ${
-                status === ACCESSIBILITY_STATUS.ACCESSIBLE ? 'text-green-600 dark:text-green-400' :
-                status === ACCESSIBILITY_STATUS.PARTIALLY_ACCESSIBLE ? 'text-yellow-600 dark:text-yellow-400' : 'text-red-600 dark:text-red-400'
-              }`}>{status}</span>
+              <span className="flex items-center gap-2 font-bold">
+                <input
+                  type="radio"
+                  value={status}
+                  {...form.register("accessibilityStatus")}
+                  className="w-4 h-4 accent-[hsl(var(--primary))]"
+                  data-testid={`radio-status-${status.toLowerCase().replace(/\s+/g, '-')}`}
+                />
+                {status}
+              </span>
+              <span className="text-sm text-muted-foreground">{STATUS_HELP[status]}</span>
             </label>
           ))}
         </div>
-      </div>
+        {errors.accessibilityStatus && <p id="place-status-error" className="text-destructive text-sm mt-1">{errors.accessibilityStatus.message}</p>}
+      </fieldset>
 
       <div>
-        <label className="block font-bold mb-2">Information Source</label>
+        <label htmlFor="place-source" className="block font-bold mb-2">Where your information comes from</label>
         <select
+          id="place-source"
           {...form.register("accessibilitySource")}
           className="w-full p-4 rounded-md border-2 border-border bg-background focus:ring-2 focus:ring-primary focus:border-transparent outline-none transition-all appearance-none"
           data-testid="select-accessibility-source"
@@ -313,49 +328,42 @@ function PlaceForm() {
         </select>
       </div>
 
-      <div>
-        <label className="block font-bold mb-2">Structured Accessibility Details</label>
-        <div className="grid gap-3">
-          {FEATURE_CHECKLIST.map((feature) => {
-            const selected = Boolean(featureSelections[feature.type]);
+      <fieldset>
+        <legend className="block font-bold">Accessibility details</legend>
+        <p className="text-sm text-muted-foreground mb-2">
+          Answer what you know. Anything left as "Not sure" shows as not known yet.
+        </p>
+        <div className="rounded-md border-2 border-border bg-background px-4">
+          {KEY_FEATURES.map(featureQuestion)}
+        </div>
+        <details className="mt-3">
+          <summary className="cursor-pointer font-medium text-primary py-2">More features</summary>
+          {FEATURE_GROUPS.map((group) => {
+            const keys = FEATURES.filter((f) => f.group === group.key && !(KEY_FEATURES as readonly string[]).includes(f.key)).map((f) => f.key);
+            if (keys.length === 0) return null;
             return (
-              <div key={feature.type} className="rounded-md border-2 border-border bg-background p-4">
-                <label className="flex items-center gap-3 font-semibold">
-                  <input
-                    type="checkbox"
-                    checked={selected}
-                    onChange={() => toggleFeature(feature.type)}
-                    className="h-5 w-5 accent-primary"
-                    data-testid={`checkbox-feature-${feature.type}`}
-                  />
-                  {feature.label}
-                </label>
-                {selected && (
-                  <textarea
-                    value={featureSelections[feature.type]?.description || ""}
-                    onChange={(e) => updateFeatureDescription(feature.type, e.target.value)}
-                    rows={2}
-                    className="mt-3 w-full p-3 rounded-md border border-border bg-card focus:ring-2 focus:ring-primary focus:border-transparent outline-none transition-all"
-                    placeholder="Optional note, location, limitation, or condition"
-                    data-testid={`input-feature-note-${feature.type}`}
-                  />
-                )}
+              <div key={group.key} className="mt-3">
+                <h3 className="font-semibold">{group.label}</h3>
+                <div className="rounded-md border-2 border-border bg-background px-4">{keys.map(featureQuestion)}</div>
               </div>
             );
           })}
-        </div>
-      </div>
+        </details>
+      </fieldset>
 
       <div>
-        <label className="block font-bold mb-2">Description</label>
+        <label htmlFor="place-description" className="block font-bold mb-2">Description</label>
         <textarea
+          id="place-description"
           {...form.register("description")}
+          aria-invalid={!!errors.description}
+          aria-describedby={errors.description ? "place-description-error" : undefined}
           rows={4}
           className="w-full p-4 rounded-md border-2 border-border bg-background focus:ring-2 focus:ring-primary focus:border-transparent outline-none transition-all"
           placeholder="Describe the accessibility features (ramps, elevators, restrooms...)"
           data-testid="input-place-description"
         />
-        {form.formState.errors.description && <p className="text-destructive text-sm mt-1">{form.formState.errors.description.message}</p>}
+        {errors.description && <p id="place-description-error" className="text-destructive text-sm mt-1">{errors.description.message}</p>}
       </div>
 
       <div>
@@ -370,9 +378,10 @@ function PlaceForm() {
                 variant="secondary"
                 onClick={clearImage}
                 className="absolute top-2 right-2"
+                aria-label="Remove photo"
                 data-testid="button-clear-image"
               >
-                <X className="w-4 h-4" />
+                <X className="w-4 h-4" aria-hidden="true" />
               </Button>
               {isUploading && (
                 <div className="absolute inset-0 bg-background/60 flex items-center justify-center">

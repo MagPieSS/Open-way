@@ -19,7 +19,7 @@ let placeId: number;
 const validPlace = {
   name: "Test Diner",
   category: "restaurants",
-  accessibilityStatus: "Unknown",
+  accessibilityStatus: "Partially Accessible",
   description: "A diner used by the security tests.",
   address: "1 Test Street, Philadelphia, PA",
 };
@@ -29,7 +29,7 @@ beforeAll(async () => {
   const place = await storage.createPlace({
     name: "Seeded Test Place",
     category: "museums",
-    accessibilityStatus: "Unknown",
+    accessibilityStatus: "Partially Accessible",
     description: "Created directly through storage for tests.",
   });
   placeId = place.id;
@@ -85,6 +85,8 @@ describe("place submissions cannot set moderator-only fields", () => {
 
   it.each([
     ["an unknown status", { accessibilityStatus: "Totally fine" }],
+    // Places with no accessibility information aren't listed.
+    ["the Unknown status", { accessibilityStatus: "Unknown" }],
     ["an unknown category", { category: "spaceports" }],
     ["an empty name", { name: "   " }],
     ["a javascript: website", { website: "javascript:alert(1)" }],
@@ -155,7 +157,7 @@ describe("place ratings stay in step with reviews", () => {
     const place = await storage.createPlace({
       name: "Rating Test Place",
       category: "parks",
-      accessibilityStatus: "Unknown",
+      accessibilityStatus: "Partially Accessible",
       description: "Used to check rating aggregation.",
     });
     const a = client();

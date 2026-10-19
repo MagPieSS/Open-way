@@ -5,8 +5,10 @@ import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle }
 import { Loader2, MailCheck, XCircle } from "lucide-react";
 import { apiRequest } from "@/lib/queryClient";
 import { useQueryClient } from "@tanstack/react-query";
+import { usePageMeta } from "@/hooks/use-page-meta";
 
 export default function VerifyEmail() {
+  usePageMeta({ title: "Verify Email" });
   const search = useSearch();
   const queryClient = useQueryClient();
   const [status, setStatus] = useState<"verifying" | "success" | "error">("verifying");
