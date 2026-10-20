@@ -9,9 +9,7 @@ export default [
     ignores: [
       "dist/**",
       "node_modules/**",
-      "attached_assets/**",
       "uploads/**",
-      ".local/**",
       "client/public/**",
       "*.config.*",
     ],

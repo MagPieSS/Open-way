@@ -1,11 +1,39 @@
 import { useSettings, type FontFamily, type LineSpacing } from "@/hooks/use-settings";
-import { useAuth } from "@/hooks/use-auth";
-import { Moon, Sun, Type, Eye, Zap, BookOpen, AlignJustify, Link2, Focus, Shield, Loader2, Copy, Check, Volume2 } from "lucide-react";
+import { Moon, Sun, Type, Eye, Zap, BookOpen, AlignJustify, Link2, Focus, Volume2 } from "lucide-react";
 import { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
-import { useToast } from "@/hooks/use-toast";
+import { usePageMeta } from "@/hooks/use-page-meta";
+
+// Defined outside Settings so it isn't a new component type on every render; when it was inside,
+// React remounted the button after each toggle and keyboard focus fell back to the page.
+function ToggleSwitch({ checked, onToggle, label, testId }: { checked: boolean; onToggle: () => void; label: string; testId: string }) {
+  return (
+    <button
+      type="button"
+      role="switch"
+      aria-checked={checked}
+      aria-label={label}
+      onClick={onToggle}
+      data-testid={testId}
+      className={`
+        w-14 h-8 rounded-full transition-colors relative flex-shrink-0
+        focus:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2
+        ${checked ? 'bg-primary' : 'bg-input'}
+      `}
+    >
+      <span
+        aria-hidden="true"
+        className={`
+          w-6 h-6 rounded-full bg-white shadow-sm absolute top-1 transition-transform
+          ${checked ? 'left-7' : 'left-1'}
+        `}
+      />
+    </button>
+  );
+}
 
 export default function Settings() {
+  usePageMeta({ title: "Accessibility Settings" });
   const { 
     theme, setTheme, 
     highContrast, toggleHighContrast,
@@ -20,97 +48,7 @@ export default function Settings() {
     readAloudSpeed, setReadAloudSpeed
   } = useSettings();
   
-  const { user, setup2FA, confirm2FA, disable2FA, regenerateBackupCodes } = useAuth();
-  const { toast } = useToast();
-  
   const [availableVoices, setAvailableVoices] = useState<SpeechSynthesisVoice[]>([]);
-  const [twoFactorStep, setTwoFactorStep] = useState<'idle' | 'setup' | 'verify' | 'backup'>('idle');
-  const [qrCode, setQrCode] = useState<string>('');
-  const [backupCodes, setBackupCodes] = useState<string[]>([]);
-  const [verifyCode, setVerifyCode] = useState('');
-  const [isLoading, setIsLoading] = useState(false);
-  const [copiedIndex, setCopiedIndex] = useState<number | null>(null);
-  const [showDisableConfirm, setShowDisableConfirm] = useState(false);
-  const [disablePassword, setDisablePassword] = useState('');
-
-  const handleSetup2FA = async () => {
-    setIsLoading(true);
-    try {
-      const result = await setup2FA();
-      setQrCode(result.qrCode);
-      setBackupCodes(result.backupCodes);
-      setTwoFactorStep('setup');
-    } catch (error) {
-      toast({ variant: "destructive", title: "Error", description: "Failed to start 2FA setup" });
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
-  const handleConfirm2FA = async () => {
-    if (verifyCode.length !== 6) {
-      toast({ variant: "destructive", title: "Error", description: "Please enter a 6-digit code" });
-      return;
-    }
-    setIsLoading(true);
-    try {
-      await confirm2FA(verifyCode);
-      setTwoFactorStep('backup');
-      toast({ title: "Success", description: "Two-factor authentication enabled!" });
-    } catch (error) {
-      toast({ variant: "destructive", title: "Error", description: "Invalid verification code" });
-    } finally {
-      setIsLoading(false);
-      setVerifyCode('');
-    }
-  };
-
-  const handleDisable2FA = async () => {
-    if (!disablePassword) {
-      toast({ variant: "destructive", title: "Error", description: "Enter your password to confirm" });
-      return;
-    }
-    setIsLoading(true);
-    try {
-      await disable2FA({ password: disablePassword });
-      setTwoFactorStep('idle');
-      setQrCode('');
-      setBackupCodes([]);
-      setShowDisableConfirm(false);
-      setDisablePassword('');
-      toast({ title: "Success", description: "Two-factor authentication disabled" });
-    } catch (error) {
-      toast({ variant: "destructive", title: "Error", description: error instanceof Error ? error.message : "Failed to disable 2FA. Check your password and try again." });
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
-  const handleRegenerateBackupCodes = async () => {
-    setIsLoading(true);
-    try {
-      const result = await regenerateBackupCodes();
-      setBackupCodes(result.backupCodes);
-      setTwoFactorStep('backup');
-      toast({ title: "Success", description: "Backup codes regenerated" });
-    } catch (error) {
-      toast({ variant: "destructive", title: "Error", description: "Failed to regenerate backup codes" });
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
-  const copyBackupCode = async (code: string, index: number) => {
-    await navigator.clipboard.writeText(code);
-    setCopiedIndex(index);
-    setTimeout(() => setCopiedIndex(null), 2000);
-  };
-
-  const copyAllBackupCodes = async () => {
-    await navigator.clipboard.writeText(backupCodes.join('\n'));
-    toast({ title: "Copied", description: "All backup codes copied to clipboard" });
-  };
-
   useEffect(() => {
     const loadVoices = () => {
       const voices = window.speechSynthesis?.getVoices() || [];
@@ -143,23 +81,6 @@ export default function Settings() {
     "2": "Maximum",
   };
 
-  const ToggleSwitch = ({ checked, onToggle, testId }: { checked: boolean; onToggle: () => void; testId: string }) => (
-    <button 
-      onClick={onToggle}
-      data-testid={testId}
-      className={`
-        w-14 h-8 rounded-full transition-colors relative
-        ${checked ? 'bg-primary' : 'bg-input'}
-      `}
-      aria-pressed={checked}
-    >
-      <div className={`
-        w-6 h-6 rounded-full bg-white shadow-sm absolute top-1 transition-transform
-        ${checked ? 'left-7' : 'left-1'}
-      `} />
-    </button>
-  );
-
   return (
     <div className="min-h-screen bg-background py-12 px-4 sm:px-6 lg:px-8">
       <div className="max-w-2xl mx-auto">
@@ -187,6 +108,7 @@ export default function Settings() {
               <div className="flex bg-secondary rounded-lg p-1">
                 <button 
                   onClick={() => setTheme('light')}
+                  aria-pressed={theme === 'light'}
                   data-testid="button-theme-light"
                   className={`px-4 py-2 rounded-md font-medium transition-all ${theme === 'light' ? 'bg-background shadow-sm text-foreground' : 'text-muted-foreground'}`}
                 >
@@ -194,6 +116,7 @@ export default function Settings() {
                 </button>
                 <button 
                   onClick={() => setTheme('dark')}
+                  aria-pressed={theme === 'dark'}
                   data-testid="button-theme-dark"
                   className={`px-4 py-2 rounded-md font-medium transition-all ${theme === 'dark' ? 'bg-background shadow-sm text-foreground' : 'text-muted-foreground'}`}
                 >
@@ -223,6 +146,7 @@ export default function Settings() {
                 <button
                   key={font.value}
                   onClick={() => setFontFamily(font.value)}
+                  aria-pressed={fontFamily === font.value}
                   data-testid={`button-font-${font.value}`}
                   className={`
                     p-4 rounded-xl border-2 text-left transition-all
@@ -259,6 +183,7 @@ export default function Settings() {
                 <button
                   key={size.value}
                   onClick={() => setTextSize(size.value)}
+                  aria-pressed={textSize === size.value}
                   data-testid={`button-textsize-${size.value}`}
                   className={`
                     py-3 rounded-xl border-2 font-bold transition-all flex flex-col items-center
@@ -294,6 +219,7 @@ export default function Settings() {
                 <button
                   key={spacing.value}
                   onClick={() => setLineSpacing(spacing.value)}
+                  aria-pressed={lineSpacing === spacing.value}
                   data-testid={`button-spacing-${spacing.value}`}
                   className={`
                     py-4 rounded-xl border-2 font-bold transition-all flex flex-col items-center
@@ -320,7 +246,7 @@ export default function Settings() {
                 <p className="text-sm text-muted-foreground">Increase visual distinction</p>
               </div>
             </div>
-            <ToggleSwitch checked={highContrast} onToggle={toggleHighContrast} testId="toggle-high-contrast" />
+            <ToggleSwitch checked={highContrast} onToggle={toggleHighContrast} label="High contrast" testId="toggle-high-contrast" />
           </div>
 
           {/* Link Underlines */}
@@ -334,7 +260,7 @@ export default function Settings() {
                 <p className="text-sm text-muted-foreground">Make all links clearly visible</p>
               </div>
             </div>
-            <ToggleSwitch checked={linkUnderlines} onToggle={toggleLinkUnderlines} testId="toggle-link-underlines" />
+            <ToggleSwitch checked={linkUnderlines} onToggle={toggleLinkUnderlines} label="Always show link underlines" testId="toggle-link-underlines" />
           </div>
 
           {/* Enhanced Focus */}
@@ -348,7 +274,7 @@ export default function Settings() {
                 <p className="text-sm text-muted-foreground">Larger, more visible focus outlines</p>
               </div>
             </div>
-            <ToggleSwitch checked={enhancedFocus} onToggle={toggleEnhancedFocus} testId="toggle-enhanced-focus" />
+            <ToggleSwitch checked={enhancedFocus} onToggle={toggleEnhancedFocus} label="Enhanced focus indicators" testId="toggle-enhanced-focus" />
           </div>
 
           {/* Read Aloud */}
@@ -363,7 +289,7 @@ export default function Settings() {
                   <p className="text-sm text-muted-foreground">Have page content read to you</p>
                 </div>
               </div>
-              <ToggleSwitch checked={readAloudEnabled} onToggle={toggleReadAloud} testId="toggle-read-aloud" />
+              <ToggleSwitch checked={readAloudEnabled} onToggle={toggleReadAloud} label="Read aloud" testId="toggle-read-aloud" />
             </div>
 
             {readAloudEnabled && (
@@ -433,185 +359,8 @@ export default function Settings() {
                 <p className="text-sm text-muted-foreground">Minimize animations</p>
               </div>
             </div>
-            <ToggleSwitch checked={reducedMotion} onToggle={toggleReducedMotion} testId="toggle-reduced-motion" />
+            <ToggleSwitch checked={reducedMotion} onToggle={toggleReducedMotion} label="Reduced motion" testId="toggle-reduced-motion" />
           </div>
-
-          {/* Two-Factor Authentication */}
-          {user && (
-            <div className="bg-card p-6 rounded-2xl border border-border shadow-sm" data-testid="section-2fa">
-              <div className="flex items-center gap-4 mb-4">
-                <div className="p-3 bg-gradient-to-br from-emerald-100 to-emerald-200 dark:from-emerald-900/30 dark:to-emerald-800/30 rounded-xl">
-                  <Shield className="w-6 h-6 text-emerald-600" />
-                </div>
-                <div>
-                  <h3 className="font-bold text-lg">Two-Factor Authentication</h3>
-                  <p className="text-sm text-muted-foreground">
-                    {user.twoFactorEnabled 
-                      ? "Your account is protected with 2FA" 
-                      : "Add an extra layer of security to your account"}
-                  </p>
-                </div>
-              </div>
-
-              {twoFactorStep === 'idle' && !user.twoFactorEnabled && (
-                <Button 
-                  onClick={handleSetup2FA} 
-                  disabled={isLoading}
-                  data-testid="button-enable-2fa"
-                >
-                  {isLoading ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : null}
-                  Enable Two-Factor Authentication
-                </Button>
-              )}
-
-              {twoFactorStep === 'idle' && user.twoFactorEnabled && (
-                <div className="space-y-3">
-                  <div className="flex items-center gap-2 text-emerald-600">
-                    <Check className="w-5 h-5" />
-                    <span className="font-medium">2FA is enabled</span>
-                  </div>
-                  <div className="flex flex-wrap gap-2">
-                    <Button 
-                      variant="outline" 
-                      onClick={handleRegenerateBackupCodes}
-                      disabled={isLoading}
-                      data-testid="button-regenerate-backup"
-                    >
-                      {isLoading ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : null}
-                      View Backup Codes
-                    </Button>
-                    {!showDisableConfirm && (
-                      <Button
-                        variant="destructive"
-                        onClick={() => setShowDisableConfirm(true)}
-                        disabled={isLoading}
-                        data-testid="button-disable-2fa"
-                      >
-                        Disable 2FA
-                      </Button>
-                    )}
-                  </div>
-
-                  {showDisableConfirm && (
-                    <div className="bg-destructive/5 border border-destructive/20 rounded-xl p-4 space-y-3">
-                      <label htmlFor="disable-2fa-password" className="text-sm font-medium">
-                        Confirm your password to disable 2FA
-                      </label>
-                      <input
-                        id="disable-2fa-password"
-                        type="password"
-                        value={disablePassword}
-                        onChange={(e) => setDisablePassword(e.target.value)}
-                        autoComplete="current-password"
-                        className="w-full px-3 py-2 rounded-lg border border-input bg-background text-sm"
-                        data-testid="input-disable-2fa-password"
-                      />
-                      <div className="flex gap-2">
-                        <Button
-                          variant="destructive"
-                          onClick={handleDisable2FA}
-                          disabled={isLoading}
-                          data-testid="button-confirm-disable-2fa"
-                        >
-                          {isLoading ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : null}
-                          Confirm Disable
-                        </Button>
-                        <Button
-                          variant="outline"
-                          onClick={() => { setShowDisableConfirm(false); setDisablePassword(''); }}
-                          disabled={isLoading}
-                        >
-                          Cancel
-                        </Button>
-                      </div>
-                    </div>
-                  )}
-                </div>
-              )}
-
-              {twoFactorStep === 'setup' && (
-                <div className="space-y-4">
-                  <div className="bg-secondary/50 p-4 rounded-xl">
-                    <p className="text-sm text-muted-foreground mb-3">
-                      Scan this QR code with your authenticator app (Google Authenticator, Authy, etc.)
-                    </p>
-                    <div className="flex justify-center bg-white p-4 rounded-lg w-fit mx-auto">
-                      <img src={qrCode} alt="2FA QR Code" className="w-48 h-48" data-testid="img-2fa-qr" />
-                    </div>
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium mb-2">
-                      Enter the 6-digit code from your app
-                    </label>
-                    <div className="flex gap-2">
-                      <input
-                        type="text"
-                        value={verifyCode}
-                        onChange={(e) => setVerifyCode(e.target.value.replace(/\D/g, '').slice(0, 6))}
-                        placeholder="000000"
-                        className="flex-1 px-4 py-2 rounded-lg border border-border bg-background text-foreground text-center text-lg tracking-widest font-mono"
-                        maxLength={6}
-                        data-testid="input-2fa-code"
-                      />
-                      <Button 
-                        onClick={handleConfirm2FA} 
-                        disabled={isLoading || verifyCode.length !== 6}
-                        data-testid="button-verify-2fa"
-                      >
-                        {isLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : "Verify"}
-                      </Button>
-                    </div>
-                  </div>
-                  <Button 
-                    variant="ghost" 
-                    onClick={() => { setTwoFactorStep('idle'); setQrCode(''); }}
-                    data-testid="button-cancel-2fa"
-                  >
-                    Cancel
-                  </Button>
-                </div>
-              )}
-
-              {twoFactorStep === 'backup' && (
-                <div className="space-y-4">
-                  <div className="bg-amber-50 dark:bg-amber-900/20 p-4 rounded-xl border border-amber-200 dark:border-amber-800">
-                    <p className="text-sm text-amber-800 dark:text-amber-200 font-medium mb-2">
-                      Save these backup codes in a safe place
-                    </p>
-                    <p className="text-xs text-amber-600 dark:text-amber-300">
-                      Each code can only be used once. Use them if you lose access to your authenticator app.
-                    </p>
-                  </div>
-                  <div className="grid grid-cols-2 gap-2" data-testid="backup-codes-list">
-                    {backupCodes.map((code, index) => (
-                      <button
-                        key={index}
-                        onClick={() => copyBackupCode(code, index)}
-                        className="flex items-center justify-between px-3 py-2 bg-secondary/50 rounded-lg font-mono text-sm hover:bg-secondary transition-colors"
-                        data-testid={`button-copy-backup-${index}`}
-                      >
-                        <span>{code}</span>
-                        {copiedIndex === index ? (
-                          <Check className="w-4 h-4 text-emerald-600" />
-                        ) : (
-                          <Copy className="w-4 h-4 text-muted-foreground" />
-                        )}
-                      </button>
-                    ))}
-                  </div>
-                  <div className="flex flex-wrap gap-2">
-                    <Button variant="outline" onClick={copyAllBackupCodes} data-testid="button-copy-all-backup">
-                      <Copy className="w-4 h-4 mr-2" />
-                      Copy All Codes
-                    </Button>
-                    <Button onClick={() => setTwoFactorStep('idle')} data-testid="button-done-2fa">
-                      Done
-                    </Button>
-                  </div>
-                </div>
-              )}
-            </div>
-          )}
 
           {/* Preview Section */}
           <div className="bg-gradient-to-r from-primary/10 via-accent/10 to-purple-500/10 p-6 rounded-2xl border border-border">

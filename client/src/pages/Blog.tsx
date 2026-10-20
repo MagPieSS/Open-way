@@ -68,7 +68,7 @@ const fallbackBlogPosts: BlogPost[] = [
     slug: "five-ways-to-make-local-public-spaces-easier-to-navigate",
     excerpt: "Accessible design works best when it anticipates real decisions people make before they leave home.",
     content: "People planning a visit often ask the same practical questions: Is the entrance level? Are there restrooms nearby? Can I find parking close enough to walk without stress? Are there quiet hours or seating options? These are the details that determine whether a public place is genuinely accessible for a wide range of people.",
-    author: "Maya Johnson",
+    author: "Open Way Team",
     category: "Community",
     imageUrl: "https://images.unsplash.com/photo-1517457373958-b7bdd4587205?auto=format&fit=crop&w=1200&q=80",
     isFeatured: false,
@@ -82,7 +82,7 @@ const fallbackBlogPosts: BlogPost[] = [
     slug: "what-philadelphia-neighborhoods-can-teach-us-about-access",
     excerpt: "Some of the most effective accessibility improvements happen when residents, advocates, and businesses work together in a specific neighborhood.",
     content: "Walkable cities are built in layers: curb cuts, clear signage, seating, stable sidewalks, and communication tools that help visitors feel confident. Philadelphia's neighborhoods show that accessibility improvements are often community-driven and highly local, with real impact when residents document where barriers remain.",
-    author: "Community Desk",
+    author: "Open Way Team",
     category: "News",
     imageUrl: "https://images.unsplash.com/photo-1552664730-d307ca884978?auto=format&fit=crop&w=1200&q=80",
     isFeatured: false,
@@ -260,7 +260,8 @@ export default function Blog() {
               Sample stories are shown because no published community posts are available. These examples are not independent reporting.
             </p>
           )}
-          {user && (
+          {/* Blog posts publish as Open Way content, so only admins can write them (server enforces this too). */}
+          {user?.isAdmin && (
             <Dialog open={showCreateDialog} onOpenChange={setShowCreateDialog}>
               <DialogTrigger asChild>
                 <Button data-testid="button-submit-post">

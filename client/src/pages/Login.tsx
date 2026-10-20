@@ -1,223 +1,83 @@
-import { useState } from "react";
-import { Link, useLocation, useSearch } from "wouter";
-import { useAuth } from "@/hooks/use-auth";
-import { useToast } from "@/hooks/use-toast";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
-import { Loader2, Eye, EyeOff, Shield, Mail, Lock } from "lucide-react";
+import { useEffect } from "react";
+import { useLocation, useSearch } from "wouter";
+import { FcGoogle } from "react-icons/fc";
+import { Loader2 } from "lucide-react";
+import { useAuth, googleSignInUrl } from "@/hooks/use-auth";
+import { Card, CardContent } from "@/components/ui/card";
+import { usePageMeta } from "@/hooks/use-page-meta";
+
+// Messages for the ?error= codes the sign-in callback can send back (server/routes.ts).
+const SIGN_IN_ERRORS: Record<string, string> = {
+  not_configured: "Google sign-in isn't set up on this server yet.",
+  cancelled: "Sign-in was cancelled. You can try again whenever you like.",
+  expired: "That sign-in attempt expired. Please try again.",
+  google: "Google couldn't confirm your account. Make sure the email on your Google account is verified, then try again.",
+  account_conflict: "That email address is already linked to a different Google account.",
+  suspended: "This account has been suspended.",
+};
+
+function safeReturnTo(value: string | null): string {
+  return value?.startsWith("/") && !value.startsWith("//") && !value.includes("\\") ? value : "/";
+}
 
 export default function Login() {
+  usePageMeta({ title: "Sign In" });
   const [, setLocation] = useLocation();
-  const search = useSearch();
-  const requestedReturnTo = new URLSearchParams(search).get("returnTo");
-  const returnTo = requestedReturnTo?.startsWith("/") && !requestedReturnTo.startsWith("//") && !requestedReturnTo.includes("\\")
-    ? requestedReturnTo
-    : "/";
-  const { login, verify2FA, isLoggingIn, isVerifying2FA } = useAuth();
-  const { toast } = useToast();
+  const params = new URLSearchParams(useSearch());
+  const returnTo = safeReturnTo(params.get("returnTo"));
+  const errorCode = params.get("error");
+  const errorMessage = errorCode ? SIGN_IN_ERRORS[errorCode] ?? "Sign-in didn't work. Please try again." : null;
+  const { isAuthenticated, isLoading } = useAuth();
 
-  const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
-  const [showPassword, setShowPassword] = useState(false);
-  const [show2FA, setShow2FA] = useState(false);
-  const [twoFactorCode, setTwoFactorCode] = useState("");
-
-  const handleLogin = async (e: React.FormEvent) => {
-    e.preventDefault();
-
-    try {
-      const result = await login({ email, password });
-
-      if (result.requires2FA) {
-        setShow2FA(true);
-        toast({
-          title: "2FA Required",
-          description: "Please enter your verification code.",
-        });
-      } else {
-        toast({
-          title: "Welcome back!",
-          description: "You have successfully logged in.",
-        });
-        setLocation(returnTo);
-      }
-    } catch (err: any) {
-      toast({
-        variant: "destructive",
-        title: "Login failed",
-        description: err.message || "Invalid email or password.",
-      });
-    }
-  };
-
-  const handle2FAVerify = async (e: React.FormEvent) => {
-    e.preventDefault();
-
-    try {
-      await verify2FA(twoFactorCode);
-      toast({
-        title: "Welcome back!",
-        description: "You have successfully logged in.",
-      });
-      setLocation(returnTo);
-    } catch (err: any) {
-      toast({
-        variant: "destructive",
-        title: "Verification failed",
-        description: err.message || "Invalid verification code.",
-      });
-    }
-  };
-
-  if (show2FA) {
-    return (
-      <div className="min-h-screen bg-background flex items-center justify-center px-4 py-12">
-        <Card className="w-full max-w-md">
-          <CardHeader className="text-center">
-            <div className="mx-auto w-16 h-16 bg-primary/10 rounded-full flex items-center justify-center mb-4">
-              <Shield className="w-8 h-8 text-primary" />
-            </div>
-            <CardTitle className="text-2xl font-display">Two-Factor Authentication</CardTitle>
-            <CardDescription>
-              Enter the 6-digit code from your authenticator app or use a backup code.
-            </CardDescription>
-          </CardHeader>
-          <form onSubmit={handle2FAVerify}>
-            <CardContent className="space-y-4">
-              <div className="space-y-2">
-                <Label htmlFor="2fa-code">Verification Code</Label>
-                <Input
-                  id="2fa-code"
-                  type="text"
-                  placeholder="Enter code"
-                  value={twoFactorCode}
-                  onChange={(e) => setTwoFactorCode(e.target.value)}
-                  maxLength={20}
-                  className="text-center text-2xl tracking-widest"
-                  data-testid="input-2fa-code"
-                  autoFocus
-                />
-              </div>
-            </CardContent>
-            <CardFooter className="flex flex-col gap-4">
-              <Button
-                type="submit"
-                className="w-full"
-                disabled={isVerifying2FA || !twoFactorCode}
-                data-testid="button-verify-2fa"
-              >
-                {isVerifying2FA ? (
-                  <>
-                    <Loader2 className="w-4 h-4 mr-2 animate-spin" /> Verifying...
-                  </>
-                ) : (
-                  "Verify"
-                )}
-              </Button>
-              <Button
-                type="button"
-                variant="ghost"
-                onClick={() => {
-                  setShow2FA(false);
-                  setTwoFactorCode("");
-                }}
-                data-testid="button-back-to-login"
-              >
-                Back to login
-              </Button>
-            </CardFooter>
-          </form>
-        </Card>
-      </div>
-    );
-  }
+  useEffect(() => {
+    if (isAuthenticated) setLocation(returnTo);
+  }, [isAuthenticated, returnTo, setLocation]);
 
   return (
     <div className="min-h-screen bg-background flex items-center justify-center px-4 py-12">
       <Card className="w-full max-w-md">
-        <CardHeader className="text-center">
-          <div className="mx-auto w-16 h-16 bg-gradient-to-br from-primary to-accent rounded-full flex items-center justify-center mb-4">
-            <Lock className="w-8 h-8 text-white" />
-          </div>
-          <CardTitle className="text-2xl font-display">Welcome Back</CardTitle>
-          <CardDescription>
-            Sign in to your Open Way account to save places, write reviews, and more.
-          </CardDescription>
-        </CardHeader>
-        <form onSubmit={handleLogin}>
-          <CardContent className="space-y-4">
-            <div className="space-y-2">
-              <Label htmlFor="email">Email</Label>
-              <div className="relative">
-                <Mail className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-                <Input
-                  id="email"
-                  type="email"
-                  placeholder="you@example.com"
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                  className="pl-10"
-                  data-testid="input-email"
-                  required
-                />
-              </div>
-            </div>
-
-            <div className="space-y-2">
-              <div className="flex items-center justify-between">
-                <Label htmlFor="password">Password</Label>
-                <Link href="/forgot-password" className="text-sm text-primary hover:underline" data-testid="link-forgot-password">
-                  Forgot password?
-                </Link>
-              </div>
-              <div className="relative">
-                <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-                <Input
-                  id="password"
-                  type={showPassword ? "text" : "password"}
-                  placeholder="Enter your password"
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  className="pl-10 pr-10"
-                  data-testid="input-password"
-                  required
-                />
-                <button
-                  type="button"
-                  onClick={() => setShowPassword(!showPassword)}
-                  className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
-                  data-testid="button-toggle-password"
-                >
-                  {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-                </button>
-              </div>
-            </div>
-          </CardContent>
-          <CardFooter className="flex flex-col gap-4">
-            <Button
-              type="submit"
-              className="w-full"
-              disabled={isLoggingIn || !email || !password}
-              data-testid="button-login"
-            >
-              {isLoggingIn ? (
-                <>
-                  <Loader2 className="w-4 h-4 mr-2 animate-spin" /> Signing in...
-                </>
-              ) : (
-                "Sign In"
-              )}
-            </Button>
-            <p className="text-sm text-muted-foreground text-center">
-              Don't have an account?{" "}
-              <Link href="/register" className="text-primary hover:underline font-medium" data-testid="link-register">
-                Create one
-              </Link>
+        <CardContent className="pt-8 space-y-6">
+          <div className="text-center space-y-2">
+            <h1 className="font-display font-bold text-3xl">Sign in to Open Way</h1>
+            <p className="text-muted-foreground">
+              Sign in to write reviews, save places and have your reports appear right away.
             </p>
-          </CardFooter>
-        </form>
+          </div>
+
+          {errorMessage && (
+            <p role="alert" className="rounded-md border border-destructive/30 bg-destructive/5 p-3 text-destructive font-medium">
+              {errorMessage}
+            </p>
+          )}
+
+          {isLoading ? (
+            <p className="flex justify-center" role="status">
+              <Loader2 className="w-6 h-6 animate-spin text-muted-foreground" aria-hidden="true" />
+              <span className="sr-only">Checking whether you're signed in</span>
+            </p>
+          ) : (
+            // A link, not a fetch: sign-in is a full-page trip to Google and back.
+            <a
+              href={googleSignInUrl(returnTo)}
+              className="flex w-full items-center justify-center gap-3 rounded-md border border-border bg-card px-4 py-3 font-semibold text-foreground shadow-sm hover:bg-secondary focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary"
+              data-testid="button-google-sign-in"
+            >
+              <FcGoogle className="w-5 h-5" aria-hidden="true" />
+              Sign in with Google
+            </a>
+          )}
+
+          <div className="space-y-2 text-sm text-muted-foreground">
+            <p>
+              Open Way only receives your email address from Google. No password is stored here, and your name isn't
+              shown anywhere unless you choose a display name in your profile.
+            </p>
+            <p>
+              You don't need an account to browse places or to report a barrier; reports from people who aren't signed in
+              are checked by a moderator first.
+            </p>
+          </div>
+        </CardContent>
       </Card>
     </div>
   );

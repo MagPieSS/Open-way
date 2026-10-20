@@ -22,6 +22,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from 
 import { Progress } from "@/components/ui/progress";
 import { formatDistanceToNow } from "date-fns";
 import type { Petition as PetitionType } from "@shared/schema";
+import { usePageMeta } from "@/hooks/use-page-meta";
 
 function getMilestones(goal: number): number[] {
   const milestones: number[] = [];
@@ -172,6 +173,7 @@ function ShareProgressCard({ signatures, goal, progressPercent }: { signatures: 
           variant="outline"
           size="icon"
           onClick={handleCopyLink}
+          aria-label={copied ? "Link copied" : "Copy link to this petition"}
           data-testid="button-copy-link"
         >
           {copied ? <Check className="w-4 h-4 text-green-500" /> : <Copy className="w-4 h-4" />}
@@ -384,16 +386,11 @@ function SignPetitionForm({ petitionId, onSuccess }: { petitionId: number; onSuc
         <User className="w-12 h-12 mx-auto mb-4 text-muted-foreground" />
         <h3 className="font-bold text-lg mb-2">Sign In to Add Your Signature</h3>
         <p className="text-muted-foreground mb-4">
-          Create an account or sign in to add your voice to this petition.
+          Sign in with your Google account to add your voice to this petition.
         </p>
-        <div className="flex flex-col gap-2">
-          <Button asChild className="w-full" data-testid="button-login-to-sign">
-            <Link href="/login">Sign In</Link>
-          </Button>
-          <Button asChild variant="outline" className="w-full" data-testid="button-register-to-sign">
-            <Link href="/register">Create Account</Link>
-          </Button>
-        </div>
+        <Button asChild className="w-full" data-testid="button-login-to-sign">
+          <Link href={`/login?returnTo=${encodeURIComponent(window.location.pathname)}`}>Sign in with Google</Link>
+        </Button>
       </div>
     );
   }
@@ -712,6 +709,7 @@ function PetitionCard({ petition }: { petition: PetitionType }) {
 }
 
 export default function PetitionListPage() {
+  usePageMeta({ title: "Petitions" });
   const { data: petitions, isLoading } = usePetitions();
   const { textSize, reducedMotion } = useSettings();
 
@@ -793,6 +791,7 @@ export default function PetitionListPage() {
 }
 
 export function PetitionDetail() {
+  usePageMeta({ title: "Petition" });
   const [, params] = useRoute("/petitions/:id");
   const petitionId = params?.id ? Number(params.id) : 0;
   const { data: petition, isLoading: petitionLoading } = usePetition(petitionId);
@@ -1047,11 +1046,18 @@ export function PetitionDetail() {
                   <ul className="text-sm text-muted-foreground space-y-2">
                     <li className="flex items-center gap-2">
                       <Sparkles className="w-4 h-4 text-primary flex-shrink-0" />
-                      1 in 4 Americans has a disability
-                    </li>
-                    <li className="flex items-center gap-2">
-                      <Sparkles className="w-4 h-4 text-primary flex-shrink-0" />
-                      Only 40% of public spaces are fully accessible
+                      <span>
+                        More than 1 in 4 U.S. adults have some type of disability (
+                        <a
+                          href="https://www.cdc.gov/disability-and-health/articles-documents/disability-impacts-all-of-us-infographic.html"
+                          className="underline"
+                          target="_blank"
+                          rel="noopener noreferrer"
+                        >
+                          CDC<span className="sr-only"> (opens in a new tab)</span>
+                        </a>
+                        )
+                      </span>
                     </li>
                     <li className="flex items-center gap-2">
                       <Sparkles className="w-4 h-4 text-primary flex-shrink-0" />

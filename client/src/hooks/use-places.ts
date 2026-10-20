@@ -1,11 +1,10 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { api, buildUrl, type PlaceInput } from "@shared/routes";
+import { api, buildUrl, type PlaceInput, type PlaceListItem } from "@shared/routes";
 import { apiRequest } from "@/lib/queryClient";
 import { z } from "zod";
-import type { Place } from "@shared/schema";
 
-// The list endpoint adds a computed distanceMiles field when lat/lng are provided.
-export type PlaceWithDistance = Place & { distanceMiles?: number };
+// The list endpoint adds feature summaries, and distanceMiles when lat/lng are provided.
+export type PlaceWithDistance = PlaceListItem;
 
 // Helper to handle API responses properly
 async function handleResponse<T>(res: Response, schema: z.ZodSchema<T>): Promise<T> {
@@ -53,7 +52,9 @@ export function usePlaces(filters?: string | PlaceFilters) {
 
 export function usePlace(id: number) {
   return useQuery({
-    queryKey: [api.places.get.path, id],
+    // ["/api/places", id] (not the ":id" path pattern) so invalidating ["/api/places"] after a
+    // change also refreshes the open place page.
+    queryKey: [api.places.list.path, id],
     queryFn: async () => {
       const url = buildUrl(api.places.get.path, { id });
       const res = await fetch(url);

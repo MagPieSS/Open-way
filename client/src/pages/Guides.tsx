@@ -1,8 +1,6 @@
 import { useMemo } from "react";
-import { useQuery } from "@tanstack/react-query";
 import { Link, useLocation, useSearch } from "wouter";
 import { ArrowLeft, BookOpen, Compass, HeartPulse, Landmark, MapPin, Share2, Trees, Train, Utensils } from "lucide-react";
-import type { AccessibilityFeature, Place } from "@shared/schema";
 import { PlaceCard } from "@/components/PlaceCard";
 import { SectionLabel } from "@/components/SectionLabel";
 import { Button } from "@/components/ui/button";
@@ -56,30 +54,12 @@ const CITY_GUIDES = [
   },
 ];
 
-function usePlaceFeatures(places?: Place[]) {
-  return useQuery<Record<number, AccessibilityFeature[]>>({
-    queryKey: ["/api/places", "guide-features", places?.map((place) => place.id)],
-    enabled: !!places?.length,
-    queryFn: async () => {
-      const entries = await Promise.all(
-        (places ?? []).map(async (place) => {
-          const response = await fetch(`/api/places/${place.id}/features`);
-          const features: AccessibilityFeature[] = response.ok ? await response.json() : [];
-          return [place.id, features] as const;
-        }),
-      );
-      return Object.fromEntries(entries);
-    },
-  });
-}
-
 export default function Guides() {
   const search = useSearch();
   const [, setLocation] = useLocation();
   const { toast } = useToast();
   const selectedGuide = CITY_GUIDES.find((guide) => guide.slug === new URLSearchParams(search).get("collection"));
   const { data: places, isLoading, error } = usePlaces();
-  const { data: featureMap = {} } = usePlaceFeatures(places);
   const guidePlaces = useMemo(() => {
     if (!selectedGuide) return [];
     return (places ?? []).filter((place) =>
@@ -152,7 +132,7 @@ export default function Guides() {
                 <p className="mb-6 text-sm text-muted-foreground">{guidePlaces.length} {guidePlaces.length === 1 ? "location" : "locations"} in this guide</p>
                 <div className="grid grid-cols-1 gap-6 md:grid-cols-2 lg:grid-cols-3">
                   {guidePlaces.map((place) => (
-                    <PlaceCard key={place.id} place={place} needTags={getPlaceNeedTags(featureMap[place.id] ?? [])} />
+                    <PlaceCard key={place.id} place={place} needTags={getPlaceNeedTags(place.features)} />
                   ))}
                 </div>
               </>

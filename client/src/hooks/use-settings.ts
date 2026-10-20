@@ -62,7 +62,8 @@ export const useSettings = create<SettingsState>()(
       theme: 'light',
       highContrast: false,
       textSize: 'base',
-      reducedMotion: false,
+      // Start from the operating-system setting; people can still change it in Settings.
+      reducedMotion: typeof window !== 'undefined' && window.matchMedia?.('(prefers-reduced-motion: reduce)').matches === true,
       fontFamily: 'atkinson',
       lineSpacing: 'normal',
       linkUnderlines: false,

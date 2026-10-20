@@ -3,14 +3,15 @@ import { MapContainer, TileLayer, Marker, Popup, useMap } from "react-leaflet";
 import L from "leaflet";
 import { Place, ACCESSIBILITY_STATUS } from "@shared/schema";
 import { Link } from "wouter";
-import { CheckCircle, AlertTriangle, XCircle, ExternalLink } from "lucide-react";
-import { useSettings } from "@/hooks/use-settings";
+import { CheckCircle, AlertTriangle, XCircle, HelpCircle, ExternalLink } from "lucide-react";
 import "leaflet/dist/leaflet.css";
 
 const PHILADELPHIA_CENTER: [number, number] = [39.9526, -75.1652];
 const DEFAULT_ZOOM = 13;
 
-function createMarkerIcon(status: string): L.DivIcon {
+// Leaflet makes markers focusable buttons, but gives DivIcons no accessible name (alt only applies
+// to image icons). The visually hidden text inside the marker names it for screen readers.
+function createMarkerIcon(status: string, label: string): L.DivIcon {
   let color: string;
   let iconSvg: string;
   
@@ -49,11 +50,16 @@ function createMarkerIcon(status: string): L.DivIcon {
       ">
         ${iconSvg}
       </div>
+      <span class="sr-only">${escapeHtml(label)}</span>
     `,
     iconSize: [36, 36],
     iconAnchor: [18, 18],
     popupAnchor: [0, -18],
   });
+}
+
+function escapeHtml(text: string): string {
+  return text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
 }
 
 function getStatusConfig(status: string) {
@@ -65,7 +71,7 @@ function getStatusConfig(status: string) {
     case ACCESSIBILITY_STATUS.NOT_ACCESSIBLE:
       return { icon: XCircle, text: "Not Accessible", colorClass: "text-not-accessible" };
     default:
-      return { icon: AlertTriangle, text: "Unknown", colorClass: "text-muted-foreground" };
+      return { icon: HelpCircle, text: "Not known yet", colorClass: "text-muted-foreground" };
   }
 }
 
@@ -75,9 +81,12 @@ interface MapRecenterProps {
 
 function MapRecenter({ center }: MapRecenterProps) {
   const map = useMap();
+  const [lat, lng] = center;
+  // Depend on the numbers, not the array: a new array with the same position on every render
+  // used to snap the map back while someone was panning it.
   useEffect(() => {
-    map.setView(center, map.getZoom());
-  }, [center, map]);
+    map.setView([lat, lng], map.getZoom());
+  }, [lat, lng, map]);
   return null;
 }
 
@@ -90,18 +99,19 @@ interface AccessibilityMapProps {
 }
 
 export function AccessibilityMap({ places, className = "", onMarkerClick, center, zoom }: AccessibilityMapProps) {
-  const { theme } = useSettings();
   const mapRef = useRef<L.Map | null>(null);
 
   const placesWithCoords = places.filter(
     (place) => place.latitude != null && place.longitude != null
   );
 
-  const tileUrl = theme === "dark"
-    ? "https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png"
-    : "https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png";
-
-  const tileAttribution = '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>';
+  // CARTO's free basemaps started returning "API KEY REQUIRED" placeholder tiles, which left every
+  // map blank. OpenStreetMap's standard tiles need no key and allow light use with attribution
+  // (operations.osmfoundation.org/policies/tiles). Set VITE_MAP_TILE_URL to use another provider
+  // when traffic grows. Dark mode darkens these tiles with a CSS filter (see index.css).
+  const tileUrl = import.meta.env.VITE_MAP_TILE_URL || "https://tile.openstreetmap.org/{z}/{x}/{y}.png";
+  const tileAttribution = import.meta.env.VITE_MAP_TILE_ATTRIBUTION
+    || '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors';
 
   return (
     <div
@@ -115,7 +125,9 @@ export function AccessibilityMap({ places, className = "", onMarkerClick, center
         zoom={zoom || DEFAULT_ZOOM}
         className="w-full h-full"
         ref={mapRef}
-        scrollWheelZoom={true}
+        // Off so scrolling the page doesn't get captured by the map; zoom with the +/- buttons,
+        // the keyboard or pinch.
+        scrollWheelZoom={false}
       >
         <TileLayer url={tileUrl} attribution={tileAttribution} />
         <MapRecenter center={center || PHILADELPHIA_CENTER} />
@@ -128,8 +140,8 @@ export function AccessibilityMap({ places, className = "", onMarkerClick, center
             <Marker
               key={place.id}
               position={[place.latitude!, place.longitude!]}
-              icon={createMarkerIcon(place.accessibilityStatus)}
-              alt={`${place.name}, ${statusConfig.text}`}
+              icon={createMarkerIcon(place.accessibilityStatus, `${place.name}: ${statusConfig.text}`)}
+              title={`${place.name}: ${statusConfig.text}`}
               keyboard={true}
               eventHandlers={{
                 click: () => onMarkerClick?.(place),
@@ -140,14 +152,14 @@ export function AccessibilityMap({ places, className = "", onMarkerClick, center
                   className="min-w-[200px] p-1"
                   data-testid={`popup-place-${place.id}`}
                 >
-                  <h3 className="font-bold text-base text-foreground mb-1">
+                  <h3 className="font-bold text-base mb-1">
                     {place.name}
                   </h3>
                   <p className="text-sm text-muted-foreground mb-2">
                     {place.category}
                   </p>
                   <div className={`flex items-center gap-1.5 mb-3 ${statusConfig.colorClass}`}>
-                    <StatusIcon className="w-4 h-4" />
+                    <StatusIcon className="w-4 h-4" aria-hidden="true" />
                     <span className="text-sm font-semibold">{statusConfig.text}</span>
                   </div>
                   <Link
@@ -155,7 +167,7 @@ export function AccessibilityMap({ places, className = "", onMarkerClick, center
                     className="w-full py-2 px-3 rounded-lg text-sm font-semibold flex items-center justify-center gap-1.5 bg-primary text-primary-foreground hover:bg-primary/90 transition-colors"
                     data-testid={`popup-button-view-${place.id}`}
                   >
-                    View Details <ExternalLink className="w-3.5 h-3.5" />
+                    View details<span className="sr-only"> for {place.name}</span> <ExternalLink className="w-3.5 h-3.5" aria-hidden="true" />
                   </Link>
                 </div>
               </Popup>

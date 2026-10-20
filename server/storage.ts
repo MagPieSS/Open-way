@@ -3,13 +3,15 @@ import {
   places, reviews, signatures, categories, accessibilityFeatures,
   placeMedia, placeTips, petitions, petitionUpdates, events, resources,
   blogPosts, faqEntries, contactSubmissions, activityLog, partners,
-  users, savedPlaces, communityPosts, passwordResetTokens, reports, emailVerificationTokens,
+  users, savedPlaces, communityPosts, reports, reviewVotes,
+  accessibilityObservations,
   type Place, type InsertPlace,
   type Review, type InsertReview,
   type Petition, type InsertPetition,
   type Signature, type InsertSignature,
   type Category, type InsertCategory,
   type AccessibilityFeature, type InsertAccessibilityFeature,
+  type AccessibilityObservation, type InsertAccessibilityObservation,
   type PlaceMedia, type InsertPlaceMedia,
   type PlaceTip, type InsertPlaceTip,
   type PetitionUpdate, type InsertPetitionUpdate,
@@ -22,12 +24,9 @@ import {
   type Partner, type InsertPartner,
   type User, type SavedPlace, type InsertSavedPlace,
   type CommunityPost, type InsertCommunityPost,
-  type PasswordResetToken, type InsertPasswordResetToken,
-  type Report, type InsertReport,
-  type EmailVerificationToken, type InsertEmailVerificationToken,
+type Report, type InsertReport,
 } from "@shared/schema";
-import { eq, desc, sql, and, inArray, gte, lt } from "drizzle-orm";
-import { isAccountLocked, shouldLockAccount, LOCKOUT_DURATION_MS } from "./account-lockout";
+import { eq, desc, sql, and, inArray, gte } from "drizzle-orm";
 
 // The schema's boolean columns are defined via drizzle-orm/pg-core; under the Postgres driver
 // a raw JS boolean binds fine, but better-sqlite3 only accepts numbers/strings/bigints/buffers/null
@@ -55,7 +54,15 @@ export interface IStorage {
 
   // Accessibility Features
   getAccessibilityFeatures(placeId: number): Promise<AccessibilityFeature[]>;
+  getAllAccessibilityFeatures(): Promise<AccessibilityFeature[]>;
   createAccessibilityFeature(feature: InsertAccessibilityFeature): Promise<AccessibilityFeature>;
+  updateAccessibilityFeature(id: number, feature: Partial<InsertAccessibilityFeature>): Promise<AccessibilityFeature | undefined>;
+
+  // Visitor reports about features
+  createObservations(observations: InsertAccessibilityObservation[]): Promise<AccessibilityObservation[]>;
+  getPublishedObservations(placeId?: number): Promise<AccessibilityObservation[]>;
+  getObservationsByStatus(moderationStatus: string): Promise<AccessibilityObservation[]>;
+  setObservationModeration(id: number, moderationStatus: string): Promise<AccessibilityObservation | undefined>;
 
   // Place Media
   getPlaceMedia(placeId: number): Promise<PlaceMedia[]>;
@@ -77,7 +84,8 @@ export interface IStorage {
   createReview(review: InsertReview): Promise<Review>;
   updateReview(id: number, userId: number, updates: { content?: string; rating?: number }): Promise<Review | undefined>;
   deleteReview(id: number, userId: number): Promise<boolean>;
-  incrementReviewHelpfulCount(id: number): Promise<Review | undefined>;
+  addHelpfulVote(reviewId: number, userId: number): Promise<{ added: boolean; helpfulCount: number }>;
+  refreshPlaceRating(placeId: number): Promise<void>;
 
   // Petitions
   getPetitions(): Promise<Petition[]>;
@@ -143,18 +151,13 @@ export interface IStorage {
   // Users (Authentication)
   getUserByEmail(email: string): Promise<User | undefined>;
   getUserById(id: number): Promise<User | undefined>;
-  createUser(email: string, passwordHash: string, displayName?: string): Promise<User>;
+  getUserByGoogleSub(googleSub: string): Promise<User | undefined>;
+  createGoogleUser(email: string, googleSub: string): Promise<User>;
+  linkGoogleAccount(id: number, googleSub: string): Promise<void>;
+  setAdmin(id: number): Promise<void>;
   updateUserLastLogin(id: number): Promise<void>;
   updateUserDisplayName(id: number, displayName: string): Promise<User | undefined>;
-  updateUserPassword(id: number, passwordHash: string): Promise<void>;
-  updateUser2FA(id: number, enabled: boolean, secret?: string, backupCodes?: string[]): Promise<void>;
-  recordFailedLogin(id: number): Promise<void>;
-  resetFailedLogins(id: number): Promise<void>;
-  isAccountLocked(user: User): boolean;
-  setEmailVerified(id: number): Promise<void>;
-  createEmailVerificationToken(token: InsertEmailVerificationToken): Promise<EmailVerificationToken>;
-  getEmailVerificationToken(token: string): Promise<EmailVerificationToken | undefined>;
-  markEmailVerificationTokenUsed(tokenId: number): Promise<void>;
+  endAllSessions(id: number): Promise<void>;
 
   // Saved Places
   getSavedPlaces(userId: number): Promise<SavedPlace[]>;
@@ -167,14 +170,9 @@ export interface IStorage {
   getCommunityPosts(): Promise<CommunityPost[]>;
   createCommunityPost(post: InsertCommunityPost): Promise<CommunityPost>;
 
-  // Password Reset Tokens
-  createPasswordResetToken(token: InsertPasswordResetToken): Promise<PasswordResetToken>;
-  getPasswordResetToken(token: string): Promise<PasswordResetToken | undefined>;
-  markTokenUsed(tokenId: number): Promise<void>;
-  deleteExpiredTokens(): Promise<void>;
 
   // Admin User Management
-  getAllUsers(): Promise<Omit<User, 'passwordHash' | 'twoFactorSecret' | 'backupCodes'>[]>;
+  getAllUsers(): Promise<Omit<User, 'passwordHash' | 'twoFactorSecret' | 'backupCodes' | 'sessionVersion' | 'googleSub'>[]>;
   banUser(id: number, reason: string): Promise<void>;
   unbanUser(id: number): Promise<void>;
   getUserStats(userId: number): Promise<{ reviewCount: number; communityPostCount: number; mediaCount: number }>;
@@ -244,10 +242,16 @@ export class DatabaseStorage implements IStorage {
     return updated;
   }
 
+  // Matches name, description, address (street, neighborhood words, ZIP) and category. The query's
+  // own % and _ are escaped so they match literally instead of acting as wildcards.
   async searchPlaces(query: string): Promise<Place[]> {
-    const lowercaseQuery = query.toLowerCase();
+    const escaped = query.toLowerCase().replace(/[\\%_]/g, (char) => `\\${char}`);
+    const pattern = `%${escaped}%`;
     return await db.select().from(places).where(
-      sql`lower(${places.name}) LIKE ${`%${lowercaseQuery}%`} OR lower(${places.description}) LIKE ${`%${lowercaseQuery}%`}`
+      sql`lower(${places.name}) LIKE ${pattern} ESCAPE '\\'
+        OR lower(${places.description}) LIKE ${pattern} ESCAPE '\\'
+        OR lower(coalesce(${places.address}, '')) LIKE ${pattern} ESCAPE '\\'
+        OR lower(${places.category}) LIKE ${pattern} ESCAPE '\\'`
     );
   }
 
@@ -260,9 +264,46 @@ export class DatabaseStorage implements IStorage {
     return await db.select().from(accessibilityFeatures).where(eq(accessibilityFeatures.placeId, placeId));
   }
 
+  async getAllAccessibilityFeatures(): Promise<AccessibilityFeature[]> {
+    return await db.select().from(accessibilityFeatures);
+  }
+
   async createAccessibilityFeature(feature: InsertAccessibilityFeature): Promise<AccessibilityFeature> {
-    const [newFeature] = await db.insert(accessibilityFeatures).values(feature).returning();
+    // Keep the legacy yes/no flag in step with the status for anything still reading it.
+    const values = feature.status ? { ...feature, available: feature.status !== "no" } : feature;
+    const [newFeature] = await db.insert(accessibilityFeatures).values(values).returning();
     return newFeature;
+  }
+
+  async updateAccessibilityFeature(id: number, feature: Partial<InsertAccessibilityFeature>): Promise<AccessibilityFeature | undefined> {
+    const values = feature.status ? { ...feature, available: feature.status !== "no" } : feature;
+    const [updated] = await db.update(accessibilityFeatures).set(values).where(eq(accessibilityFeatures.id, id)).returning();
+    return updated;
+  }
+
+  async createObservations(observations: InsertAccessibilityObservation[]): Promise<AccessibilityObservation[]> {
+    if (observations.length === 0) return [];
+    return await db.insert(accessibilityObservations).values(observations).returning();
+  }
+
+  async getPublishedObservations(placeId?: number): Promise<AccessibilityObservation[]> {
+    const published = eq(accessibilityObservations.moderationStatus, "published");
+    const where = placeId === undefined ? published : and(published, eq(accessibilityObservations.placeId, placeId));
+    return await db.select().from(accessibilityObservations).where(where).orderBy(desc(accessibilityObservations.observedAt));
+  }
+
+  async getObservationsByStatus(moderationStatus: string): Promise<AccessibilityObservation[]> {
+    return await db.select().from(accessibilityObservations)
+      .where(eq(accessibilityObservations.moderationStatus, moderationStatus))
+      .orderBy(desc(accessibilityObservations.createdAt));
+  }
+
+  async setObservationModeration(id: number, moderationStatus: string): Promise<AccessibilityObservation | undefined> {
+    const [updated] = await db.update(accessibilityObservations)
+      .set({ moderationStatus })
+      .where(eq(accessibilityObservations.id, id))
+      .returning();
+    return updated;
   }
 
   // Place Media
@@ -333,12 +374,7 @@ export class DatabaseStorage implements IStorage {
 
   async createReview(review: InsertReview): Promise<Review> {
     const [newReview] = await db.insert(reviews).values(review).returning();
-    if (review.placeId) {
-      await db.update(places).set({ 
-        reviewCount: sql`${places.reviewCount} + 1`,
-        updatedAt: new Date()
-      }).where(eq(places.id, review.placeId));
-    }
+    await this.refreshPlaceRating(review.placeId);
     return newReview;
   }
 
@@ -347,6 +383,7 @@ export class DatabaseStorage implements IStorage {
       .set(updates)
       .where(and(eq(reviews.id, id), eq(reviews.userId, userId)))
       .returning();
+    if (updated) await this.refreshPlaceRating(updated.placeId);
     return updated;
   }
 
@@ -354,24 +391,43 @@ export class DatabaseStorage implements IStorage {
     const review = await this.getReview(id);
     if (!review || review.userId !== userId) return false;
 
+    await db.delete(reviewVotes).where(eq(reviewVotes.reviewId, id));
     const result = await db.delete(reviews)
       .where(and(eq(reviews.id, id), eq(reviews.userId, userId)))
       .returning();
 
-    if (result.length > 0 && review.placeId) {
-      await db.update(places).set({
-        reviewCount: sql`CASE WHEN ${places.reviewCount} > 0 THEN ${places.reviewCount} - 1 ELSE 0 END`,
-        updatedAt: new Date()
-      }).where(eq(places.id, review.placeId));
-    }
+    if (result.length > 0) await this.refreshPlaceRating(review.placeId);
     return result.length > 0;
   }
 
-  async incrementReviewHelpfulCount(id: number): Promise<Review | undefined> {
-    const [updated] = await db.update(reviews).set({ 
-      helpfulCount: sql`COALESCE(${reviews.helpfulCount}, 0) + 1` 
-    }).where(eq(reviews.id, id)).returning();
-    return updated;
+  async addHelpfulVote(reviewId: number, userId: number): Promise<{ added: boolean; helpfulCount: number }> {
+    const inserted = await db.insert(reviewVotes)
+      .values({ reviewId, userId })
+      .onConflictDoNothing()
+      .returning();
+    if (inserted.length > 0) {
+      await db.update(reviews).set({
+        helpfulCount: sql`COALESCE(${reviews.helpfulCount}, 0) + 1`
+      }).where(eq(reviews.id, reviewId));
+    }
+    const review = await this.getReview(reviewId);
+    return { added: inserted.length > 0, helpfulCount: review?.helpfulCount ?? 0 };
+  }
+
+  // Recomputes the place's rating and review count from its reviews. Incrementing a counter
+  // drifted (edits and deletes never adjusted averageRating at all), so derive both every time.
+  async refreshPlaceRating(placeId: number): Promise<void> {
+    const [row] = await db.select({
+      average: sql<string | number | null>`avg(${reviews.rating})`,
+      count: sql<string | number>`count(*)`,
+    }).from(reviews).where(eq(reviews.placeId, placeId));
+
+    await db.update(places).set({
+      // Postgres returns avg() as a numeric string; SQLite returns a number.
+      averageRating: row.average === null ? null : Number(row.average),
+      reviewCount: Number(row.count),
+      updatedAt: new Date(),
+    }).where(eq(places.id, placeId));
   }
 
   // Petitions
@@ -583,13 +639,29 @@ export class DatabaseStorage implements IStorage {
     return user;
   }
 
-  async createUser(email: string, passwordHash: string, displayName?: string): Promise<User> {
+  async getUserByGoogleSub(googleSub: string): Promise<User | undefined> {
+    const [user] = await db.select().from(users).where(eq(users.googleSub, googleSub));
+    return user;
+  }
+
+  // Google confirmed the address, so the account starts verified. No display name is copied from
+  // Google: names on reviews and posts are public, so people choose their own in Profile.
+  async createGoogleUser(email: string, googleSub: string): Promise<User> {
     const [newUser] = await db.insert(users).values({
       email: email.toLowerCase(),
-      passwordHash,
-      displayName,
+      googleSub,
+      passwordHash: "",
+      emailVerified: true,
     }).returning();
     return newUser;
+  }
+
+  async linkGoogleAccount(id: number, googleSub: string): Promise<void> {
+    await db.update(users).set({ googleSub, emailVerified: true }).where(eq(users.id, id));
+  }
+
+  async setAdmin(id: number): Promise<void> {
+    await db.update(users).set({ isAdmin: true }).where(eq(users.id, id));
   }
 
   async updateUserLastLogin(id: number): Promise<void> {
@@ -599,57 +671,6 @@ export class DatabaseStorage implements IStorage {
   async updateUserDisplayName(id: number, displayName: string): Promise<User | undefined> {
     const [updated] = await db.update(users).set({ displayName }).where(eq(users.id, id)).returning();
     return updated;
-  }
-
-  async updateUserPassword(id: number, passwordHash: string): Promise<void> {
-    await db.update(users).set({ passwordHash }).where(eq(users.id, id));
-  }
-
-  async updateUser2FA(id: number, enabled: boolean, secret?: string, backupCodes?: string[]): Promise<void> {
-    await db.update(users).set({
-      twoFactorEnabled: enabled,
-      twoFactorSecret: secret,
-      backupCodes: backupCodes ? JSON.stringify(backupCodes) : null,
-    }).where(eq(users.id, id));
-  }
-
-  // Brute-force protection
-  async recordFailedLogin(id: number): Promise<void> {
-    const user = await this.getUserById(id);
-    if (!user) return;
-    const attempts = (user.failedLoginAttempts ?? 0) + 1;
-    const updates: { failedLoginAttempts: number; lockedUntil?: Date } = { failedLoginAttempts: attempts };
-    if (shouldLockAccount(attempts)) {
-      updates.lockedUntil = new Date(Date.now() + LOCKOUT_DURATION_MS);
-    }
-    await db.update(users).set(updates).where(eq(users.id, id));
-  }
-
-  async resetFailedLogins(id: number): Promise<void> {
-    await db.update(users).set({ failedLoginAttempts: 0, lockedUntil: null }).where(eq(users.id, id));
-  }
-
-  isAccountLocked(user: User): boolean {
-    return isAccountLocked(user.lockedUntil);
-  }
-
-  // Email verification
-  async setEmailVerified(id: number): Promise<void> {
-    await db.update(users).set({ emailVerified: true }).where(eq(users.id, id));
-  }
-
-  async createEmailVerificationToken(token: InsertEmailVerificationToken): Promise<EmailVerificationToken> {
-    const [newToken] = await db.insert(emailVerificationTokens).values(token).returning();
-    return newToken;
-  }
-
-  async getEmailVerificationToken(token: string): Promise<EmailVerificationToken | undefined> {
-    const [result] = await db.select().from(emailVerificationTokens).where(eq(emailVerificationTokens.token, token));
-    return result;
-  }
-
-  async markEmailVerificationTokenUsed(tokenId: number): Promise<void> {
-    await db.update(emailVerificationTokens).set({ usedAt: new Date() }).where(eq(emailVerificationTokens.id, tokenId));
   }
 
   // Saved Places
@@ -692,27 +713,8 @@ export class DatabaseStorage implements IStorage {
     return newPost;
   }
 
-  // Password Reset Tokens
-  async createPasswordResetToken(token: InsertPasswordResetToken): Promise<PasswordResetToken> {
-    const [newToken] = await db.insert(passwordResetTokens).values(token).returning();
-    return newToken;
-  }
-
-  async getPasswordResetToken(token: string): Promise<PasswordResetToken | undefined> {
-    const [resetToken] = await db.select().from(passwordResetTokens).where(eq(passwordResetTokens.token, token));
-    return resetToken;
-  }
-
-  async markTokenUsed(tokenId: number): Promise<void> {
-    await db.update(passwordResetTokens).set({ usedAt: new Date() }).where(eq(passwordResetTokens.id, tokenId));
-  }
-
-  async deleteExpiredTokens(): Promise<void> {
-    await db.delete(passwordResetTokens).where(lt(passwordResetTokens.expiresAt, new Date()));
-  }
-
   // Admin User Management
-  async getAllUsers(): Promise<Omit<User, 'passwordHash' | 'twoFactorSecret' | 'backupCodes'>[]> {
+  async getAllUsers(): Promise<Omit<User, 'passwordHash' | 'twoFactorSecret' | 'backupCodes' | 'sessionVersion' | 'googleSub'>[]> {
     const result = await db.select({
       id: users.id,
       email: users.email,
@@ -733,6 +735,13 @@ export class DatabaseStorage implements IStorage {
 
   async banUser(id: number, reason: string): Promise<void> {
     await db.update(users).set({ isBanned: true, banReason: reason }).where(eq(users.id, id));
+  }
+
+  // Bumps sessionVersion, which ends every existing session for the account on its next request.
+  async endAllSessions(id: number): Promise<void> {
+    await db.update(users).set({
+      sessionVersion: sql`COALESCE(${users.sessionVersion}, 0) + 1`,
+    }).where(eq(users.id, id));
   }
 
   async unbanUser(id: number): Promise<void> {
@@ -759,14 +768,10 @@ export class DatabaseStorage implements IStorage {
     const review = await this.getReview(id);
     if (!review) return false;
 
+    await db.delete(reviewVotes).where(eq(reviewVotes.reviewId, id));
     const result = await db.delete(reviews).where(eq(reviews.id, id)).returning();
 
-    if (result.length > 0 && review.placeId) {
-      await db.update(places).set({
-        reviewCount: sql`CASE WHEN ${places.reviewCount} > 0 THEN ${places.reviewCount} - 1 ELSE 0 END`,
-        updatedAt: new Date()
-      }).where(eq(places.id, review.placeId));
-    }
+    if (result.length > 0) await this.refreshPlaceRating(review.placeId);
     return result.length > 0;
   }
 
@@ -782,8 +787,13 @@ export class DatabaseStorage implements IStorage {
     const reviewIds = reviewRows.map((r) => r.id);
 
     await db.delete(accessibilityFeatures).where(eq(accessibilityFeatures.placeId, id));
+    await db.delete(accessibilityObservations).where(eq(accessibilityObservations.placeId, id));
+    await db.delete(reports).where(and(eq(reports.contentType, "place"), eq(reports.contentId, id)));
     await db.delete(placeMedia).where(eq(placeMedia.placeId, id));
     await db.delete(placeTips).where(eq(placeTips.placeId, id));
+    if (reviewIds.length > 0) {
+      await db.delete(reviewVotes).where(inArray(reviewVotes.reviewId, reviewIds));
+    }
     await db.delete(reviews).where(eq(reviews.placeId, id));
     await db.delete(savedPlaces).where(eq(savedPlaces.placeId, id));
     if (mediaIds.length > 0) {

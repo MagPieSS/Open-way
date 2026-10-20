@@ -1,4 +1,4 @@
-import { pgTable, text, serial, integer, boolean, timestamp, real, json, uniqueIndex } from "drizzle-orm/pg-core";
+import { pgTable, text, serial, integer, boolean, timestamp, real, json, uniqueIndex, index } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { sql } from "drizzle-orm";
 import { z } from "zod";
@@ -9,6 +9,9 @@ import { z } from "zod";
 export const users = pgTable("users", {
   id: serial("id").primaryKey(),
   email: text("email").notNull().unique(),
+  // Google's account id (the ID token's `sub`). Sign-in is through Google only.
+  googleSub: text("google_sub"),
+  // Unused since sign-in moved to Google; Google accounts store "". Kept until the column is dropped.
   passwordHash: text("password_hash").notNull(),
   displayName: text("display_name"),
   // 2FA fields
@@ -26,8 +29,13 @@ export const users = pgTable("users", {
   // Brute-force protection
   failedLoginAttempts: integer("failed_login_attempts").default(0),
   lockedUntil: timestamp("locked_until"),
+  // Copied into the session at sign-in. Incrementing it (e.g. on a password change) ends every
+  // existing session for the account. Independent of passwords, so it also works for OAuth sign-in.
+  sessionVersion: integer("session_version").default(0),
   createdAt: timestamp("created_at").default(sql`CURRENT_TIMESTAMP`),
-});
+}, (table) => [
+  uniqueIndex("users_google_sub_unique").on(table.googleSub),
+]);
 
 // Email verification tokens
 export const emailVerificationTokens = pgTable("email_verification_tokens", {
@@ -87,15 +95,40 @@ export const places = pgTable("places", {
   createdAt: timestamp("created_at").default(sql`CURRENT_TIMESTAMP`),
 });
 
-// Accessibility features for detailed checklists
+// Facts stored on a listing, one row per feature (see shared/accessibility.ts). Usually from the
+// venue's own published information; visitor reports live in accessibility_observations.
 export const accessibilityFeatures = pgTable("accessibility_features", {
   id: serial("id").primaryKey(),
   placeId: integer("place_id").references(() => places.id).notNull(),
   featureType: text("feature_type").notNull(),
+  // Legacy yes/no flag, kept in step with status for older readers.
   available: boolean("available").default(sql`TRUE`),
+  // 'yes' | 'limited' | 'no'. Older rows have only `available`; see listingFactFromRow().
+  status: text("status"),
+  // 'venue' (the venue's own published info) or 'community'. Missing means community.
+  sourceType: text("source_type"),
+  sourceUrl: text("source_url"),
   description: text("description"),
+  // When the fact was last checked against its source.
   verifiedAt: timestamp("verified_at"),
 });
+
+// One visitor's report about one feature of a place: "the entrance had two steps", on a date.
+// Reports from signed-out visitors wait for moderation (moderation_status 'pending').
+export const accessibilityObservations = pgTable("accessibility_observations", {
+  id: serial("id").primaryKey(),
+  placeId: integer("place_id").references(() => places.id).notNull(),
+  featureType: text("feature_type").notNull(),
+  status: text("status").notNull(),
+  note: text("note"),
+  // The day of the visit, which is what freshness is measured from.
+  observedAt: timestamp("observed_at").notNull(),
+  userId: integer("user_id").references(() => users.id),
+  moderationStatus: text("moderation_status").notNull().default("published"),
+  createdAt: timestamp("created_at").default(sql`CURRENT_TIMESTAMP`),
+}, (table) => [
+  index("accessibility_observations_place_idx").on(table.placeId),
+]);
 
 // Place media/photos
 export const placeMedia = pgTable("place_media", {
@@ -132,6 +165,16 @@ export const reviews = pgTable("reviews", {
   isFeatured: boolean("is_featured").default(sql`FALSE`),
   createdAt: timestamp("created_at").default(sql`CURRENT_TIMESTAMP`),
 });
+
+// One row per person who marked a review helpful, so each account counts once.
+export const reviewVotes = pgTable("review_votes", {
+  id: serial("id").primaryKey(),
+  reviewId: integer("review_id").references(() => reviews.id).notNull(),
+  userId: integer("user_id").references(() => users.id).notNull(),
+  createdAt: timestamp("created_at").default(sql`CURRENT_TIMESTAMP`),
+}, (table) => [
+  uniqueIndex("review_votes_user_review_unique").on(table.userId, table.reviewId),
+]);
 
 // Petitions
 export const petitions = pgTable("petitions", {
@@ -276,8 +319,9 @@ export const communityPosts = pgTable("community_posts", {
 // Content reports (users can report photos, reviews, community posts)
 export const reports = pgTable("reports", {
   id: serial("id").primaryKey(),
-  reporterId: integer("reporter_id").references(() => users.id).notNull(),
-  contentType: text("content_type").notNull(), // 'photo', 'review', 'community_post'
+  // Null for problem reports sent by signed-out visitors.
+  reporterId: integer("reporter_id").references(() => users.id),
+  contentType: text("content_type").notNull(), // 'photo', 'review', 'community_post', 'tip', 'place'
   contentId: integer("content_id").notNull(),
   reason: text("reason").notNull(),
   status: text("status").default("pending"), // 'pending', 'resolved', 'dismissed'
@@ -298,27 +342,6 @@ export const passwordResetTokens = pgTable("password_reset_tokens", {
 
 // === INSERT SCHEMAS ===
 
-export const insertUserSchema = createInsertSchema(users).omit({ 
-  id: true, 
-  passwordHash: true, 
-  twoFactorEnabled: true, 
-  twoFactorSecret: true, 
-  backupCodes: true, 
-  isActive: true, 
-  lastLoginAt: true, 
-  createdAt: true 
-}).extend({
-  password: z.string()
-    .min(8, "Password must be at least 8 characters")
-    .regex(/[0-9!@#$%^&*(),.?":{}|<>]/, "Password must contain at least one number or symbol"),
-});
-
-export const loginSchema = z.object({
-  email: z.string().email("Invalid email address"),
-  password: z.string().min(1, "Password is required"),
-  twoFactorCode: z.string().optional(),
-});
-
 export const insertSavedPlaceSchema = createInsertSchema(savedPlaces).omit({ id: true, savedAt: true });
 export const insertCategorySchema = createInsertSchema(categories).omit({ id: true });
 export const insertPlaceSchema = createInsertSchema(places).omit({
@@ -332,6 +355,7 @@ export const insertPlaceSchema = createInsertSchema(places).omit({
   lastCheckedAt: true,
 });
 export const insertAccessibilityFeatureSchema = createInsertSchema(accessibilityFeatures).omit({ id: true });
+export const insertAccessibilityObservationSchema = createInsertSchema(accessibilityObservations).omit({ id: true, createdAt: true });
 export const insertPlaceMediaSchema = createInsertSchema(placeMedia).omit({ id: true, createdAt: true });
 export const insertPlaceTipSchema = createInsertSchema(placeTips).omit({ id: true, createdAt: true, helpfulCount: true, userId: true });
 export const insertReviewSchema = createInsertSchema(reviews).omit({ id: true, createdAt: true, helpfulCount: true });
@@ -354,25 +378,10 @@ export const insertPasswordResetTokenSchema = createInsertSchema(passwordResetTo
 
 export const insertEmailVerificationTokenSchema = createInsertSchema(emailVerificationTokens).omit({ id: true, createdAt: true, usedAt: true });
 
-// Forgot password request schema
-export const forgotPasswordSchema = z.object({
-  email: z.string().email("Invalid email address"),
-});
-
-// Reset password schema
-export const resetPasswordSchema = z.object({
-  token: z.string().min(1, "Token is required"),
-  password: z.string()
-    .min(8, "Password must be at least 8 characters")
-    .regex(/[0-9!@#$%^&*(),.?":{}|<>]/, "Password must contain at least one number or symbol"),
-});
-
 // === TYPES ===
 
 export type User = typeof users.$inferSelect;
-export type InsertUser = z.infer<typeof insertUserSchema>;
-export type LoginInput = z.infer<typeof loginSchema>;
-export type SafeUser = Omit<User, 'passwordHash' | 'twoFactorSecret' | 'backupCodes' | 'failedLoginAttempts' | 'lockedUntil'>;
+export type SafeUser = Omit<User, 'passwordHash' | 'twoFactorSecret' | 'backupCodes' | 'failedLoginAttempts' | 'lockedUntil' | 'sessionVersion' | 'googleSub'>;
 
 export type SavedPlace = typeof savedPlaces.$inferSelect;
 export type InsertSavedPlace = z.infer<typeof insertSavedPlaceSchema>;
@@ -385,6 +394,9 @@ export type InsertPlace = z.infer<typeof insertPlaceSchema>;
 
 export type AccessibilityFeature = typeof accessibilityFeatures.$inferSelect;
 export type InsertAccessibilityFeature = z.infer<typeof insertAccessibilityFeatureSchema>;
+
+export type AccessibilityObservation = typeof accessibilityObservations.$inferSelect;
+export type InsertAccessibilityObservation = z.infer<typeof insertAccessibilityObservationSchema>;
 
 export type PlaceMedia = typeof placeMedia.$inferSelect;
 export type InsertPlaceMedia = z.infer<typeof insertPlaceMediaSchema>;
@@ -433,8 +445,6 @@ export type InsertReport = z.infer<typeof insertReportSchema>;
 
 export type PasswordResetToken = typeof passwordResetTokens.$inferSelect;
 export type InsertPasswordResetToken = z.infer<typeof insertPasswordResetTokenSchema>;
-export type ForgotPasswordInput = z.infer<typeof forgotPasswordSchema>;
-export type ResetPasswordInput = z.infer<typeof resetPasswordSchema>;
 
 export type EmailVerificationToken = typeof emailVerificationTokens.$inferSelect;
 export type InsertEmailVerificationToken = z.infer<typeof insertEmailVerificationTokenSchema>;
@@ -450,8 +460,12 @@ export const ACCESSIBILITY_STATUS = {
   PARTIALLY_ACCESSIBLE: 'Partially Accessible',
   NOT_ACCESSIBLE: 'Not Accessible',
 } as const;
+// Places with no accessibility information aren't listed, so there is no "Unknown" status. (A
+// single feature can still be unknown; see shared/accessibility.ts.)
 
-// Feature types
+export const VERIFICATION_STATUSES = ['community', 'venue', 'needs-review', 'verified'] as const;
+
+// Feature types (the full catalog with labels and groups is in shared/accessibility.ts)
 export const ACCESSIBILITY_FEATURE_TYPES = {
   RAMP: 'ramp',
   ELEVATOR: 'elevator',
@@ -467,6 +481,13 @@ export const ACCESSIBILITY_FEATURE_TYPES = {
   LARGE_PRINT: 'large_print',
   QUIET_HOURS: 'quiet_hours',
   SENSORY_ROOM: 'sensory_room',
+  STEP_FREE_ENTRANCE: 'step_free_entrance',
+  STEP_FREE_INTERIOR: 'step_free_interior',
+  AUTOMATIC_DOOR: 'automatic_door',
+  ACCESSIBLE_SEATING: 'accessible_seating',
+  ADULT_CHANGING_TABLE: 'adult_changing_table',
+  CAPTIONING: 'captioning',
+  SENSORY_KITS: 'sensory_kits',
 } as const;
 
 // Category constants

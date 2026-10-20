@@ -19,7 +19,6 @@ const allowlist = [
   "memorystore",
   "nanoid",
   "pg",
-  "ws",
   "zod",
 ];
 

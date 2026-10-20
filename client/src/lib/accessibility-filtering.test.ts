@@ -1,26 +1,31 @@
 import { describe, expect, it } from "vitest";
-import { getPlaceNeedTags, matchesNeedFilter, getVerificationBadgeLabel } from "./accessibility-filtering";
+import { getPlaceNeedTags, getVerificationBadgeLabel } from "./accessibility-filtering";
+import { summarizeFeature } from "@shared/accessibility";
 
-describe("accessibility-filtering", () => {
-  it("maps feature types to user-friendly accessibility tags", () => {
-    expect(
-      getPlaceNeedTags([
-        { featureType: "ramp", available: true },
-        { featureType: "accessible_restroom", available: true },
-        { featureType: "quiet_hours", available: true },
-      ] as any)
-    ).toEqual(["Step-free entry", "Accessible restroom", "Quiet spaces"]);
+const report = (featureType: string, status: "yes" | "limited" | "no") =>
+  summarizeFeature(featureType, undefined, [{ status, observedAt: new Date().toISOString() }]);
+
+describe("getPlaceNeedTags", () => {
+  it("tags needs that visitors report as met", () => {
+    expect(getPlaceNeedTags([
+      report("ramp", "yes"),
+      report("accessible_restroom", "yes"),
+      report("quiet_hours", "yes"),
+    ])).toEqual(["Step-free entrance", "Accessible restroom", "Quiet spaces"]);
   });
 
-  it("matches a selected need filter against a place's features", () => {
-    const features = [{ featureType: "accessible_parking", available: true } as any];
-    expect(matchesNeedFilter(features, "parking-nearby")).toBe(true);
-    expect(matchesNeedFilter(features, "step-free-entry")).toBe(false);
+  // Behaviour change: an elevator used to earn a "Step-free entry" tag, but an elevator says
+  // nothing about the way in. And a "no" or "partly" report must not produce a tag.
+  it("doesn't imply step-free entry from an elevator, or tag partial and negative reports", () => {
+    expect(getPlaceNeedTags([report("elevator", "yes")])).toEqual(["Step-free inside"]);
+    expect(getPlaceNeedTags([report("accessible_restroom", "no"), report("ramp", "limited")])).toEqual([]);
   });
+});
 
-  it("returns a clear verification badge label for place provenance", () => {
-    expect(getVerificationBadgeLabel("verified")).toBe("Verified listing");
-    expect(getVerificationBadgeLabel("community")).toBe("Community reported");
-    expect(getVerificationBadgeLabel("needs-review")).toBe("Needs a fresh check");
+describe("getVerificationBadgeLabel", () => {
+  it("describes where the listing came from", () => {
+    expect(getVerificationBadgeLabel("venue")).toBe("From the venue's own information");
+    expect(getVerificationBadgeLabel("community")).toBe("Added by the community");
+    expect(getVerificationBadgeLabel("needs-review")).toBe("Not yet checked");
   });
 });

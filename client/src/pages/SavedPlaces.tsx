@@ -9,8 +9,10 @@ import { Bookmark, MapPin, LogIn, Trash2 } from "lucide-react";
 import { Place } from "@shared/schema";
 import { apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
+import { usePageMeta } from "@/hooks/use-page-meta";
 
 export default function SavedPlaces() {
+  usePageMeta({ title: "Saved Places" });
   const { user, isLoading: authLoading } = useAuth();
   const queryClient = useQueryClient();
   const { toast } = useToast();
@@ -66,15 +68,12 @@ export default function SavedPlaces() {
             </div>
             <h2 className="font-display font-bold text-2xl mb-4">Sign in to view saved places</h2>
             <p className="text-muted-foreground mb-6">
-              Create an account or log in to save places and access them anytime.
+              Sign in with your Google account to save places and access them anytime.
             </p>
-            <div className="flex flex-col sm:flex-row gap-3 justify-center">
-              <Link href="/login">
-                <Button data-testid="button-login-prompt">Log In</Button>
-              </Link>
-              <Link href="/register">
-                <Button variant="outline" data-testid="button-register-prompt">Create Account</Button>
-              </Link>
+            <div className="flex justify-center">
+              <Button asChild data-testid="button-login-prompt">
+                <Link href="/login?returnTo=/saved">Sign in with Google</Link>
+              </Button>
             </div>
           </div>
         </section>

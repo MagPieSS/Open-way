@@ -65,7 +65,7 @@ export default function Home() {
   return (
     <div className="flex flex-col">
       {/* Hero Section */}
-      <section className="relative bg-gradient-to-br from-primary via-primary to-accent/80 text-white overflow-hidden">
+      <section className="relative bg-brand-gradient text-primary-foreground overflow-hidden">
         <div className="absolute top-0 right-0 w-96 h-96 bg-white/10 rounded-full blur-3xl -translate-y-1/2 translate-x-1/2" />
         <div className="absolute bottom-0 left-0 w-64 h-64 bg-white/10 rounded-full blur-3xl translate-y-1/2 -translate-x-1/2" />
         <div className="absolute top-1/2 left-1/4 w-32 h-32 bg-accent/30 rounded-full blur-2xl" />
@@ -83,24 +83,24 @@ export default function Home() {
                 <span className="text-sm font-semibold">Philadelphia's Accessibility Hub</span>
               </div>
               
-              <h1 className="font-display font-bold text-5xl sm:text-6xl lg:text-7xl mb-6 leading-tight">
+              <h1 className="font-display font-bold text-5xl sm:text-6xl lg:text-7xl mb-6 leading-tight text-primary-foreground">
                 Move Your Way!
               </h1>
-              <p className={`text-white/90 mb-8 max-w-xl mx-auto lg:mx-0 text-${textSize === 'xl' ? '2xl' : 'xl'}`}>
+              <p className={`text-primary-foreground mb-8 max-w-xl mx-auto lg:mx-0 text-${textSize === 'xl' ? '2xl' : 'xl'}`}>
                 Discover accessible places, share your experiences, and join the movement for inclusive cities in Philadelphia.
               </p>
               
               <div className="flex flex-col sm:flex-row gap-4 justify-center lg:justify-start">
                 <Link
                   href="/places"
-                  className="w-full sm:w-auto px-8 py-4 rounded-full bg-white text-primary font-bold text-lg shadow-lg hover:shadow-xl hover:bg-gray-50 transition-all flex items-center justify-center gap-2"
+                  className="w-full sm:w-auto px-8 py-4 rounded-full bg-card text-primary font-bold text-lg shadow-lg hover:shadow-xl hover:bg-secondary transition-all flex items-center justify-center gap-2"
                   data-testid="button-explore-places"
                 >
                   <Search className="w-5 h-5" /> Explore Places
                 </Link>
                 <Link
                   href="/petitions"
-                  className="w-full sm:w-auto px-8 py-4 rounded-full bg-white/20 backdrop-blur-sm text-white font-bold text-lg border-2 border-white/30 hover:bg-white/30 transition-all flex items-center justify-center gap-2"
+                  className="w-full sm:w-auto px-8 py-4 rounded-full bg-white/20 backdrop-blur-sm text-primary-foreground font-bold text-lg border-2 border-primary-foreground/30 hover:bg-white/30 transition-all flex items-center justify-center gap-2"
                   data-testid="button-sign-petition"
                 >
                   <PenTool className="w-5 h-5" /> Browse Petitions
@@ -114,8 +114,8 @@ export default function Home() {
               transition={{ duration: 0.6, delay: 0.2 }}
               className="hidden lg:block"
             >
-              <div className="bg-white/10 backdrop-blur-md rounded-3xl p-8 border border-white/20">
-                <h3 className="text-lg font-semibold mb-6 text-white/80">Our Impact</h3>
+              <div className="bg-white/10 backdrop-blur-md rounded-3xl p-8 border border-primary-foreground/20">
+                <h3 className="text-lg font-semibold mb-6 text-primary-foreground">Our Impact</h3>
                 <div className="space-y-6">
                   {stats.map((stat, idx) => (
                     <div key={idx} className="flex items-center gap-4">
@@ -126,7 +126,7 @@ export default function Home() {
                         <div className="text-3xl font-bold">
                           <AnimatedCounter value={stat.value} />
                         </div>
-                        <div className="text-white/70 text-sm">{stat.label}</div>
+                        <div className="text-primary-foreground text-sm">{stat.label}</div>
                       </div>
                     </div>
                   ))}
@@ -136,15 +136,15 @@ export default function Home() {
           </div>
         </div>
 
-        <div className="lg:hidden bg-white/10 backdrop-blur-sm border-t border-white/20 py-6">
+        <div className="lg:hidden bg-white/10 backdrop-blur-sm border-t border-primary-foreground/20 py-6">
           <div className="max-w-7xl mx-auto px-4 grid grid-cols-2 sm:grid-cols-4 gap-4 text-center">
             {stats.map((stat, idx) => (
               <div key={idx} className="flex flex-col items-center gap-1">
-                <stat.icon className="w-5 h-5 text-white/70" />
+                <stat.icon className="w-5 h-5 text-primary-foreground" />
                 <div className="text-2xl font-bold">
                   <AnimatedCounter value={stat.value} />
                 </div>
-                <div className="text-white/70 text-xs">{stat.label}</div>
+                <div className="text-primary-foreground text-xs">{stat.label}</div>
               </div>
             ))}
           </div>
@@ -154,7 +154,7 @@ export default function Home() {
       {/* Trust Bar */}
       <section className="bg-secondary py-6 border-b border-border">
         <div className="max-w-7xl mx-auto px-4 flex flex-wrap items-center justify-center gap-8 text-muted-foreground">
-          <span className="text-sm font-medium">Featuring locations from:</span>
+          <span className="text-sm font-medium">Listings include places like:</span>
           <div className="flex items-center gap-2">
             <Train className="w-5 h-5" />
             <span className="font-semibold">SEPTA</span>
@@ -167,6 +167,7 @@ export default function Home() {
             <Building2 className="w-5 h-5" />
             <span className="font-semibold">Free Library of Philadelphia</span>
           </div>
+          <span className="w-full text-center text-xs">Open Way is independent and not affiliated with these organizations.</span>
         </div>
       </section>
 
@@ -231,7 +232,7 @@ export default function Home() {
             <FeatureCard 
               icon={Users}
               title="Community Voices"
-              description="Read honest reviews from people with disabilities about what places are really like."
+              description="Read what visitors report about getting in and around a place, and add what you find."
               color="text-accent"
               link="/community"
             />
@@ -378,15 +379,15 @@ export default function Home() {
       )}
 
       {/* CTA Banner */}
-      <section className="py-16 bg-gradient-to-r from-primary to-accent text-white">
+      <section className="py-16 bg-brand-gradient text-primary-foreground">
         <div className="max-w-4xl mx-auto px-4 text-center">
-          <h2 className="font-display font-bold text-3xl md:text-4xl mb-4">Ready to Take Action?</h2>
-          <p className="text-white/90 mb-8 text-lg">Join thousands of advocates working toward a more accessible Philadelphia.</p>
+          <h2 className="font-display font-bold text-3xl md:text-4xl mb-4 text-primary-foreground">Ready to Take Action?</h2>
+          <p className="text-primary-foreground mb-8 text-lg">Help build a more accessible Philadelphia, one report at a time.</p>
           <div className="flex flex-col sm:flex-row gap-4 justify-center">
-            <Link href="/submit" className="px-8 py-4 rounded-full bg-white text-primary font-bold text-lg shadow-lg hover:shadow-xl transition-all" data-testid="button-cta-share-review">
+            <Link href="/submit" className="px-8 py-4 rounded-full bg-card text-primary font-bold text-lg shadow-lg hover:shadow-xl transition-all" data-testid="button-cta-share-review">
               Share Your Review
             </Link>
-            <Link href="/petitions" className="px-8 py-4 rounded-full bg-white/20 text-white font-bold text-lg border-2 border-white/30 hover:bg-white/30 transition-all" data-testid="button-cta-sign-petition">
+            <Link href="/petitions" className="px-8 py-4 rounded-full bg-white/20 text-primary-foreground font-bold text-lg border-2 border-primary-foreground/30 hover:bg-white/30 transition-all" data-testid="button-cta-sign-petition">
               Browse Petitions
             </Link>
           </div>
@@ -433,11 +434,11 @@ function FeaturedPlaceCard({ place }: { place: Place }) {
       case ACCESSIBILITY_STATUS.ACCESSIBLE:
         return { bgColor: "bg-accessible", icon: CheckCircle, text: "Accessible" };
       case ACCESSIBILITY_STATUS.PARTIALLY_ACCESSIBLE:
-        return { bgColor: "bg-partial", icon: AlertTriangle, text: "Partial" };
+        return { bgColor: "bg-partial", icon: AlertTriangle, text: "Partially accessible" };
       case ACCESSIBILITY_STATUS.NOT_ACCESSIBLE:
-        return { bgColor: "bg-not-accessible", icon: XCircle, text: "Limited" };
+        return { bgColor: "bg-not-accessible", icon: XCircle, text: "Not accessible" };
       default:
-        return { bgColor: "bg-muted", icon: AlertTriangle, text: "Unknown" };
+        return { bgColor: "bg-muted", icon: AlertTriangle, text: "Not known yet" };
     }
   };
 

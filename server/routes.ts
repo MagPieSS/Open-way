@@ -1,105 +1,151 @@
 import express, { type Express, type Request, type Response, type NextFunction } from "express";
 import type { Server } from "http";
-import path from "path";
-import { mkdir, writeFile } from "fs/promises";
 import { storage } from "./storage";
 import { db } from "./db";
-import { api } from "@shared/routes";
 import { z } from "zod";
 import { eq } from "drizzle-orm";
 import { randomBytes } from "crypto";
-import { ACCESSIBILITY_STATUS, ACCESSIBILITY_FEATURE_TYPES, insertUserSchema, loginSchema, forgotPasswordSchema, resetPasswordSchema, blogPosts as blogPostsTable, reviews as reviewsTable, places as placesTable, communityPosts as communityPostsTable, placeMedia as placeMediaTable, users } from "@shared/schema";
-import { 
-  registerUser, 
-  loginUser, 
-  verifyTwoFactor, 
-  toSafeUser,
-  enable2FA,
-  confirm2FA,
-  disable2FA,
-  regenerateBackupCodes,
-  verifyPassword,
-  hashPassword,
-  isWeakPassword
-} from "./auth";
-import { authRateLimiter, apiRateLimiter, reviewRateLimiter, validateCsrf } from "./index";
+import { ACCESSIBILITY_STATUS, ACCESSIBILITY_FEATURE_TYPES, blogPosts as blogPostsTable,reviews as reviewsTable, places as placesTable, communityPosts as communityPostsTable, placeMedia as placeMediaTable, placeTips as placeTipsTable, users, type User, type InsertPlace } from "@shared/schema";
+import { api, placeMediaContributionSchema, reviewUpdateSchema, adminPlaceUpdateSchema, observationSubmissionSchema, placeProblemReportSchema, type PlaceAccessibilityResponse } from "@shared/routes";
+import { toSafeUser, isListedAdminEmail } from "./auth";
+import { isGoogleSignInConfigured, createGoogleAuthRequest, exchangeGoogleCode } from "./google-oauth";
+import { authRateLimiter, apiRateLimiter, reviewRateLimiter, uploadRateLimiter, contributionRateLimiter, validateCsrf } from "./middleware";
 import { geocodeAddress } from "./geocode";
-import { sendPasswordResetEmail, sendVerificationEmail } from "./email";
 import { sanitizeString } from "./sanitize";
 import { haversineDistanceMiles } from "./geo";
 import { checkReviewForSpam } from "./spam-detection";
+import { summarizeByPlace } from "./accessibility-summary";
+import { FEATURE_KEYS, unknownSummary, type FeatureStatus } from "@shared/accessibility";
+import { seedDatabase } from "./seed";
+import { getElevatorOutages, FeedUnavailableError } from "./septa";
 
-const MAX_UPLOAD_SIZE_BYTES = 10 * 1024 * 1024;
-const ALLOWED_UPLOAD_TYPES: Record<string, string> = {
-  "image/jpeg": "jpg",
-  "image/png": "png",
-  "image/webp": "webp",
-  "image/gif": "gif",
-};
+import {
+  MAX_UPLOAD_SIZE_BYTES,
+  ALLOWED_UPLOAD_TYPES,
+  getUploadContentType,
+  createUploadFilename,
+  isSafeUploadFilename,
+  saveUploadBuffer,
+  uploadErrorMessage,
+} from "./uploads";
 
-function getUploadContentType(req: Request): string {
-  return String(req.headers["content-type"] || "").split(";")[0].trim().toLowerCase();
+
+// Starts a fresh session for a user who just proved who they are. Regenerating the id stops a
+// session id planted before login (session fixation) from becoming an authenticated one.
+function establishSession(req: Request, user: User): Promise<void> {
+  return new Promise((resolve, reject) => {
+    req.session.regenerate((regenerateError) => {
+      if (regenerateError) return reject(regenerateError);
+      req.session.userId = user.id;
+      req.session.email = user.email;
+      req.session.sessionVersion = user.sessionVersion ?? 0;
+      req.session.save((saveError) => (saveError ? reject(saveError) : resolve()));
+    });
+  });
 }
 
-function createUploadFilename(contentType: string): string {
-  const extension = ALLOWED_UPLOAD_TYPES[contentType];
-  return `${Date.now()}-${randomBytes(12).toString("hex")}.${extension}`;
-}
+type SessionUserCheck =
+  | { ok: true; user: User }
+  | { ok: false; status: number; message: string };
 
-function isSafeUploadFilename(filename: string, contentType: string): boolean {
-  const expectedExtension = ALLOWED_UPLOAD_TYPES[contentType];
-  if (!expectedExtension) return false;
-  const escapedExtension = expectedExtension.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-  return new RegExp(`^\\d+-[a-f0-9]{24}\\.${escapedExtension}$`).test(filename);
-}
-
-async function saveUploadBuffer(buffer: Buffer, contentType: string, requestedFilename?: string): Promise<string> {
-  if (!ALLOWED_UPLOAD_TYPES[contentType]) {
-    throw new Error("Unsupported image type. Use JPG, PNG, WebP, or GIF.");
-  }
-  if (buffer.length === 0) {
-    throw new Error("No file data received");
-  }
-  if (buffer.length > MAX_UPLOAD_SIZE_BYTES) {
-    throw new Error("File is too large. Maximum size is 10MB.");
-  }
-
-  const uploadDir = path.resolve(process.cwd(), "uploads");
-  await mkdir(uploadDir, { recursive: true });
-
-  const filename = requestedFilename && isSafeUploadFilename(requestedFilename, contentType)
-    ? requestedFilename
-    : createUploadFilename(contentType);
-  const absolutePath = path.join(uploadDir, filename);
-  await writeFile(absolutePath, buffer, { flag: "wx" });
-
-  return `/uploads/${filename}`;
-}
-
-// Middleware to check if user is authenticated
-function requireAuth(req: Request, res: Response, next: NextFunction) {
+// Loads the signed-in user and decides whether the session may still act for them.
+async function checkSessionUser(req: Request): Promise<SessionUserCheck> {
   if (!req.session.userId) {
-    return res.status(401).json({ message: "Please log in to continue" });
+    return { ok: false, status: 401, message: "Please log in to continue" };
+  }
+  const user = await storage.getUserById(req.session.userId);
+  // A bumped sessionVersion ("sign out everywhere") ends sessions started before it.Session stores
+  // can't be searched by user id in a driver-neutral way, so the check happens here instead.
+  if (!user || req.session.sessionVersion !== (user.sessionVersion ?? 0)) {
+    req.session.destroy(() => {});
+    return { ok: false, status: 401, message: "Your session has ended. Please log in again." };
+  }
+  if (user.isBanned || !user.isActive) {
+    req.session.destroy(() => {});
+    return { ok: false, status: 403, message: "This account has been suspended." };
+  }
+  return { ok: true, user };
+}
+
+// Middleware to check if user is authenticated (and not banned or signed out elsewhere)
+async function requireAuth(req: Request, res: Response, next: NextFunction) {
+  const check = await checkSessionUser(req);
+  if (!check.ok) {
+    return res.status(check.status).json({ message: check.message });
   }
   next();
 }
 
 // Middleware to check if user is an admin
 async function requireAdmin(req: Request, res: Response, next: NextFunction) {
-  if (!req.session.userId) {
-    return res.status(401).json({ message: "Please log in to continue" });
+  const check = await checkSessionUser(req);
+  if (!check.ok) {
+    return res.status(check.status).json({ message: check.message });
   }
-  
-  try {
-    const user = await storage.getUserById(req.session.userId);
-    if (!user || !user.isAdmin) {
-      return res.status(403).json({ message: "Admin access required" });
-    }
-    next();
-  } catch (error) {
-    console.error("Error checking admin status:", error);
-    return res.status(500).json({ message: "Unable to verify admin status" });
+  if (!check.user.isAdmin) {
+    return res.status(403).json({ message: "Admin access required" });
   }
+  next();
+}
+
+// Where Google sends people back. Must match an authorized redirect URI on the OAuth client.
+function googleRedirectUri(req: Request): string {
+  return `${appBaseUrl(req)}/api/auth/google/callback`;
+}
+
+// Only same-site paths, so the sign-in redirect can't be used to send people to another site.
+function safeReturnTo(value: unknown): string {
+  if (typeof value !== "string" || !value.startsWith("/") || value.startsWith("//") || value.includes("\\")) {
+    return "/";
+  }
+  return value;
+}
+
+// Finds the account for a Google identity: by Google id first, then by (Google-verified) email,
+// linking it; otherwise creates one. Returns undefined if the email already belongs to a
+// different Google account.
+async function findOrCreateGoogleUser(googleSub: string, email: string): Promise<User | undefined> {
+  const linked = await storage.getUserByGoogleSub(googleSub);
+  if (linked) return linked;
+
+  const byEmail = await storage.getUserByEmail(email);
+  if (byEmail) {
+    if (byEmail.googleSub) return undefined;
+    await storage.linkGoogleAccount(byEmail.id, googleSub);
+    return storage.getUserById(byEmail.id);
+  }
+  return storage.createGoogleUser(email, googleSub);
+}
+
+// This site's public address, from APP_BASE_URL rather than the request's Host header, which can be
+// forged. Used for the Google sign-in redirect address, which must match what Google has on file.
+function appBaseUrl(req: Request): string {
+  const configured = process.env.APP_BASE_URL?.trim().replace(/\/+$/, "");
+  return configured || `${req.protocol}://${req.get("host")}`;
+}
+
+// For endpoints signed-out visitors may use. Returns the user id (or null when signed out), or
+// sends an error and returns undefined when a signed-in session is no longer allowed to act.
+async function optionalSessionUserId(req: Request, res: Response): Promise<number | null | undefined> {
+  if (!req.session.userId) return null;
+  const check = await checkSessionUser(req);
+  if (!check.ok) {
+    res.status(check.status).json({ message: check.message });
+    return undefined;
+  }
+  return check.user.id;
+}
+
+// Bots fill in every field; people never see the hidden "website" field. Submissions that fill it
+// are dropped but answered like a normal pending submission, so the bot learns nothing.
+function isHoneypotFilled(value: unknown): boolean {
+  return typeof value === "string" && value.trim().length > 0;
+}
+
+// Turns a zod error into the { message, field } shape the client expects.
+function validationError(res: Response, err: z.ZodError) {
+  const issue = err.errors[0];
+  return res.status(400).json({ message: issue.message, field: issue.path.join(".") || undefined });
 }
 
 export async function registerRoutes(
@@ -143,7 +189,7 @@ export async function registerRoutes(
     "/api/uploads/proxy",
     requireAuth,
     validateCsrf,
-    apiRateLimiter,
+    uploadRateLimiter,
     express.raw({ type: () => true, limit: MAX_UPLOAD_SIZE_BYTES }),
     async (req, res) => {
       try {
@@ -152,8 +198,7 @@ export async function registerRoutes(
         res.json({ success: true, objectPath });
       } catch (error) {
         console.error("Proxy upload failed:", error);
-        const message = error instanceof Error ? error.message : "Upload failed";
-        res.status(400).json({ error: message });
+        res.status(400).json({ error: uploadErrorMessage(error) });
       }
     }
   );
@@ -162,7 +207,7 @@ export async function registerRoutes(
     "/uploads/:filename",
     requireAuth,
     validateCsrf,
-    apiRateLimiter,
+    uploadRateLimiter,
     express.raw({ type: () => true, limit: MAX_UPLOAD_SIZE_BYTES }),
     async (req, res) => {
       try {
@@ -175,113 +220,65 @@ export async function registerRoutes(
         res.json({ success: true, objectPath });
       } catch (error) {
         console.error("Direct upload failed:", error);
-        const message = error instanceof Error ? error.message : "Upload failed";
-        res.status(400).json({ error: message });
+        res.status(400).json({ error: uploadErrorMessage(error) });
       }
     }
   );
 
   // ==================== AUTHENTICATION ROUTES ====================
+  // Sign-in is through Google only (server/google-oauth.ts); Open Way stores no passwords.
 
-  // Register a new user
-  app.post("/api/auth/register", authRateLimiter, async (req, res) => {
-    try {
-      const input = insertUserSchema.parse(req.body);
-      
-      // Email is already validated by Zod, just trim it (don't sanitize - would break @ symbol)
-      const result = await registerUser(
-        input.email.trim().toLowerCase(),
-        input.password,
-        input.displayName ? sanitizeString(input.displayName, 100) : undefined
-      );
-
-      if (!result.success) {
-        return res.status(400).json({ message: result.error });
-      }
-
-      // Auto-login after registration
-      req.session.userId = result.user!.id;
-      req.session.email = result.user!.email;
-
-      // Send email verification link (best-effort; failure doesn't block registration)
-      try {
-        const token = randomBytes(32).toString("hex");
-        const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000); // 24 hours
-        await storage.createEmailVerificationToken({ userId: result.user!.id, token, expiresAt });
-        const verifyUrl = `${req.protocol}://${req.get("host")}/verify-email?token=${token}`;
-        const emailResult = await sendVerificationEmail({ to: result.user!.email, verifyUrl, expiresAt });
-        if (!emailResult.sent) {
-          console.warn(`Verification email not sent via ${emailResult.provider}: ${emailResult.error}`);
-        }
-      } catch (emailErr) {
-        console.error("Failed to send verification email:", emailErr);
-      }
-
-      res.status(201).json({ user: result.user });
-    } catch (err) {
-      if (err instanceof z.ZodError) {
-        return res.status(400).json({ message: err.errors[0].message });
-      }
-      throw err;
+  // Starts Google sign-in. ?returnTo=/places/3 brings the person back where they were.
+  app.get("/api/auth/google", authRateLimiter, async (req, res) => {
+    if (!isGoogleSignInConfigured()) {
+      console.warn("[auth] Google sign-in requested but GOOGLE_CLIENT_ID / GOOGLE_CLIENT_SECRET are not set");
+      return res.redirect("/login?error=not_configured");
     }
+    const state = randomBytes(24).toString("hex");
+    const { url, codeVerifier } = await createGoogleAuthRequest(googleRedirectUri(req), state);
+    req.session.oauthState = state;
+    req.session.oauthCodeVerifier = codeVerifier;
+    req.session.oauthReturnTo = safeReturnTo(req.query.returnTo);
+    req.session.save((err) => {
+      if (err) throw err;
+      res.redirect(url);
+    });
   });
 
-  // Login
-  app.post("/api/auth/login", authRateLimiter, async (req, res) => {
+  // Google sends the person back here with a one-time code.
+  app.get("/api/auth/google/callback", authRateLimiter, async (req, res) => {
+    const { oauthState, oauthCodeVerifier, oauthReturnTo } = req.session;
+    delete req.session.oauthState;
+    delete req.session.oauthCodeVerifier;
+    delete req.session.oauthReturnTo;
+    const fail = (reason: string) => res.redirect(`/login?error=${reason}`);
+
+    if (typeof req.query.error === "string") return fail("cancelled");
+    const { code, state } = req.query;
+    // The state must match what this browser was given when it started, or a forged callback
+    // could sign someone into an account that isn't theirs.
+    if (!oauthState || !oauthCodeVerifier || state !== oauthState || typeof code !== "string") {
+      return fail("expired");
+    }
+
+    let profile;
     try {
-      const input = loginSchema.parse(req.body);
-      
-      const result = await loginUser(input.email, input.password);
-
-      if (!result.success) {
-        return res.status(401).json({ message: result.error });
-      }
-
-      // Check if 2FA is required
-      if (result.requires2FA) {
-        req.session.pending2FAUserId = result.user!.id;
-        return res.json({ requires2FA: true });
-      }
-
-      // Complete login
-      req.session.userId = result.user!.id;
-      req.session.email = result.user!.email;
-      delete req.session.pending2FAUserId;
-
-      res.json({ user: toSafeUser(result.user!) });
+      profile = await exchangeGoogleCode(googleRedirectUri(req), code, oauthCodeVerifier);
     } catch (err) {
-      if (err instanceof z.ZodError) {
-        return res.status(400).json({ message: err.errors[0].message });
-      }
-      throw err;
-    }
-  });
-
-  // Verify 2FA code during login
-  app.post("/api/auth/verify-2fa", authRateLimiter, async (req, res) => {
-    const { code } = req.body;
-
-    if (!req.session.pending2FAUserId) {
-      return res.status(400).json({ message: "No pending 2FA verification" });
+      console.warn(`[auth] Google sign-in failed: ${err instanceof Error ? err.message : err}`);
+      return fail("google");
     }
 
-    if (!code || typeof code !== "string") {
-      return res.status(400).json({ message: "Verification code is required" });
+    let user = await findOrCreateGoogleUser(profile.sub, profile.email);
+    if (!user) return fail("account_conflict");
+    if (user.isBanned || !user.isActive) return fail("suspended");
+    if (!user.isAdmin && isListedAdminEmail(user.email)) {
+      await storage.setAdmin(user.id);
+      user = (await storage.getUserById(user.id))!;
     }
-
-    const result = await verifyTwoFactor(req.session.pending2FAUserId, sanitizeString(code, 20));
-
-    if (!result.success) {
-      return res.status(401).json({ message: result.error });
-    }
-
-    // Complete login
-    const user = await storage.getUserById(req.session.pending2FAUserId);
-    req.session.userId = user!.id;
-    req.session.email = user!.email;
-    delete req.session.pending2FAUserId;
-
-    res.json({ user: toSafeUser(user!) });
+    await storage.updateUserLastLogin(user.id);
+    await establishSession(req, user);
+    res.redirect(oauthReturnTo || "/");
   });
 
   // Logout
@@ -301,216 +298,12 @@ export async function registerRoutes(
       return res.json({ user: null });
     }
 
-    const user = await storage.getUserById(req.session.userId);
-    if (!user) {
-      req.session.destroy(() => {});
+    const check = await checkSessionUser(req);
+    if (!check.ok) {
       return res.json({ user: null });
     }
 
-    res.json({ user: toSafeUser(user) });
-  });
-
-  // ==================== PASSWORD RESET ROUTES ====================
-
-  // Request password reset (forgot password)
-  app.post("/api/auth/forgot-password", authRateLimiter, async (req, res) => {
-    try {
-      const input = forgotPasswordSchema.parse(req.body);
-      const email = input.email.trim().toLowerCase();
-
-      // Always return success to prevent email enumeration
-      const user = await storage.getUserByEmail(email);
-      
-      if (user) {
-        // Generate secure reset token
-        const token = randomBytes(32).toString("hex");
-        const expiresAt = new Date(Date.now() + 60 * 60 * 1000); // 1 hour
-
-        // Delete any existing tokens for this user
-        await storage.deleteExpiredTokens();
-        
-        // Create new reset token
-        await storage.createPasswordResetToken({
-          userId: user.id,
-          token,
-          expiresAt,
-        });
-
-        // Build reset URL
-        const resetUrl = `${req.protocol}://${req.get("host")}/reset-password?token=${token}`;
-
-        const emailResult = await sendPasswordResetEmail({ to: email, resetUrl, expiresAt });
-        if (!emailResult.sent) {
-          console.warn(`Password reset email not sent via ${emailResult.provider}: ${emailResult.error}`);
-        }
-      }
-
-      // Always return success (prevents email enumeration attacks)
-      res.json({ message: "If an account exists with this email, you will receive a password reset link." });
-    } catch (err) {
-      if (err instanceof z.ZodError) {
-        return res.status(400).json({ message: err.errors[0].message });
-      }
-      console.error("Forgot password error:", err);
-      res.status(500).json({ message: "Unable to process password reset request" });
-    }
-  });
-
-  // Reset password with token
-  app.post("/api/auth/reset-password", authRateLimiter, async (req, res) => {
-    try {
-      const input = resetPasswordSchema.parse(req.body);
-
-      // Find and validate token
-      const resetToken = await storage.getPasswordResetToken(input.token);
-
-      if (!resetToken) {
-        return res.status(400).json({ message: "Invalid or expired reset link" });
-      }
-
-      if (resetToken.usedAt) {
-        return res.status(400).json({ message: "This reset link has already been used" });
-      }
-
-      if (new Date() > resetToken.expiresAt) {
-        return res.status(400).json({ message: "This reset link has expired" });
-      }
-
-      // Check password strength
-      if (isWeakPassword(input.password)) {
-        return res.status(400).json({ message: "Password is too common. Please choose a stronger password." });
-      }
-
-      // Get the user
-      const user = await storage.getUserById(resetToken.userId);
-      if (!user) {
-        return res.status(400).json({ message: "Account not found" });
-      }
-
-      // Hash and update password
-      const passwordHash = await hashPassword(input.password);
-      await storage.updateUserPassword(user.id, passwordHash);
-
-      // Mark token as used
-      await storage.markTokenUsed(resetToken.id);
-
-      // Note: 2FA is NOT bypassed - they still need to log in with 2FA after resetting password
-      console.log(`Password reset successful for user: ${user.email}`);
-
-      res.json({ message: "Password has been reset successfully. You can now log in with your new password." });
-    } catch (err) {
-      if (err instanceof z.ZodError) {
-        return res.status(400).json({ message: err.errors[0].message });
-      }
-      console.error("Reset password error:", err);
-      res.status(500).json({ message: "Unable to reset password" });
-    }
-  });
-
-  // ==================== EMAIL VERIFICATION ROUTES ====================
-
-  // Verify email with token
-  app.post("/api/auth/verify-email", authRateLimiter, async (req, res) => {
-    const { token } = req.body;
-    if (!token || typeof token !== "string") {
-      return res.status(400).json({ message: "Verification token is required" });
-    }
-
-    const verificationToken = await storage.getEmailVerificationToken(token);
-    if (!verificationToken) {
-      return res.status(400).json({ message: "Invalid or expired verification link" });
-    }
-    if (verificationToken.usedAt) {
-      return res.status(400).json({ message: "This verification link has already been used" });
-    }
-    if (new Date() > verificationToken.expiresAt) {
-      return res.status(400).json({ message: "This verification link has expired" });
-    }
-
-    await storage.setEmailVerified(verificationToken.userId);
-    await storage.markEmailVerificationTokenUsed(verificationToken.id);
-
-    res.json({ message: "Email verified successfully" });
-  });
-
-  // Resend verification email (requires login)
-  app.post("/api/auth/resend-verification", requireAuth, validateCsrf, authRateLimiter, async (req, res) => {
-    const user = await storage.getUserById(req.session.userId!);
-    if (!user) {
-      return res.status(404).json({ message: "User not found" });
-    }
-    if (user.emailVerified) {
-      return res.json({ message: "Email is already verified" });
-    }
-
-    const token = randomBytes(32).toString("hex");
-    const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000);
-    await storage.createEmailVerificationToken({ userId: user.id, token, expiresAt });
-    const verifyUrl = `${req.protocol}://${req.get("host")}/verify-email?token=${token}`;
-    const emailResult = await sendVerificationEmail({ to: user.email, verifyUrl, expiresAt });
-    if (!emailResult.sent) {
-      console.warn(`Verification email not sent via ${emailResult.provider}: ${emailResult.error}`);
-    }
-
-    res.json({ message: "Verification email sent" });
-  });
-
-  // ==================== 2FA MANAGEMENT ROUTES ====================
-
-  // Start 2FA setup
-  app.post("/api/auth/2fa/setup", requireAuth, validateCsrf, async (req, res) => {
-    const result = await enable2FA(req.session.userId!, req.session.email!);
-
-    if (!result.success) {
-      return res.status(400).json({ message: result.error });
-    }
-
-    res.json({
-      qrCode: result.qrCode,
-      secret: result.secret,
-      backupCodes: result.backupCodes,
-    });
-  });
-
-  // Confirm 2FA setup
-  app.post("/api/auth/2fa/confirm", requireAuth, validateCsrf, authRateLimiter, async (req, res) => {
-    const { code } = req.body;
-
-    if (!code || typeof code !== "string") {
-      return res.status(400).json({ message: "Verification code is required" });
-    }
-
-    const result = await confirm2FA(req.session.userId!, sanitizeString(code, 10));
-
-    if (!result.success) {
-      return res.status(400).json({ message: result.error });
-    }
-
-    res.json({ success: true });
-  });
-
-  // Disable 2FA (requires password or a valid 2FA/backup code to prevent session hijacking from silently disabling it)
-  app.post("/api/auth/2fa/disable", requireAuth, validateCsrf, authRateLimiter, async (req, res) => {
-    const { password, code } = req.body;
-    const result = await disable2FA(req.session.userId!, {
-      password: typeof password === "string" ? password : undefined,
-      code: typeof code === "string" ? sanitizeString(code, 20) : undefined,
-    });
-    if (!result.success) {
-      return res.status(400).json({ message: result.error });
-    }
-    res.json({ success: true });
-  });
-
-  // Regenerate backup codes
-  app.post("/api/auth/2fa/regenerate-backup", requireAuth, validateCsrf, async (req, res) => {
-    const result = await regenerateBackupCodes(req.session.userId!);
-
-    if (!result.success) {
-      return res.status(400).json({ message: result.error });
-    }
-
-    res.json({ backupCodes: result.backupCodes });
+    res.json({ user: toSafeUser(check.user) });
   });
 
   // ==================== PROFILE ROUTES ====================
@@ -537,41 +330,16 @@ export async function registerRoutes(
       id: updated.id,
       email: updated.email,
       displayName: updated.displayName,
-      twoFactorEnabled: updated.twoFactorEnabled,
       createdAt: updated.createdAt,
     });
   });
 
-  // Change password
-  app.post("/api/profile/change-password", requireAuth, validateCsrf, authRateLimiter, async (req, res) => {
-    const { currentPassword, newPassword } = req.body;
-
-    if (!currentPassword || !newPassword) {
-      return res.status(400).json({ message: "Current and new passwords are required" });
-    }
-
+  // Ends every other session for this account (a lost phone, a shared computer). This one stays.
+  app.post("/api/profile/sign-out-everywhere", requireAuth, validateCsrf, async (req, res) => {
+    await storage.endAllSessions(req.session.userId!);
     const user = await storage.getUserById(req.session.userId!);
-    if (!user) {
-      return res.status(404).json({ message: "User not found" });
-    }
-
-    const isValid = await verifyPassword(currentPassword, user.passwordHash);
-    if (!isValid) {
-      return res.status(400).json({ message: "Current password is incorrect" });
-    }
-
-    // Validate new password
-    if (newPassword.length < 8) {
-      return res.status(400).json({ message: "Password must be at least 8 characters" });
-    }
-    if (isWeakPassword(newPassword)) {
-      return res.status(400).json({ message: "This password is too common. Please choose a stronger password." });
-    }
-
-    const newHash = await hashPassword(newPassword);
-    await storage.updateUserPassword(req.session.userId!, newHash);
-
-    res.json({ success: true, message: "Password changed successfully" });
+    req.session.sessionVersion = user?.sessionVersion ?? 0;
+    res.json({ success: true });
   });
 
   // ==================== SAVED PLACES ROUTES ====================
@@ -579,7 +347,12 @@ export async function registerRoutes(
   // Get user's saved places with full place details
   app.get("/api/saved-places", requireAuth, async (req, res) => {
     const savedPlaces = await storage.getSavedPlacesWithDetails(req.session.userId!);
-    res.json(savedPlaces);
+    const [allFeatures, publishedObservations] = await Promise.all([
+      storage.getAllAccessibilityFeatures(),
+      storage.getPublishedObservations(),
+    ]);
+    const summaries = summarizeByPlace(allFeatures, publishedObservations);
+    res.json(savedPlaces.map((p) => ({ ...p, features: summaries.get(p.id) ?? [] })));
   });
 
   // Save a place
@@ -698,7 +471,12 @@ export async function registerRoutes(
         withDistance.sort((a, b) => (a.distanceMiles ?? Infinity) - (b.distanceMiles ?? Infinity));
       }
 
-      res.json(withDistance);
+      const [allFeatures, publishedObservations] = await Promise.all([
+        storage.getAllAccessibilityFeatures(),
+        storage.getPublishedObservations(),
+      ]);
+      const summaries = summarizeByPlace(allFeatures, publishedObservations);
+      res.json(withDistance.map((p) => ({ ...p, features: summaries.get(p.id) ?? [] })));
     } catch (err) {
       console.error("[PRODUCTION] Failed to load places:", err);
       res.status(500).json({ message: "Failed to load places" });
@@ -721,10 +499,16 @@ export async function registerRoutes(
     try {
       const parsedInput = api.places.create.input.parse(req.body);
       const { accessibilityFeatures = [], ...placeInput } = parsedInput;
-      let input = {
-        ...placeInput,
+      const input: InsertPlace & { submittedBy: number; verificationStatus: string; lastCheckedAt: Date } = {
         name: sanitizeString(placeInput.name, 200),
+        category: placeInput.category,
+        accessibilityStatus: placeInput.accessibilityStatus,
         description: sanitizeString(placeInput.description, 2000),
+        address: placeInput.address ? sanitizeString(placeInput.address, 500) : null,
+        phone: placeInput.phone ? sanitizeString(placeInput.phone, 50) : null,
+        website: placeInput.website,
+        hours: placeInput.hours ? sanitizeString(placeInput.hours, 200) : null,
+        imageUrl: placeInput.imageUrl,
         accessibilitySource: placeInput.accessibilitySource
           ? sanitizeString(placeInput.accessibilitySource, 200)
           : "Community submission",
@@ -740,22 +524,108 @@ export async function registerRoutes(
         }
       }
       const place = await storage.createPlace(input);
-      for (const feature of accessibilityFeatures) {
-        await storage.createAccessibilityFeature({
-          placeId: place.id,
-          featureType: feature.featureType,
-          available: feature.available,
-          description: feature.description ? sanitizeString(feature.description, 500) : undefined,
-          verifiedAt: null,
-        });
-      }
+      // What the submitter describes is their own visit report, dated today, not a fact on the
+      // listing: it then counts, ages and can be contradicted like any other report.
+      await storage.createObservations(accessibilityFeatures.map((feature) => ({
+        placeId: place.id,
+        featureType: feature.featureType,
+        status: feature.status ?? (feature.available === false ? "no" : "yes"),
+        note: feature.description ? sanitizeString(feature.description, 500) : null,
+        observedAt: new Date(),
+        userId: req.session.userId!,
+        moderationStatus: "published",
+      })));
       res.status(201).json(place);
     } catch (err) {
       if (err instanceof z.ZodError) {
-        return res.status(400).json({ message: err.errors[0].message });
+        return validationError(res, err);
       }
       throw err;
     }
+  });
+
+  // Everything known about each feature of a place, plus recent visitor reports. Features nobody
+  // has reported on are included as "unknown" so the page can ask about them.
+  app.get("/api/places/:id/accessibility", async (req, res) => {
+    const place = await storage.getPlace(Number(req.params.id));
+    if (!place) return res.status(404).json({ message: "Place not found" });
+
+    const [listing, observations] = await Promise.all([
+      storage.getAccessibilityFeatures(place.id),
+      storage.getPublishedObservations(place.id),
+    ]);
+    const known = summarizeByPlace(listing, observations).get(place.id) ?? [];
+    const features = FEATURE_KEYS.map((key) => known.find((s) => s.featureType === key) ?? unknownSummary(key));
+
+    const response: PlaceAccessibilityResponse = {
+      features,
+      // No user ids or names: what was reported matters here, not who reported it.
+      recentReports: observations.slice(0, 20).map((o) => ({
+        featureType: o.featureType,
+        status: o.status,
+        note: o.note,
+        observedAt: o.observedAt.toISOString(),
+      })),
+    };
+    res.json(response);
+  });
+
+  // A visitor reports what they found. Signed-in reports publish straight away; reports from
+  // signed-out visitors wait for a moderator.
+  app.post("/api/places/:id/observations", validateCsrf, contributionRateLimiter, async (req, res) => {
+    const place = await storage.getPlace(Number(req.params.id));
+    if (!place) return res.status(404).json({ message: "Place not found" });
+
+    const userId = await optionalSessionUserId(req, res);
+    if (userId === undefined) return;
+
+    const parsed = observationSubmissionSchema.safeParse(req.body);
+    if (!parsed.success) return validationError(res, parsed.error);
+
+    const moderationStatus = userId ? "published" : "pending";
+    if (isHoneypotFilled(parsed.data.website)) {
+      console.warn(`[spam] Dropped an accessibility report for place ${place.id}: honeypot field filled`);
+      return res.status(201).json({ moderationStatus: "pending", count: parsed.data.reports.length });
+    }
+
+    const observedAt = parsed.data.visitedOn ?? new Date();
+    const created = await storage.createObservations(parsed.data.reports.map((report) => ({
+      placeId: place.id,
+      featureType: report.featureType,
+      status: report.status as FeatureStatus,
+      note: report.note ? sanitizeString(report.note, 500) : null,
+      observedAt,
+      userId,
+      moderationStatus,
+    })));
+    res.status(201).json({ moderationStatus, count: created.length });
+  });
+
+  // Report a problem with the listing itself (closed, wrong, duplicate, harmful). Open to
+  // signed-out visitors; every report goes to the moderation queue.
+  app.post("/api/places/:id/problem-reports", validateCsrf, contributionRateLimiter, async (req, res) => {
+    const place = await storage.getPlace(Number(req.params.id));
+    if (!place) return res.status(404).json({ message: "Place not found" });
+
+    const userId = await optionalSessionUserId(req, res);
+    if (userId === undefined) return;
+
+    const parsed = placeProblemReportSchema.safeParse(req.body);
+    if (!parsed.success) return validationError(res, parsed.error);
+
+    if (isHoneypotFilled(parsed.data.website)) {
+      console.warn(`[spam] Dropped a problem report for place ${place.id}: honeypot field filled`);
+      return res.status(201).json({ success: true });
+    }
+
+    const details = parsed.data.details ? `: ${sanitizeString(parsed.data.details, 1000)}` : "";
+    await storage.createReport({
+      reporterId: userId,
+      contentType: "place",
+      contentId: place.id,
+      reason: `${parsed.data.reason}${details}`,
+    });
+    res.status(201).json({ success: true });
   });
 
   app.get(api.places.features.path, async (req, res) => {
@@ -814,45 +684,30 @@ export async function registerRoutes(
   });
 
   // Place Media (users can upload via Object Storage)
-  app.post("/api/place-media/upload", requireAuth, validateCsrf, async (req, res) => {
-    try {
-      const { placeId, caption, objectPath } = req.body;
-      if (!placeId) return res.status(400).json({ message: "Place ID is required" });
-      if (!objectPath) return res.status(400).json({ message: "No image path provided" });
+  // Attach an image (already uploaded through /api/uploads/*) to a place. The legacy
+  // /api/place-media route takes { url } instead of { objectPath } and is handled the same way.
+  const attachPlaceMedia = async (req: Request, res: Response) => {
+    const parsed = placeMediaContributionSchema.safeParse({
+      ...req.body,
+      objectPath: req.body?.objectPath ?? req.body?.url,
+    });
+    if (!parsed.success) return validationError(res, parsed.error);
 
-      const user = await storage.getUserById(req.session.userId!);
-      
-      const media = await storage.createPlaceMedia({
-        placeId: Number(placeId),
-        url: objectPath,
-        caption: caption ? sanitizeString(caption, 200) : undefined,
-        uploadedBy: user?.displayName || user?.email,
-      });
-      
-      res.status(201).json(media);
-    } catch (err: unknown) {
-      console.error("[PRODUCTION] Failed to create place media:", err);
-      const message = err instanceof Error ? err.message : "Failed to upload image";
-      res.status(400).json({ message });
-    }
-  });
+    const place = await storage.getPlace(parsed.data.placeId);
+    if (!place) return res.status(404).json({ message: "Place not found" });
 
-  app.post(api.placeMedia.create.path, requireAuth, validateCsrf, async (req, res) => {
-    try {
-      const input = api.placeMedia.create.input.parse(req.body);
-      const user = await storage.getUserById(req.session.userId!);
-      const media = await storage.createPlaceMedia({
-        ...input,
-        uploadedBy: user?.displayName || user?.email,
-      });
-      res.status(201).json(media);
-    } catch (err) {
-      if (err instanceof z.ZodError) {
-        return res.status(400).json({ message: err.errors[0].message });
-      }
-      throw err;
-    }
-  });
+    const user = await storage.getUserById(req.session.userId!);
+    const media = await storage.createPlaceMedia({
+      placeId: place.id,
+      url: parsed.data.objectPath,
+      caption: parsed.data.caption ? sanitizeString(parsed.data.caption, 200) : null,
+      // Display name only: falling back to the email published login addresses to everyone.
+      uploadedBy: user?.displayName || null,
+    });
+    res.status(201).json(media);
+  };
+  app.post("/api/place-media/upload", requireAuth, validateCsrf, attachPlaceMedia);
+  app.post(api.placeMedia.create.path, requireAuth, validateCsrf, attachPlaceMedia);
 
   // Admin: Get all place media across all places
   app.get("/api/admin/media", requireAdmin, async (req, res) => {
@@ -926,14 +781,17 @@ export async function registerRoutes(
   app.post("/api/community/posts", requireAuth, validateCsrf, async (req, res) => {
     try {
       const { content, parentId } = req.body;
-      if (!content) return res.status(400).json({ message: "Content is required" });
-      
+      if (!content || typeof content !== "string" || !content.trim()) {
+        return res.status(400).json({ message: "Content is required" });
+      }
+
       const user = await storage.getUserById(req.session.userId!);
       const post = await storage.createCommunityPost({
         content: sanitizeString(content, 2000),
         userId: req.session.userId!,
-        authorName: user?.displayName || user?.email,
-        parentId: parentId ? Number(parentId) : null,
+        // Display name only: falling back to the email published login addresses to everyone.
+        authorName: user?.displayName || null,
+        parentId: Number.isInteger(Number(parentId)) && Number(parentId) > 0 ? Number(parentId) : null,
       });
       res.status(201).json(post);
     } catch (err) {
@@ -945,13 +803,20 @@ export async function registerRoutes(
   app.post(api.reviews.create.path, requireAuth, validateCsrf, reviewRateLimiter, async (req, res) => {
     try {
       const input = api.reviews.create.input.parse(req.body);
-      // Sanitize input content
+      const place = await storage.getPlace(input.placeId);
+      if (!place) {
+        return res.status(404).json({ message: "Place not found" });
+      }
+      const user = await storage.getUserById(req.session.userId!);
       const sanitizedInput = {
-        ...input,
+        placeId: place.id,
         content: sanitizeString(input.content, 2000),
-        authorName: input.authorName ? sanitizeString(input.authorName, 100) : undefined,
-        authorRole: input.authorRole ? sanitizeString(input.authorRole, 100) : undefined,
-        userId: req.session.userId, // Link review to authenticated user
+        rating: input.rating ?? null,
+        imageUrl: input.imageUrl,
+        // The author is the signed-in account; the client can't choose a name or role.
+        authorName: user?.displayName || null,
+        authorRole: null,
+        userId: req.session.userId!,
       };
       const review = await storage.createReview(sanitizedInput);
 
@@ -974,35 +839,41 @@ export async function registerRoutes(
       res.status(201).json(review);
     } catch (err) {
       if (err instanceof z.ZodError) {
-        return res.status(400).json({ message: err.errors[0].message });
+        return validationError(res, err);
       }
       throw err;
     }
   });
 
-  // Vote review as helpful (rate limited via global apiRateLimiter on all /api routes)
-  app.post('/api/reviews/:id/helpful', async (req, res) => {
+  // Mark a review helpful: one vote per account, and not on your own review.
+  app.post('/api/reviews/:id/helpful', requireAuth, validateCsrf, async (req, res) => {
     const id = Number(req.params.id);
-    const review = await storage.incrementReviewHelpfulCount(id);
+    const review = await storage.getReview(id);
     if (!review) {
       return res.status(404).json({ message: "Review not found" });
     }
-    res.json({ helpfulCount: review.helpfulCount });
+    if (review.userId === req.session.userId) {
+      return res.status(400).json({ message: "You can't mark your own review as helpful" });
+    }
+    const vote = await storage.addHelpfulVote(id, req.session.userId!);
+    if (!vote.added) {
+      return res.status(409).json({ message: "You already marked this review as helpful", helpfulCount: vote.helpfulCount });
+    }
+    res.json({ helpfulCount: vote.helpfulCount });
   });
 
   // Update review (requires authentication, ownership check)
   app.patch('/api/reviews/:id', requireAuth, validateCsrf, async (req, res) => {
     const id = Number(req.params.id);
-    const { content, rating } = req.body;
-    
-    if (!content && rating === undefined) {
-      return res.status(400).json({ message: "Content or rating required" });
+    const parsed = reviewUpdateSchema.safeParse(req.body);
+    if (!parsed.success) {
+      return validationError(res, parsed.error);
     }
-    
+
     const updates: { content?: string; rating?: number } = {};
-    if (content) updates.content = sanitizeString(content, 2000);
-    if (rating !== undefined) updates.rating = rating;
-    
+    if (parsed.data.content) updates.content = sanitizeString(parsed.data.content, 2000);
+    if (parsed.data.rating !== undefined) updates.rating = parsed.data.rating;
+
     const review = await storage.updateReview(id, req.session.userId!, updates);
     if (!review) {
       return res.status(404).json({ message: "Review not found or you don't have permission to edit it" });
@@ -1248,6 +1119,8 @@ export async function registerRoutes(
       const input = api.events.create.input.parse(req.body);
       const event = await storage.createEvent({
         ...input,
+        title: sanitizeString(input.title, 200),
+        description: sanitizeString(input.description, 5000),
         createdBy: req.session.userId!,
       });
       res.status(201).json(event);
@@ -1324,7 +1197,7 @@ export async function registerRoutes(
     res.json(post);
   });
 
-  app.post(api.blogPosts.create.path, requireAuth, validateCsrf, async (req, res) => {
+  app.post(api.blogPosts.create.path, requireAdmin, validateCsrf, async (req, res) => {
     try {
       const input = api.blogPosts.create.input.parse(req.body);
       const post = await storage.createBlogPost(input);
@@ -1369,7 +1242,7 @@ export async function registerRoutes(
   });
 
   // Contact
-  app.get(api.contact.list.path, async (req, res) => {
+  app.get(api.contact.list.path, requireAdmin, async (req, res) => {
     const submissions = await storage.getContactSubmissions();
     res.json(submissions);
   });
@@ -1385,8 +1258,9 @@ export async function registerRoutes(
         subject: input.subject ? sanitizeString(input.subject, 200) : undefined,
         message: sanitizeString(input.message, 5000),
       };
-      const submission = await storage.createContactSubmission(sanitizedInput);
-      res.status(201).json(submission);
+      await storage.createContactSubmission(sanitizedInput);
+      // Don't echo the stored row back; the sender doesn't need its id or status.
+      res.status(201).json({ success: true });
     } catch (err) {
       if (err instanceof z.ZodError) {
         return res.status(400).json({ message: err.errors[0].message });
@@ -1443,6 +1317,19 @@ export async function registerRoutes(
         return res.status(400).json({ message: err.errors[0].message });
       }
       throw err;
+    }
+  });
+
+  // Live SEPTA elevator outages (cached briefly). When the feed can't be read we say so with a
+  // 503 rather than return an empty list, which would read as "every elevator is working".
+  app.get("/api/transit/elevator-outages", async (_req, res) => {
+    try {
+      const result = await getElevatorOutages();
+      res.json({ status: "ok", ...result });
+    } catch (error) {
+      if (!(error instanceof FeedUnavailableError)) throw error;
+      console.warn(`[septa] ${error.message}`);
+      res.status(503).json({ status: "unavailable", message: "SEPTA's live elevator status couldn't be loaded right now." });
     }
   });
 
@@ -1531,7 +1418,7 @@ export async function registerRoutes(
       const baseUrl = `${req.protocol}://${req.get("host")}`;
       const staticPaths = [
         "/", "/places", "/community", "/petitions", "/events", "/resources",
-        "/blog", "/faq", "/contact", "/about",
+        "/blog", "/faq", "/contact", "/about", "/guides", "/transit/elevators",
       ];
 
       const [places, blogPosts, events] = await Promise.all([
@@ -1676,21 +1563,20 @@ export async function registerRoutes(
       const place = await storage.getPlace(id);
       if (!place) return res.status(404).json({ message: "Place not found" });
 
-      const updates: Record<string, any> = {};
-      if (req.body.name) updates.name = sanitizeString(req.body.name, 200);
-      if (req.body.description) updates.description = sanitizeString(req.body.description, 5000);
-      if (req.body.accessibilityStatus) updates.accessibilityStatus = sanitizeString(req.body.accessibilityStatus, 50);
-      if (req.body.address) updates.address = sanitizeString(req.body.address, 500);
-      if (req.body.phone) updates.phone = sanitizeString(req.body.phone, 50);
-      if (req.body.website) updates.website = sanitizeString(req.body.website, 500);
-      if (req.body.hours) updates.hours = sanitizeString(req.body.hours, 200);
-      if (req.body.category) updates.category = sanitizeString(req.body.category, 50);
-      if (req.body.imageUrl) updates.imageUrl = sanitizeString(req.body.imageUrl, 1000);
-      if (typeof req.body.isFeatured === "boolean") updates.isFeatured = req.body.isFeatured;
-      if (typeof req.body.latitude === "number") updates.latitude = req.body.latitude;
-      if (typeof req.body.longitude === "number") updates.longitude = req.body.longitude;
+      const parsed = adminPlaceUpdateSchema.safeParse(req.body);
+      if (!parsed.success) return validationError(res, parsed.error);
+      const { markChecked, ...fields } = parsed.data;
 
-      if (updates.address && typeof req.body.latitude !== "number" && typeof req.body.longitude !== "number") {
+      const updates: Partial<InsertPlace> & { verificationStatus?: string; lastCheckedAt?: Date } = { ...fields };
+      if (fields.name) updates.name = sanitizeString(fields.name, 200);
+      if (fields.description) updates.description = sanitizeString(fields.description, 5000);
+      if (fields.address) updates.address = sanitizeString(fields.address, 500);
+      if (fields.phone) updates.phone = sanitizeString(fields.phone, 50);
+      if (fields.hours) updates.hours = sanitizeString(fields.hours, 200);
+      if (fields.accessibilitySource) updates.accessibilitySource = sanitizeString(fields.accessibilitySource, 500);
+      if (markChecked) updates.lastCheckedAt = new Date();
+
+      if (updates.address && fields.latitude === undefined && fields.longitude === undefined) {
         const coords = await geocodeAddress(updates.address);
         if (coords) {
           updates.latitude = coords.latitude;
@@ -1742,9 +1628,9 @@ export async function registerRoutes(
         return res.status(400).json({ message: "contentType, contentId, and reason are required" });
       }
 
-      const validContentTypes = ['photo', 'review', 'community_post'];
+      const validContentTypes = ['photo', 'review', 'community_post', 'tip'];
       if (!validContentTypes.includes(contentType)) {
-        return res.status(400).json({ message: "contentType must be one of: photo, review, community_post" });
+        return res.status(400).json({ message: "contentType must be one of: photo, review, community_post, tip" });
       }
 
       const report = await storage.createReport({
@@ -1789,14 +1675,28 @@ export async function registerRoutes(
             if (post) {
               reportedContent = { content: post.content, authorName: post.authorName };
             }
+          } else if (report.contentType === "tip") {
+            const [tip] = await db.select().from(placeTipsTable).where(eq(placeTipsTable.id, report.contentId));
+            if (tip) {
+              const [place] = await db.select({ name: placesTable.name }).from(placesTable).where(eq(placesTable.id, tip.placeId));
+              reportedContent = { content: tip.content, authorName: tip.author };
+              placeName = place?.name ?? null;
+            }
+          } else if (report.contentType === "place") {
+            const [place] = await db.select({ name: placesTable.name }).from(placesTable).where(eq(placesTable.id, report.contentId));
+            reportedContent = place ? { placeId: report.contentId } : null;
+            placeName = place?.name ?? null;
           }
         } catch {
           // Reported content may have been deleted since the report was filed; leave reportedContent null.
         }
 
         try {
-          const [reporter] = await db.select({ email: users.email }).from(users).where(eq(users.id, report.reporterId));
-          reporterEmail = reporter?.email ?? null;
+          // Signed-out visitors can report listing problems, so there may be no reporter.
+          if (report.reporterId !== null) {
+            const [reporter] = await db.select({ email: users.email }).from(users).where(eq(users.id, report.reporterId));
+            reporterEmail = reporter?.email ?? null;
+          }
         } catch {
           // Reporter lookup failed; leave reporterEmail null rather than failing the whole list.
         }
@@ -1844,6 +1744,27 @@ export async function registerRoutes(
   });
 
   // Admin: Dashboard stats
+  // Admin: visitor accessibility reports waiting for review (sent while signed out)
+  app.get("/api/admin/observations", requireAdmin, async (req, res) => {
+    const status = typeof req.query.status === "string" ? req.query.status : "pending";
+    const observations = await storage.getObservationsByStatus(status);
+    const places = await storage.getPlaces();
+    const placeNames = new Map(places.map((p) => [p.id, p.name]));
+    res.json(observations.map((o) => ({ ...o, placeName: placeNames.get(o.placeId) ?? "Unknown place" })));
+  });
+
+  // Admin: publish or reject a visitor accessibility report
+  app.patch("/api/admin/observations/:id", requireAdmin, validateCsrf, async (req, res) => {
+    const id = Number(req.params.id);
+    const { moderationStatus } = req.body;
+    if (!["published", "rejected"].includes(moderationStatus)) {
+      return res.status(400).json({ message: "moderationStatus must be 'published' or 'rejected'" });
+    }
+    const updated = await storage.setObservationModeration(id, moderationStatus);
+    if (!updated) return res.status(404).json({ message: "Report not found" });
+    res.json(updated);
+  });
+
   app.get("/api/admin/stats", requireAdmin, async (req, res) => {
     try {
       const [allUsers, allPlaces, allReviews, allMedia, pendingReports, allPetitions, allEvents] = await Promise.all([
@@ -1952,799 +1873,4 @@ export async function registerRoutes(
   }
 
   return httpServer;
-}
-
-async function seedDatabase() {
-  try {
-    const existingPlaces = await storage.getPlaces();
-    const existingResources = await storage.getResources();
-
-    if (existingPlaces.length === 0) {
-      console.log("Seeding places and categories...");
-
-      const categoryData = [
-        { name: 'Transit', slug: 'transit', icon: 'Train', description: 'Public transportation options' },
-        { name: 'Museums', slug: 'museums', icon: 'Landmark', description: 'Cultural and historical museums' },
-        { name: 'Libraries', slug: 'libraries', icon: 'BookOpen', description: 'Public libraries with resources' },
-        { name: 'Parks', slug: 'parks', icon: 'Trees', description: 'Parks and outdoor spaces' },
-        { name: 'Restaurants', slug: 'restaurants', icon: 'UtensilsCrossed', description: 'Dining establishments' },
-        { name: 'Healthcare', slug: 'healthcare', icon: 'Heart', description: 'Medical facilities' },
-        { name: 'Entertainment', slug: 'entertainment', icon: 'Theater', description: 'Entertainment venues' },
-      ];
-
-      for (const cat of categoryData) {
-        await storage.createCategory(cat);
-      }
-
-      const places = [
-        {
-          name: 'Philadelphia Museum of Art',
-          category: 'museums',
-          accessibilityStatus: 'Not Accessible',
-          description: 'World-class art museum with limited accessibility. Many galleries lack elevator access, historic staircases present barriers, and accessible parking is limited.',
-          imageUrl: '/images/places/philadelphia-museum-art.jpg',
-          address: '2600 Benjamin Franklin Parkway, Philadelphia, PA 19130',
-          latitude: 39.9657,
-          longitude: -75.1811,
-          phone: '(215) 763-8100',
-          website: 'https://philart.org',
-          hours: 'Tue-Sun 10am-5pm, Wed 10am-8:45pm',
-          isFeatured: true,
-        },
-        {
-          name: 'Free Library of Philadelphia - Main Branch',
-          category: 'libraries',
-          accessibilityStatus: 'Partially Accessible',
-          description: 'Historic research library with some accessibility features. Elevator access available but not to all areas, some narrow aisles between stacks.',
-          imageUrl: '/images/places/free-library.jpg',
-          address: '1901 Vine Street, Philadelphia, PA 19103',
-          latitude: 39.9543,
-          longitude: -75.1658,
-          phone: '(215) 686-5322',
-          website: 'https://libwww.freelibrary.org',
-          hours: 'Mon-Fri 9am-6pm, Sat 10am-5pm, Sun 1pm-5pm',
-          isFeatured: true,
-        },
-        {
-          name: 'Parkway Central Library',
-          category: 'libraries',
-          accessibilityStatus: 'Not Accessible',
-          description: 'Historic Beaux-Arts building with significant accessibility barriers. Multiple levels without elevator access, heavy entrance doors, and limited accessible seating.',
-          imageUrl: '/images/places/parkway-library.jpg',
-          address: '1901 Vine Street, Philadelphia, PA 19103',
-          latitude: 39.9543,
-          longitude: -75.1658,
-          phone: '(215) 686-5322',
-          website: 'https://libwww.freelibrary.org',
-          hours: 'Mon-Fri 9am-6pm, Sat 10am-5pm',
-          isFeatured: false,
-        },
-        {
-          name: 'Rittenhouse Square Park',
-          category: 'parks',
-          accessibilityStatus: 'Partially Accessible',
-          description: 'Beautiful urban park with accessible pathways, accessible restrooms, and seating areas. Some areas may be challenging for wheelchairs.',
-          imageUrl: '/images/places/rittenhouse-park.jpg',
-          address: 'Rittenhouse Square, Philadelphia, PA 19103',
-          latitude: 39.9485,
-          longitude: -75.1733,
-          phone: '(215) 686-0752',
-          website: 'https://www.phila.gov',
-          hours: 'Open 6am-sunset daily',
-          isFeatured: true,
-        },
-        {
-          name: 'Wawa - Center City',
-          category: 'restaurants',
-          accessibilityStatus: 'Accessible',
-          description: 'Accessible convenience store with wheelchair ramp, accessible restroom, and clear aisles. Service animals welcome.',
-          imageUrl: '/images/places/wawa-store.jpg',
-          address: '1500 Market Street, Philadelphia, PA 19102',
-          latitude: 39.9526,
-          longitude: -75.1678,
-          phone: '(215) 985-1900',
-          website: 'https://www.wawa.com',
-          hours: 'Open 24/7',
-          isFeatured: false,
-        },
-        {
-          name: 'SEPTA Train Stations',
-          category: 'transit',
-          accessibilityStatus: 'Partially Accessible',
-          description: 'Major transit system with mixed accessibility. Some stations have elevators and accessible entry points, but many older stations lack full accessibility features.',
-          imageUrl: '/images/places/septa-train.jpg',
-          address: '1234 Market Street, Philadelphia, PA 19107',
-          latitude: 39.9520,
-          longitude: -75.1595,
-          phone: '(215) 580-7800',
-          website: 'https://www.septa.org',
-          hours: '24/7',
-          isFeatured: true,
-        },
-        {
-          name: 'Pennsylvania Hospital',
-          category: 'healthcare',
-          accessibilityStatus: 'Accessible',
-          description: 'Historic medical center with full accessibility including accessible parking, elevators, wheelchair accessible treatment areas, and interpreter services.',
-          imageUrl: '/images/places/pennsylvania-hospital.jpg',
-          address: '800 Spruce Street, Philadelphia, PA 19107',
-          latitude: 39.9402,
-          longitude: -75.1444,
-          phone: '(215) 829-3000',
-          website: 'https://www.pennmedicine.org',
-          hours: '24/7 Emergency, Other hours vary',
-          isFeatured: false,
-        },
-        {
-          name: 'Reading Terminal Market',
-          category: 'restaurants',
-          accessibilityStatus: 'Partially Accessible',
-          description: 'Historic public market with level entry, multiple food vendors, and seating areas. Some vendor stalls may be challenging for wheelchair access during busy times.',
-          imageUrl: '/images/places/reading-terminal.jpg',
-          address: '12th & Arch Street, Philadelphia, PA 19107',
-          latitude: 39.9550,
-          longitude: -75.1580,
-          phone: '(215) 922-2317',
-          website: 'https://readingterminalmarket.org',
-          hours: 'Mon-Sat 8am-6pm, Sun 9am-5pm',
-          isFeatured: false,
-        },
-        {
-          name: 'Franklin Institute',
-          category: 'museums',
-          accessibilityStatus: 'Accessible',
-          description: 'Science museum with comprehensive accessibility. All floors accessible via elevators, accessible parking, accessible restrooms, and interactive exhibits designed for all abilities.',
-          imageUrl: '/images/places/franklin-institute.jpg',
-          address: '222 North 20th Street, Philadelphia, PA 19103',
-          latitude: 39.9569,
-          longitude: -75.1728,
-          phone: '(215) 448-1200',
-          website: 'https://www.fi.edu',
-          hours: 'Mon-Sun 9:30am-5pm',
-          isFeatured: true,
-        },
-      ];
-
-      for (const place of places) {
-        await storage.createPlace(place);
-      }
-
-      const placeIds = (await storage.getPlaces()).map(p => p.id);
-
-      if (placeIds.length > 0) {
-        await storage.createAccessibilityFeature({
-          placeId: placeIds[0],
-          featureType: 'wheelchair_accessible',
-          available: true,
-          description: 'Full wheelchair accessibility throughout museum',
-        });
-        await storage.createAccessibilityFeature({
-          placeId: placeIds[0],
-          featureType: 'accessible_restroom',
-          available: true,
-          description: 'Multiple accessible restrooms on each floor',
-        });
-        await storage.createAccessibilityFeature({
-          placeId: placeIds[0],
-          featureType: 'elevator',
-          available: true,
-          description: 'Elevators to all gallery floors',
-        });
-
-        const sampleReviews = [
-          {
-            placeId: placeIds[0] || 1,
-            content: 'Excellent accessibility! Staff was very helpful. Elevators work well, and wheelchair paths are clear.',
-            rating: 5,
-            authorName: 'Sarah M.',
-            authorRole: 'Visitor with wheelchair',
-            isFeatured: true,
-          },
-          {
-            placeId: placeIds[2] || 3,
-            content: 'Beautiful park with accessible pathways. Restrooms are clean and accessible.',
-            rating: 4,
-            authorName: 'James T.',
-            authorRole: 'Regular visitor',
-          },
-          {
-            placeId: placeIds[1] || 2,
-            content: 'Great library with amazing resources. Very accessible and welcoming.',
-            rating: 5,
-            authorName: 'Emma L.',
-            authorRole: 'Researcher',
-            isFeatured: true,
-          },
-        ];
-
-        for (const review of sampleReviews) {
-          await storage.createReview(review);
-        }
-      }
-
-      const blogPosts = [
-        {
-          title: 'Top 5 Accessible Museums in Philadelphia',
-          slug: 'top-5-accessible-museums-philadelphia',
-          excerpt: 'Discover the best museums with full accessibility features in Philadelphia...',
-          content: 'Philadelphia has many world-class museums that are fully accessible. From the Philadelphia Museum of Art to the Franklin Institute, these institutions are committed to making art and science accessible to everyone.',
-          author: 'Open Way Team',
-          category: 'Museums',
-          imageUrl: '/images/places/philadelphia-museum-art.jpg',
-          isFeatured: true,
-          isPublished: true,
-        },
-        {
-          title: 'Navigating SEPTA Transit Accessibly',
-          slug: 'navigating-septa-transit-accessibly',
-          excerpt: 'Tips for using Philadelphia transit as a person with disabilities...',
-          content: 'SEPTA provides various accessibility features throughout Philadelphia. Learn how to navigate the rail system, use accessible station elevators, and communicate with transit staff about your accessibility needs.',
-          author: 'Open Way Team',
-          category: 'Transit',
-          imageUrl: '/images/places/septa-train.jpg',
-          isFeatured: true,
-          isPublished: true,
-        },
-        {
-          title: 'Accessibility Standards and What They Mean',
-          slug: 'accessibility-standards-what-they-mean',
-          excerpt: 'Understanding ADA compliance and accessibility ratings...',
-          content: 'Learn about ADA compliance standards, what "Accessible," "Partially Accessible," and other ratings mean, and how to advocate for better accessibility in your community.',
-          author: 'Accessibility Advocate',
-          category: 'Guides',
-          imageUrl: '/images/places/franklin-institute.jpg',
-          isPublished: true,
-        },
-      ];
-
-      for (const post of blogPosts) {
-        await storage.createBlogPost(post);
-      }
-
-      const faqs = [
-        {
-          question: 'What does "Accessible" mean on this site?',
-          answer: 'A place marked as "Accessible" meets ADA standards and has full wheelchair accessibility, accessible restrooms, parking, and other features for people with disabilities.',
-          category: 'General',
-          sortOrder: 1,
-        },
-        {
-          question: 'How can I submit information about a new place?',
-          answer: 'You can submit a new place using our "Submit a Place" form. Please provide details about accessibility features, hours, location, and contact information.',
-          category: 'Submission',
-          sortOrder: 2,
-        },
-        {
-          question: 'Can I request accessibility improvements?',
-          answer: 'Yes! You can sign our petition for better accessibility standards. Your voice matters in advocating for more accessible public spaces.',
-          category: 'Petition',
-          sortOrder: 3,
-        },
-      ];
-
-      for (const faq of faqs) {
-        await storage.createFaqEntry(faq);
-      }
-
-      const events = [
-        {
-          title: 'Accessibility Awareness Week',
-          description: 'Join us for a week-long celebration of accessibility in Philadelphia. Featuring workshops, panel discussions, and community events.',
-          date: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
-          endDate: new Date(Date.now() + 37 * 24 * 60 * 60 * 1000),
-          location: 'Various venues across Philadelphia',
-          category: 'Awareness',
-          isFeatured: true,
-        },
-        {
-          title: 'Accessible Dining Guide Workshop',
-          description: 'Learn about accessible restaurants and dining options in Philadelphia. Get tips on communication and what to expect.',
-          date: new Date(Date.now() + 14 * 24 * 60 * 60 * 1000),
-          location: 'Free Library of Philadelphia - Main Branch',
-          category: 'Workshop',
-        },
-      ];
-
-      for (const event of events) {
-        await storage.createEvent(event);
-      }
-
-      console.log('Database seeded with places and content');
-    } else {
-      console.log(`Found ${existingPlaces.length} existing places`);
-    }
-
-    if (existingResources.length === 0) {
-      console.log("Seeding resources...");
-
-      const adaResources = [
-        {
-          title: 'Report ADA Violations',
-          description: 'File a formal complaint about accessibility barriers with the U.S. Department of Justice Civil Rights Division. Covers public spaces, businesses, and government facilities.',
-          category: 'ADA Services',
-          url: 'https://www.ada.gov/file-a-complaint/',
-          phone: '(800) 514-0301',
-          icon: 'AlertTriangle',
-          isFeatured: true,
-          sortOrder: 1,
-        },
-        {
-          title: 'Know Your ADA Rights',
-          description: 'Comprehensive guide to your civil rights under the Americans with Disabilities Act, including protections in employment, public services, and telecommunications.',
-          category: 'Legal',
-          url: 'https://www.ada.gov/resources/disability-rights-guide/',
-          icon: 'Scale',
-          isFeatured: true,
-          sortOrder: 2,
-        },
-        {
-          title: 'Request Workplace Accommodations',
-          description: 'Step-by-step guidance on requesting reasonable accommodations from your employer, including sample letters and negotiation tips from the Job Accommodation Network.',
-          category: 'ADA Services',
-          url: 'https://askjan.org/info-by-role.cfm',
-          phone: '(800) 526-7234',
-          icon: 'FileText',
-          isFeatured: true,
-          sortOrder: 3,
-        },
-        {
-          title: 'Philadelphia Office for People with Disabilities',
-          description: 'The city office dedicated to ensuring equal access for residents with disabilities. Offers local advocacy, resources, and accessibility guidance.',
-          category: 'Government',
-          url: 'https://www.phila.gov/departments/mayors-office-for-people-with-disabilities/',
-          phone: '(215) 686-2798',
-          email: 'odp@phila.gov',
-          address: '1401 JFK Blvd, Suite 600, Philadelphia, PA 19102',
-          icon: 'Building2',
-          isFeatured: true,
-          sortOrder: 4,
-        },
-        {
-          title: 'Disability Rights Pennsylvania',
-          description: 'Free legal services and advocacy for Pennsylvanians with disabilities. Assists with discrimination complaints, housing rights, and institutional issues.',
-          category: 'Legal',
-          url: 'https://www.disabilityrightspa.org/',
-          phone: '(800) 692-7443',
-          email: 'intake@disabilityrightspa.org',
-          icon: 'Scale',
-          isFeatured: true,
-          sortOrder: 5,
-        },
-        {
-          title: 'SEPTA Accessible Transit Services',
-          description: 'Information on accessible bus, train, and paratransit options in Philadelphia, including CCT Connect door-to-door service for eligible riders.',
-          category: 'Transportation',
-          url: 'https://www.septa.org/accessibility/',
-          phone: '(215) 580-7145',
-          icon: 'Car',
-          isFeatured: false,
-          sortOrder: 1,
-        },
-        {
-          title: 'National Federation of the Blind - Philadelphia Chapter',
-          description: 'Local chapter providing peer support, advocacy, and resources for blind and visually impaired individuals in the Philadelphia area.',
-          category: 'Community',
-          url: 'https://nfb.org/about-us/state-affiliates',
-          phone: '(410) 659-9314',
-          icon: 'Users',
-          isFeatured: false,
-          sortOrder: 2,
-        },
-        {
-          title: 'Inglis Community Services',
-          description: 'Programs and services supporting adults with physical disabilities in Philadelphia, including housing, employment, and community integration.',
-          category: 'Community',
-          url: 'https://www.inglis.org/',
-          phone: '(215) 878-5600',
-          address: '2600 Belmont Avenue, Philadelphia, PA 19131',
-          icon: 'Heart',
-          isFeatured: false,
-          sortOrder: 3,
-        },
-        {
-          title: 'Pennsylvania Client Assistance Program',
-          description: 'Free advocacy for individuals with disabilities seeking or receiving vocational rehabilitation services in Pennsylvania.',
-          category: 'ADA Services',
-          url: 'https://www.equalemployment.org/programs/cap',
-          phone: '(888) 745-2357',
-          icon: 'Accessibility',
-          isFeatured: false,
-          sortOrder: 4,
-        },
-        {
-          title: 'AccessibleGO - Accessible Travel Planning',
-          description: 'Find wheelchair-accessible hotels, restaurants, and activities. Plan trips with detailed accessibility information for popular destinations.',
-          category: 'Transportation',
-          url: 'https://accessiblego.com/',
-          icon: 'Car',
-          isFeatured: false,
-          sortOrder: 5,
-        },
-        {
-          title: 'Social Security Disability Benefits',
-          description: 'Learn about SSDI and SSI benefits, eligibility requirements, and how to apply for disability income assistance.',
-          category: 'Government',
-          url: 'https://www.ssa.gov/disability/',
-          phone: '(800) 772-1213',
-          icon: 'Building2',
-          isFeatured: false,
-          sortOrder: 6,
-        },
-        {
-          title: 'Assistive Technology Resource Center',
-          description: 'Explore assistive technology solutions for mobility, communication, and daily living. Includes device lending and training programs in Pennsylvania.',
-          category: 'Education',
-          url: 'https://www.temple.edu/iat/',
-          phone: '(215) 204-1356',
-          address: 'Temple University, Philadelphia, PA 19122',
-          icon: 'GraduationCap',
-          isFeatured: false,
-          sortOrder: 7,
-        },
-      ];
-
-      for (const resource of adaResources) {
-        await storage.createResource(resource);
-      }
-
-      console.log(`Seeded ${adaResources.length} resources`);
-    } else {
-      console.log(`Found ${existingResources.length} existing resources`);
-    }
-
-    await migrateProductionData();
-
-    console.log('Database seed check complete');
-  } catch (error) {
-    console.error('Seeding error:', error);
-  }
-}
-
-async function migrateProductionData() {
-  try {
-    const places = await storage.getPlaces();
-    const placeImageMap: Record<string, string> = {
-      'Philadelphia Museum of Art': '/images/places/philadelphia-museum-art.jpg',
-      'Free Library of Philadelphia - Main Branch': '/images/places/free-library.jpg',
-      'Rittenhouse Square Park': '/images/places/rittenhouse-park.jpg',
-      'Wawa - Center City': '/images/places/wawa-store.jpg',
-      'SEPTA - Market-Frankford Station': '/images/places/septa-train.jpg',
-      'SEPTA Train Stations': '/images/places/septa-train.jpg',
-      'Pennsylvania Hospital': '/images/places/pennsylvania-hospital.jpg',
-      'Reading Terminal Market': '/images/places/reading-terminal.jpg',
-      'Franklin Institute': '/images/places/franklin-institute.jpg',
-      'Parkway Central Library': '/images/places/parkway-library.jpg',
-    };
-
-    let updated = 0;
-    for (const place of places) {
-      const correctUrl = placeImageMap[place.name];
-      if (correctUrl && place.imageUrl !== correctUrl && place.imageUrl?.includes('unsplash.com')) {
-        await storage.updatePlace(place.id, { imageUrl: correctUrl });
-        updated++;
-      }
-    }
-    if (updated > 0) {
-      console.log(`Migrated ${updated} place image URLs to local paths`);
-    }
-
-    const placeCorrections: Record<string, { accessibilityStatus?: string; description?: string; name?: string }> = {
-      'Philadelphia Museum of Art': {
-        accessibilityStatus: 'Not Accessible',
-        description: 'World-class art museum with limited accessibility. Many galleries lack elevator access, historic staircases present barriers.',
-      },
-      'Free Library of Philadelphia - Main Branch': {
-        accessibilityStatus: 'Partially Accessible',
-        description: 'Historic research library with some accessibility features. Elevator access available but not to all areas.',
-      },
-      'SEPTA - Market-Frankford Station': {
-        name: 'SEPTA Train Stations',
-        accessibilityStatus: 'Partially Accessible',
-        description: 'Major transit system with mixed accessibility. Some stations have elevators, but many older stations lack full accessibility.',
-      },
-    };
-
-    for (const place of places) {
-      const correction = placeCorrections[place.name] || placeCorrections[place.name.trim()];
-      if (correction) {
-        const updates: Record<string, any> = {};
-        if (correction.accessibilityStatus && place.accessibilityStatus !== correction.accessibilityStatus) {
-          updates.accessibilityStatus = correction.accessibilityStatus;
-        }
-        if (correction.description && place.description !== correction.description) {
-          updates.description = correction.description;
-        }
-        if (correction.name && place.name !== correction.name) {
-          updates.name = correction.name;
-        }
-        if (Object.keys(updates).length > 0) {
-          await storage.updatePlace(place.id, updates);
-          console.log(`[sync] Updated ${place.name}: ${Object.keys(updates).join(', ')}`);
-        }
-      }
-    }
-
-    const placeNames = places.map(p => p.name.trim());
-
-    const missingPlaces: Array<{
-      name: string; category: string; accessibilityStatus: string; description: string;
-      imageUrl: string; address: string; latitude: number; longitude: number;
-      phone?: string; website?: string; hours?: string; isFeatured?: boolean;
-    }> = [
-      {
-        name: 'Parkway Central Library',
-        category: 'libraries',
-        accessibilityStatus: 'Not Accessible',
-        description: 'Historic Beaux-Arts building with significant accessibility barriers. Multiple levels without elevator access, heavy entrance doors, and limited accessible seating.',
-        imageUrl: '/images/places/parkway-library.jpg',
-        address: '1901 Vine Street, Philadelphia, PA 19103',
-        latitude: 39.9599, longitude: -75.1716,
-        phone: '(215) 686-5322', website: 'https://libwww.freelibrary.org',
-        hours: 'Mon-Fri 9am-6pm, Sat 10am-5pm', isFeatured: false,
-      },
-      {
-        name: "Bartram's Garden",
-        category: 'parks',
-        accessibilityStatus: 'Partially Accessible',
-        description: "It has wide areas to roam but some paths are made of stone so it might be difficult to navigate. Bathrooms are wide but don't have automatic doors. Audio descriptions are available for visitors who are blind or have low vision.",
-        imageUrl: '/objects/uploads/f2df3afd-2473-469c-b586-7ae1e3e6a709',
-        address: '5400 Lindbergh Blvd, Philadelphia, PA 19143',
-        latitude: 39.933342, longitude: -75.215546,
-      },
-      {
-        name: "Philadelphia's Magic Gardens",
-        category: 'parks',
-        accessibilityStatus: 'Partially Accessible',
-        description: 'Offers wheelchair access to the indoor galleries and main ground-level areas. However, the outdoor sculpture garden features uneven, narrow, and stepped, multi-level paths that are not fully accessible. Free sensory bags, touch tours, and loans of manual wheelchairs/rollators are available. A wheelchair-accessible entrance is located on South Street. There is a wheelchair-accessible, single-stall, gender-neutral restroom in the back gallery.',
-        imageUrl: '/objects/uploads/fbf4c3b0-e334-4218-934d-41fcad56b70b',
-        address: '1020 South St, Philadelphia, PA 19147',
-        latitude: 39.94277, longitude: -75.15941,
-      },
-      {
-        name: "Talula's Garden",
-        category: 'restaurants',
-        accessibilityStatus: 'Accessible',
-        description: 'Highly rated farm-to-table restaurant with accessible dining areas and garden seating. Offers seasonal menus in a relaxed but refined setting',
-        imageUrl: '/objects/uploads/b76e60b9-eff5-43ef-81ab-f3bd14ce4bd7',
-        address: '210 W Washington Square, Philadelphia, PA 19106',
-        latitude: 39.94728, longitude: -75.15363,
-      },
-      {
-        name: 'The Dandelion',
-        category: 'restaurants',
-        accessibilityStatus: 'Partially Accessible',
-        description: 'Features a wheelchair-accessible entrance and restrooms, but it lacks an elevator for its multi-level, stair-filled layout. Guests with mobility concerns should specifically request a ground-floor table when making reservations.',
-        imageUrl: '/objects/uploads/8cfcbfb8-d166-4eb2-8d32-beb452387073',
-        address: '124 S 18th St, Philadelphia, PA 19103',
-        latitude: 39.951015, longitude: -75.17074,
-      },
-      {
-        name: "Grandma's Philly",
-        category: 'restaurants',
-        accessibilityStatus: 'Partially Accessible',
-        description: 'Has wheelchair accessibility however there are no other accessibility features',
-        imageUrl: '/objects/uploads/41d13ff2-fcce-4529-997c-009439af005e',
-        address: '1304 Walnut St, Philadelphia, PA 19107',
-        latitude: 39.94903, longitude: -75.16241,
-      },
-      {
-        name: 'Opera Philadelphia',
-        category: 'entertainment',
-        accessibilityStatus: 'Accessible',
-        description: 'Offers wheelchair-accessible seating, assistive listening devices, captions (supertitles), and accessible programs at performances in the Academy of Music.',
-        imageUrl: '/objects/uploads/2ba02358-85ed-468a-b409-5592abad1224',
-        address: '1420 Locust St, Philadelphia, PA 19102',
-        latitude: 39.9477, longitude: -75.1651,
-      },
-      {
-        name: 'The Met Philadelphia',
-        category: 'entertainment',
-        accessibilityStatus: 'Accessible',
-        description: 'Concert and event venue — all floor levels are wheelchair-accessible by elevator, with accessible entrances and parking.',
-        imageUrl: '/objects/uploads/85c928ec-79e0-4153-9b4a-0316d3343f24',
-        address: '858 N Broad St, Philadelphia, PA 19130',
-        latitude: 39.966045, longitude: -75.16063,
-      },
-      {
-        name: 'The Trestle Inn',
-        category: 'entertainment',
-        accessibilityStatus: 'Accessible',
-        description: 'Classic craft cocktail bar with accessible walk ways and bathrooms.',
-        imageUrl: '/objects/uploads/113554d8-450d-4bfa-993c-7e09e57fd4c3',
-        address: '339 N 11th St, Philadelphia, PA 19107',
-        latitude: 39.95875, longitude: -75.15655,
-      },
-      {
-        name: 'El Vez',
-        category: 'restaurants',
-        accessibilityStatus: 'Partially Accessible',
-        description: 'Popular Mexican-inspired restaurant and bar. Has wide isles for physical accommodations but there are no other accessibility features',
-        imageUrl: '/objects/uploads/765dec84-fcbf-4b91-9fa6-6ae9ea446c74',
-        address: '121 S 13th St, Philadelphia, PA 19107',
-        latitude: 39.949703, longitude: -75.161896,
-      },
-      {
-        name: "Saad's Halal Restaurant",
-        category: 'restaurants',
-        accessibilityStatus: 'Accessible',
-        description: 'Reported to be physically accessible, including wheelchair-accessible seating and space inside the restaurant. Multiple online listings note that the venue has accessible seating and is suitable for dine-in visitors with mobility needs. Serves halal dishes and even a halal Philly cheesesteak.',
-        imageUrl: '/objects/uploads/84e5ad1f-5110-4ede-bea3-3c624e4c7cd6',
-        address: '4500 Walnut St, Philadelphia, PA 19139',
-        latitude: 39.955414, longitude: -75.21161,
-      },
-    ];
-
-    let placesAdded = 0;
-    for (const mp of missingPlaces) {
-      if (!placeNames.includes(mp.name)) {
-        await storage.createPlace(mp);
-        placesAdded++;
-        console.log(`[sync] Added place: ${mp.name}`);
-      }
-    }
-    if (placesAdded > 0) {
-      console.log(`[sync] Added ${placesAdded} missing places`);
-    }
-
-    const allReviews = await db.select().from(reviewsTable);
-    const junkReviews = allReviews.filter((r: { id: number; content: string | null; rating: number | null; authorName: string | null }) =>
-      r.content === 'attempt to add tip' || (!r.rating && !r.authorName && (r.content?.length ?? 0) < 20)
-    );
-    for (const review of junkReviews) {
-      await db.delete(reviewsTable).where(eq(reviewsTable.id, review.id));
-      console.log(`[sync] Removed junk review id=${review.id}: "${review.content}"`);
-    }
-
-    const reviewContents = allReviews.map(r => r.content);
-    const missingReviews: Array<{ placeId: number; content: string; authorName: string; rating: number }> = [
-      {
-        placeId: 2, // Free Library
-        content: 'Staff was amazing and helpful! It was beautiful and super wheelchair friendly!',
-        authorName: 'Sumayah R.',
-        rating: 5,
-      },
-      {
-        placeId: 7, // Reading Terminal Market
-        content: 'Great! Very disability friendly and super fun!',
-        authorName: 'Rose Q.',
-        rating: 5,
-      },
-      {
-        placeId: 1, // Philadelphia Museum of Art
-        content: 'Not physical disability friendly at all!',
-        authorName: 'Leon K.',
-        rating: 1,
-      },
-      {
-        placeId: 1, // Philadelphia Museum of Art
-        content: 'This place is awesome!!',
-        authorName: '',
-        rating: 5,
-      },
-    ];
-
-    let reviewsAdded = 0;
-    for (const mr of missingReviews) {
-      if (!reviewContents.includes(mr.content)) {
-        await db.insert(reviewsTable).values(mr);
-        reviewsAdded++;
-        console.log(`[sync] Added review by ${mr.authorName || 'anonymous'} for place ${mr.placeId}`);
-      }
-    }
-
-    const refreshedPlaces = await storage.getPlaces();
-    const grandmasPhilly = refreshedPlaces.find(p => p.name === "Grandma's Philly");
-    if (grandmasPhilly) {
-      const grandmasReviewContent = 'Amazing food and staff! Make sure to call ahead of time if you can just to ensure they have room for accommodations.';
-      const existingReviews = await db.select().from(reviewsTable);
-      if (!existingReviews.some(r => r.content === grandmasReviewContent)) {
-        await db.insert(reviewsTable).values({
-          placeId: grandmasPhilly.id,
-          content: grandmasReviewContent,
-          authorName: '',
-          rating: 5,
-        });
-        reviewsAdded++;
-        console.log(`[sync] Added review for Grandma's Philly`);
-      }
-    }
-
-    if (reviewsAdded > 0) {
-      console.log(`[sync] Added ${reviewsAdded} missing reviews`);
-    }
-
-    const existingPosts = await db.select().from(communityPostsTable);
-    const targetPostContent = 'Hey! Do you know any wheelchair accessible places to go eat?';
-    const existingPost = existingPosts.find(p => p.content === targetPostContent);
-    if (!existingPost) {
-      const wrongPost = existingPosts.find(p => p.content === 'what do you think about accessibility?');
-      if (wrongPost) {
-        await db.update(communityPostsTable).set({
-          content: targetPostContent,
-          authorName: 'Allison Gregg',
-        }).where(eq(communityPostsTable.id, wrongPost.id));
-        console.log(`[sync] Updated community post to match dev`);
-      }
-    }
-
-    const allUsers = await db.select({ id: users.id }).from(users).limit(1);
-    if (allUsers.length === 0) {
-      console.log('[sync] No users found, skipping community post seeding');
-    }
-    const seedUserId = allUsers[0]?.id;
-
-    const seedPosts = [
-      { content: 'Just visited the Philadelphia Museum of Art — the ramp entrance on the north side is great, but the restrooms on the second floor still need work. Has anyone else noticed this?', authorName: 'Marcus Thompson' },
-      { content: 'PSA: SEPTA just added audio announcements on the Broad Street Line! It makes such a difference for riders who are blind or low vision.', authorName: 'Jamie Rivera' },
-      { content: 'Looking for recommendations for accessible playgrounds in the Philly area. My daughter uses a power wheelchair and we want to find inclusive parks. Any favorites?', authorName: 'Danielle Park' },
-      { content: 'Had an amazing experience at Reading Terminal Market today. The aisles are wide enough for my scooter and the vendors were all super helpful. Highly recommend!', authorName: 'Robert Chen' },
-      { content: 'Does anyone know if the new Comcast Center building has braille signage? Planning a visit next week and want to be prepared.', authorName: 'Samira Okafor' },
-      { content: 'Shoutout to the staff at the Free Library of Philadelphia — they helped me set up screen reader software on their public computers. True accessibility champions!', authorName: 'Tyler Washington' },
-      { content: 'Frustrated that so many restaurant patios in Center City have steps and no ramps. We need to keep pushing for change. Anyone interested in starting a letter-writing campaign?', authorName: 'Nina Gonzalez' },
-      { content: 'Took my service dog to Rittenhouse Square today and had zero issues. The park paths are smooth and well-maintained. Great spot for everyone!', authorName: 'Chris Adler' },
-    ];
-
-    let postsAdded = 0;
-    if (seedUserId) {
-      for (const post of seedPosts) {
-        const exists = existingPosts.find(p => p.content === post.content);
-        if (!exists) {
-          await db.insert(communityPostsTable).values({
-            userId: seedUserId,
-            content: post.content,
-            authorName: post.authorName,
-          });
-          postsAdded++;
-        }
-      }
-      if (postsAdded > 0) {
-        console.log(`[sync] Added ${postsAdded} community posts`);
-      }
-    }
-
-    const blogImageMap: Record<string, string> = {
-      'top-5-accessible-museums-philadelphia': '/images/places/philadelphia-museum-art.jpg',
-      'navigating-septa-transit-accessibly': '/images/places/septa-train.jpg',
-      'accessibility-standards-what-they-mean': '/images/places/franklin-institute.jpg',
-    };
-
-    const blogPosts = await storage.getBlogPosts();
-    let blogUpdated = 0;
-    for (const post of blogPosts) {
-      const correctUrl = blogImageMap[post.slug];
-      if (correctUrl && post.imageUrl !== correctUrl && post.imageUrl?.includes('unsplash.com')) {
-        await db.update(blogPostsTable).set({ imageUrl: correctUrl }).where(eq(blogPostsTable.id, post.id));
-        blogUpdated++;
-      }
-    }
-    if (blogUpdated > 0) {
-      console.log(`Migrated ${blogUpdated} blog post image URLs to local paths`);
-    }
-
-    const testBlogPosts = blogPosts.filter(p => p.title === 'Test' || p.slug === 'test');
-    for (const post of testBlogPosts) {
-      await db.delete(blogPostsTable).where(eq(blogPostsTable.id, post.id));
-      console.log(`Removed test blog post: "${post.title}"`);
-    }
-
-    const refreshedPlaces2 = await storage.getPlaces();
-    const placesNeedingCoords = refreshedPlaces2.filter(p => p.address && (p.latitude === null || p.longitude === null));
-    if (placesNeedingCoords.length > 0) {
-      console.log(`[geocode] Backfilling coordinates for ${placesNeedingCoords.length} places...`);
-      let geocoded = 0;
-      for (const place of placesNeedingCoords) {
-        const coords = await geocodeAddress(place.address!);
-        if (coords) {
-          await storage.updatePlace(place.id, { latitude: coords.latitude, longitude: coords.longitude });
-          geocoded++;
-          console.log(`[geocode] ${place.name}: ${coords.latitude}, ${coords.longitude}`);
-        }
-        await new Promise(resolve => setTimeout(resolve, 1100));
-      }
-      console.log(`[geocode] Backfilled ${geocoded}/${placesNeedingCoords.length} places`);
-    }
-
-  } catch (error) {
-    console.error('Production data migration error:', error);
-  }
 }

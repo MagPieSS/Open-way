@@ -30,7 +30,7 @@ export default function About() {
           
           <ul className="space-y-4 list-disc pl-6">
             <li><strong>Inclusion First:</strong> We design for the margins because that improves the experience for everyone.</li>
-            <li><strong>Honesty:</strong> We prioritize verified, user-generated feedback over marketing claims.</li>
+            <li><strong>Honesty:</strong> We show where each piece of information came from and when it was last confirmed, and we say so when nobody has checked yet.</li>
             <li><strong>Action:</strong> We don't just map barriers; we advocate to remove them.</li>
           </ul>
 
