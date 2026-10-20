@@ -18,13 +18,9 @@ Good for quickly trying the app out. It is **not** suitable for production (see 
 to it — the SQLite schema is created and migrated separately in `server/db.ts`. For anything beyond
 local exploration, use one of the PostgreSQL options below.
 
-To create a local admin account against the SQLite database:
-
-```powershell
-$env:ADMIN_EMAIL = "you@example.com"; $env:ADMIN_PASSWORD = "choose-a-password"; npx tsx scripts/create-admin.ts
-```
-
-Omitting `ADMIN_PASSWORD` generates and prints a random one instead of using a fixed default.
+Accounts are created by signing in with Google (see the README's "Google sign-in" section). To make
+your account an admin, list its email in `ADMIN_EMAILS` before signing in, or run
+`npx tsx scripts/grant-admin.ts you@example.com` afterwards. Both work with SQLite and Postgres.
 
 ---
 

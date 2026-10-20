@@ -5,24 +5,12 @@ import { db } from "./db";
 import { z } from "zod";
 import { eq } from "drizzle-orm";
 import { randomBytes } from "crypto";
-import { ACCESSIBILITY_STATUS, ACCESSIBILITY_FEATURE_TYPES, insertUserSchema, loginSchema, forgotPasswordSchema, resetPasswordSchema, blogPosts as blogPostsTable, reviews as reviewsTable, places as placesTable, communityPosts as communityPostsTable, placeMedia as placeMediaTable, placeTips as placeTipsTable, users, type User, type InsertPlace } from "@shared/schema";
+import { ACCESSIBILITY_STATUS, ACCESSIBILITY_FEATURE_TYPES, blogPosts as blogPostsTable,reviews as reviewsTable, places as placesTable, communityPosts as communityPostsTable, placeMedia as placeMediaTable, placeTips as placeTipsTable, users, type User, type InsertPlace } from "@shared/schema";
 import { api, placeMediaContributionSchema, reviewUpdateSchema, adminPlaceUpdateSchema, observationSubmissionSchema, placeProblemReportSchema, type PlaceAccessibilityResponse } from "@shared/routes";
-import { 
-  registerUser, 
-  loginUser, 
-  verifyTwoFactor, 
-  toSafeUser,
-  enable2FA,
-  confirm2FA,
-  disable2FA,
-  regenerateBackupCodes,
-  verifyPassword,
-  hashPassword,
-  isWeakPassword
-} from "./auth";
+import { toSafeUser, isListedAdminEmail } from "./auth";
+import { isGoogleSignInConfigured, createGoogleAuthRequest, exchangeGoogleCode } from "./google-oauth";
 import { authRateLimiter, apiRateLimiter, reviewRateLimiter, uploadRateLimiter, contributionRateLimiter, validateCsrf } from "./middleware";
 import { geocodeAddress } from "./geocode";
-import { sendPasswordResetEmail, sendVerificationEmail } from "./email";
 import { sanitizeString } from "./sanitize";
 import { haversineDistanceMiles } from "./geo";
 import { checkReviewForSpam } from "./spam-detection";
@@ -66,7 +54,7 @@ async function checkSessionUser(req: Request): Promise<SessionUserCheck> {
     return { ok: false, status: 401, message: "Please log in to continue" };
   }
   const user = await storage.getUserById(req.session.userId);
-  // A bumped sessionVersion (password change) ends sessions started before it. Session stores
+  // A bumped sessionVersion ("sign out everywhere") ends sessions started before it.Session stores
   // can't be searched by user id in a driver-neutral way, so the check happens here instead.
   if (!user || req.session.sessionVersion !== (user.sessionVersion ?? 0)) {
     req.session.destroy(() => {});
@@ -100,8 +88,37 @@ async function requireAdmin(req: Request, res: Response, next: NextFunction) {
   next();
 }
 
-// Links in emails must point at this site, not at whatever Host header the request carried
-// (otherwise a forged Host turns a real reset email into a link to an attacker's site).
+// Where Google sends people back. Must match an authorized redirect URI on the OAuth client.
+function googleRedirectUri(req: Request): string {
+  return `${appBaseUrl(req)}/api/auth/google/callback`;
+}
+
+// Only same-site paths, so the sign-in redirect can't be used to send people to another site.
+function safeReturnTo(value: unknown): string {
+  if (typeof value !== "string" || !value.startsWith("/") || value.startsWith("//") || value.includes("\\")) {
+    return "/";
+  }
+  return value;
+}
+
+// Finds the account for a Google identity: by Google id first, then by (Google-verified) email,
+// linking it; otherwise creates one. Returns undefined if the email already belongs to a
+// different Google account.
+async function findOrCreateGoogleUser(googleSub: string, email: string): Promise<User | undefined> {
+  const linked = await storage.getUserByGoogleSub(googleSub);
+  if (linked) return linked;
+
+  const byEmail = await storage.getUserByEmail(email);
+  if (byEmail) {
+    if (byEmail.googleSub) return undefined;
+    await storage.linkGoogleAccount(byEmail.id, googleSub);
+    return storage.getUserById(byEmail.id);
+  }
+  return storage.createGoogleUser(email, googleSub);
+}
+
+// This site's public address, from APP_BASE_URL rather than the request's Host header, which can be
+// forged. Used for the Google sign-in redirect address, which must match what Google has on file.
 function appBaseUrl(req: Request): string {
   const configured = process.env.APP_BASE_URL?.trim().replace(/\/+$/, "");
   return configured || `${req.protocol}://${req.get("host")}`;
@@ -209,105 +226,59 @@ export async function registerRoutes(
   );
 
   // ==================== AUTHENTICATION ROUTES ====================
+  // Sign-in is through Google only (server/google-oauth.ts); Open Way stores no passwords.
 
-  // Register a new user
-  app.post("/api/auth/register", authRateLimiter, async (req, res) => {
-    try {
-      const input = insertUserSchema.parse(req.body);
-      
-      // Email is already validated by Zod, just trim it (don't sanitize - would break @ symbol)
-      const result = await registerUser(
-        input.email.trim().toLowerCase(),
-        input.password,
-        input.displayName ? sanitizeString(input.displayName, 100) : undefined
-      );
-
-      if (!result.success) {
-        return res.status(400).json({ message: result.error });
-      }
-
-      // Auto-login after registration
-      const newUser = await storage.getUserById(result.user!.id);
-      await establishSession(req, newUser!);
-
-      // Send email verification link (best-effort; failure doesn't block registration)
-      try {
-        const token = randomBytes(32).toString("hex");
-        const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000); // 24 hours
-        await storage.createEmailVerificationToken({ userId: result.user!.id, token, expiresAt });
-        const verifyUrl = `${appBaseUrl(req)}/verify-email?token=${token}`;
-        const emailResult = await sendVerificationEmail({ to: result.user!.email, verifyUrl, expiresAt });
-        if (!emailResult.sent) {
-          console.warn(`Verification email not sent via ${emailResult.provider}: ${emailResult.error}`);
-        }
-      } catch (emailErr) {
-        console.error("Failed to send verification email:", emailErr);
-      }
-
-      res.status(201).json({ user: result.user });
-    } catch (err) {
-      if (err instanceof z.ZodError) {
-        return res.status(400).json({ message: err.errors[0].message });
-      }
-      throw err;
+  // Starts Google sign-in. ?returnTo=/places/3 brings the person back where they were.
+  app.get("/api/auth/google", authRateLimiter, async (req, res) => {
+    if (!isGoogleSignInConfigured()) {
+      console.warn("[auth] Google sign-in requested but GOOGLE_CLIENT_ID / GOOGLE_CLIENT_SECRET are not set");
+      return res.redirect("/login?error=not_configured");
     }
+    const state = randomBytes(24).toString("hex");
+    const { url, codeVerifier } = await createGoogleAuthRequest(googleRedirectUri(req), state);
+    req.session.oauthState = state;
+    req.session.oauthCodeVerifier = codeVerifier;
+    req.session.oauthReturnTo = safeReturnTo(req.query.returnTo);
+    req.session.save((err) => {
+      if (err) throw err;
+      res.redirect(url);
+    });
   });
 
-  // Login
-  app.post("/api/auth/login", authRateLimiter, async (req, res) => {
+  // Google sends the person back here with a one-time code.
+  app.get("/api/auth/google/callback", authRateLimiter, async (req, res) => {
+    const { oauthState, oauthCodeVerifier, oauthReturnTo } = req.session;
+    delete req.session.oauthState;
+    delete req.session.oauthCodeVerifier;
+    delete req.session.oauthReturnTo;
+    const fail = (reason: string) => res.redirect(`/login?error=${reason}`);
+
+    if (typeof req.query.error === "string") return fail("cancelled");
+    const { code, state } = req.query;
+    // The state must match what this browser was given when it started, or a forged callback
+    // could sign someone into an account that isn't theirs.
+    if (!oauthState || !oauthCodeVerifier || state !== oauthState || typeof code !== "string") {
+      return fail("expired");
+    }
+
+    let profile;
     try {
-      const input = loginSchema.parse(req.body);
-      
-      const result = await loginUser(input.email, input.password);
-
-      if (!result.success) {
-        return res.status(401).json({ message: result.error });
-      }
-
-      // Check if 2FA is required
-      if (result.requires2FA) {
-        req.session.pending2FAUserId = result.user!.id;
-        return res.json({ requires2FA: true });
-      }
-
-      // Complete login (a new session also drops any pending 2FA state)
-      await establishSession(req, result.user!);
-
-      res.json({ user: toSafeUser(result.user!) });
+      profile = await exchangeGoogleCode(googleRedirectUri(req), code, oauthCodeVerifier);
     } catch (err) {
-      if (err instanceof z.ZodError) {
-        return res.status(400).json({ message: err.errors[0].message });
-      }
-      throw err;
-    }
-  });
-
-  // Verify 2FA code during login
-  app.post("/api/auth/verify-2fa", authRateLimiter, async (req, res) => {
-    const { code } = req.body;
-
-    if (!req.session.pending2FAUserId) {
-      return res.status(400).json({ message: "No pending 2FA verification" });
+      console.warn(`[auth] Google sign-in failed: ${err instanceof Error ? err.message : err}`);
+      return fail("google");
     }
 
-    if (!code || typeof code !== "string") {
-      return res.status(400).json({ message: "Verification code is required" });
+    let user = await findOrCreateGoogleUser(profile.sub, profile.email);
+    if (!user) return fail("account_conflict");
+    if (user.isBanned || !user.isActive) return fail("suspended");
+    if (!user.isAdmin && isListedAdminEmail(user.email)) {
+      await storage.setAdmin(user.id);
+      user = (await storage.getUserById(user.id))!;
     }
-
-    const result = await verifyTwoFactor(req.session.pending2FAUserId, sanitizeString(code, 20));
-
-    if (!result.success) {
-      return res.status(401).json({ message: result.error });
-    }
-
-    // Complete login
-    const user = await storage.getUserById(req.session.pending2FAUserId);
-    if (!user || user.isBanned || !user.isActive) {
-      return res.status(401).json({ message: "Invalid email or password" });
-    }
+    await storage.updateUserLastLogin(user.id);
     await establishSession(req, user);
-
-    res.json({ user: toSafeUser(user) });
+    res.redirect(oauthReturnTo || "/");
   });
 
   // Logout
@@ -335,225 +306,6 @@ export async function registerRoutes(
     res.json({ user: toSafeUser(check.user) });
   });
 
-  // ==================== PASSWORD RESET ROUTES ====================
-
-  // Request password reset (forgot password)
-  app.post("/api/auth/forgot-password", authRateLimiter, async (req, res) => {
-    try {
-      const input = forgotPasswordSchema.parse(req.body);
-      const email = input.email.trim().toLowerCase();
-
-      // Always return success to prevent email enumeration
-      const user = await storage.getUserByEmail(email);
-      
-      if (user) {
-        // Generate secure reset token
-        const token = randomBytes(32).toString("hex");
-        const expiresAt = new Date(Date.now() + 60 * 60 * 1000); // 1 hour
-
-        // Delete any existing tokens for this user
-        await storage.deleteExpiredTokens();
-        
-        // Create new reset token
-        await storage.createPasswordResetToken({
-          userId: user.id,
-          token,
-          expiresAt,
-        });
-
-        // Build reset URL
-        const resetUrl = `${appBaseUrl(req)}/reset-password?token=${token}`;
-
-        const emailResult = await sendPasswordResetEmail({ to: email, resetUrl, expiresAt });
-        if (!emailResult.sent) {
-          console.warn(`Password reset email not sent via ${emailResult.provider}: ${emailResult.error}`);
-        }
-      }
-
-      // Always return success (prevents email enumeration attacks)
-      res.json({ message: "If an account exists with this email, you will receive a password reset link." });
-    } catch (err) {
-      if (err instanceof z.ZodError) {
-        return res.status(400).json({ message: err.errors[0].message });
-      }
-      console.error("Forgot password error:", err);
-      res.status(500).json({ message: "Unable to process password reset request" });
-    }
-  });
-
-  // Reset password with token
-  app.post("/api/auth/reset-password", authRateLimiter, async (req, res) => {
-    try {
-      const input = resetPasswordSchema.parse(req.body);
-
-      // Find and validate token
-      const resetToken = await storage.getPasswordResetToken(input.token);
-
-      if (!resetToken) {
-        return res.status(400).json({ message: "Invalid or expired reset link" });
-      }
-
-      if (resetToken.usedAt) {
-        return res.status(400).json({ message: "This reset link has already been used" });
-      }
-
-      if (new Date() > resetToken.expiresAt) {
-        return res.status(400).json({ message: "This reset link has expired" });
-      }
-
-      // Check password strength
-      if (isWeakPassword(input.password)) {
-        return res.status(400).json({ message: "Password is too common. Please choose a stronger password." });
-      }
-
-      // Get the user
-      const user = await storage.getUserById(resetToken.userId);
-      if (!user) {
-        return res.status(400).json({ message: "Account not found" });
-      }
-
-      // Hash and update password
-      const passwordHash = await hashPassword(input.password);
-      await storage.updateUserPassword(user.id, passwordHash);
-
-      // Mark token as used
-      await storage.markTokenUsed(resetToken.id);
-
-      // Note: 2FA is NOT bypassed - they still need to log in with 2FA after resetting password
-      console.log(`Password reset successful for user id ${user.id}`);
-
-      res.json({ message: "Password has been reset successfully. You can now log in with your new password." });
-    } catch (err) {
-      if (err instanceof z.ZodError) {
-        return res.status(400).json({ message: err.errors[0].message });
-      }
-      console.error("Reset password error:", err);
-      res.status(500).json({ message: "Unable to reset password" });
-    }
-  });
-
-  // ==================== EMAIL VERIFICATION ROUTES ====================
-
-  // Verify email with token
-  app.post("/api/auth/verify-email", authRateLimiter, async (req, res) => {
-    const { token } = req.body;
-    if (!token || typeof token !== "string") {
-      return res.status(400).json({ message: "Verification token is required" });
-    }
-
-    const verificationToken = await storage.getEmailVerificationToken(token);
-    if (!verificationToken) {
-      return res.status(400).json({ message: "Invalid or expired verification link" });
-    }
-    if (verificationToken.usedAt) {
-      return res.status(400).json({ message: "This verification link has already been used" });
-    }
-    if (new Date() > verificationToken.expiresAt) {
-      return res.status(400).json({ message: "This verification link has expired" });
-    }
-
-    await storage.setEmailVerified(verificationToken.userId);
-    await storage.markEmailVerificationTokenUsed(verificationToken.id);
-
-    res.json({ message: "Email verified successfully" });
-  });
-
-  // Resend verification email (requires login)
-  app.post("/api/auth/resend-verification", requireAuth, validateCsrf, authRateLimiter, async (req, res) => {
-    const user = await storage.getUserById(req.session.userId!);
-    if (!user) {
-      return res.status(404).json({ message: "User not found" });
-    }
-    if (user.emailVerified) {
-      return res.json({ message: "Email is already verified" });
-    }
-
-    const token = randomBytes(32).toString("hex");
-    const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000);
-    await storage.createEmailVerificationToken({ userId: user.id, token, expiresAt });
-    const verifyUrl = `${appBaseUrl(req)}/verify-email?token=${token}`;
-    const emailResult = await sendVerificationEmail({ to: user.email, verifyUrl, expiresAt });
-    if (!emailResult.sent) {
-      console.warn(`Verification email not sent via ${emailResult.provider}: ${emailResult.error}`);
-    }
-
-    res.json({ message: "Verification email sent" });
-  });
-
-  // ==================== 2FA MANAGEMENT ROUTES ====================
-
-  // Start 2FA setup
-  app.post("/api/auth/2fa/setup", requireAuth, validateCsrf, authRateLimiter, async (req, res) => {
-    // Restarting setup overwrites the secret and switches 2FA off, so a stolen session could use it
-    // to strip the owner's second factor. Turning 2FA off already requires re-authentication.
-    const current = await storage.getUserById(req.session.userId!);
-    if (current?.twoFactorEnabled) {
-      return res.status(400).json({ message: "Two-factor authentication is already on. Turn it off first to set it up again." });
-    }
-
-    const result = await enable2FA(req.session.userId!, req.session.email!);
-
-    if (!result.success) {
-      return res.status(400).json({ message: result.error });
-    }
-
-    res.json({
-      qrCode: result.qrCode,
-      secret: result.secret,
-      backupCodes: result.backupCodes,
-    });
-  });
-
-  // Confirm 2FA setup
-  app.post("/api/auth/2fa/confirm", requireAuth, validateCsrf, authRateLimiter, async (req, res) => {
-    const { code } = req.body;
-
-    if (!code || typeof code !== "string") {
-      return res.status(400).json({ message: "Verification code is required" });
-    }
-
-    const result = await confirm2FA(req.session.userId!, sanitizeString(code, 10));
-
-    if (!result.success) {
-      return res.status(400).json({ message: result.error });
-    }
-
-    res.json({ success: true });
-  });
-
-  // Disable 2FA (requires password or a valid 2FA/backup code to prevent session hijacking from silently disabling it)
-  app.post("/api/auth/2fa/disable", requireAuth, validateCsrf, authRateLimiter, async (req, res) => {
-    const { password, code } = req.body;
-    const result = await disable2FA(req.session.userId!, {
-      password: typeof password === "string" ? password : undefined,
-      code: typeof code === "string" ? sanitizeString(code, 20) : undefined,
-    });
-    if (!result.success) {
-      return res.status(400).json({ message: result.error });
-    }
-    res.json({ success: true });
-  });
-
-  // Regenerate backup codes
-  app.post("/api/auth/2fa/regenerate-backup", requireAuth, validateCsrf, authRateLimiter, async (req, res) => {
-    const { password } = req.body;
-    if (!password || typeof password !== "string") {
-      return res.status(400).json({ message: "Enter your password to create new backup codes" });
-    }
-    const user = await storage.getUserById(req.session.userId!);
-    if (!user || !(await verifyPassword(password, user.passwordHash))) {
-      return res.status(400).json({ message: "Incorrect password" });
-    }
-
-    const result = await regenerateBackupCodes(req.session.userId!);
-
-    if (!result.success) {
-      return res.status(400).json({ message: result.error });
-    }
-
-    res.json({ backupCodes: result.backupCodes });
-  });
-
   // ==================== PROFILE ROUTES ====================
 
   // Update display name
@@ -578,45 +330,16 @@ export async function registerRoutes(
       id: updated.id,
       email: updated.email,
       displayName: updated.displayName,
-      twoFactorEnabled: updated.twoFactorEnabled,
       createdAt: updated.createdAt,
     });
   });
 
-  // Change password
-  app.post("/api/profile/change-password", requireAuth, validateCsrf, authRateLimiter, async (req, res) => {
-    const { currentPassword, newPassword } = req.body;
-
-    if (!currentPassword || !newPassword) {
-      return res.status(400).json({ message: "Current and new passwords are required" });
-    }
-
+  // Ends every other session for this account (a lost phone, a shared computer). This one stays.
+  app.post("/api/profile/sign-out-everywhere", requireAuth, validateCsrf, async (req, res) => {
+    await storage.endAllSessions(req.session.userId!);
     const user = await storage.getUserById(req.session.userId!);
-    if (!user) {
-      return res.status(404).json({ message: "User not found" });
-    }
-
-    const isValid = await verifyPassword(currentPassword, user.passwordHash);
-    if (!isValid) {
-      return res.status(400).json({ message: "Current password is incorrect" });
-    }
-
-    // Validate new password
-    if (newPassword.length < 8) {
-      return res.status(400).json({ message: "Password must be at least 8 characters" });
-    }
-    if (isWeakPassword(newPassword)) {
-      return res.status(400).json({ message: "This password is too common. Please choose a stronger password." });
-    }
-
-    const newHash = await hashPassword(newPassword);
-    await storage.updateUserPassword(req.session.userId!, newHash);
-    // updateUserPassword bumped sessionVersion, which ends other sessions on their next request;
-    // move this one onto the new version so it stays signed in.
-    const updated = await storage.getUserById(req.session.userId!);
-    req.session.sessionVersion = updated?.sessionVersion ?? 0;
-
-    res.json({ success: true, message: "Password changed successfully" });
+    req.session.sessionVersion = user?.sessionVersion ?? 0;
+    res.json({ success: true });
   });
 
   // ==================== SAVED PLACES ROUTES ====================

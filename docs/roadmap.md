@@ -20,37 +20,51 @@ Each item has automated tests unless noted.
 | P1 | Places page: need filters on reported facts, URL-kept filters, address/ZIP search, one request instead of ~2 per place | `evidence.test.ts`, browser checks |
 | P1 | Places with no accessibility information removed; "Unknown" is no longer a place status | `seed.test.ts`, `security.test.ts` |
 | P1 | SEPTA elevator outage page with live data and an explicit "unavailable" state | `server/septa.test.ts`, browser check |
+| P1 | Google sign-in replaces passwords (PKCE, state check, verified emails only, `ADMIN_EMAILS`, "sign out of other devices"); password, reset, email-verification and 2FA code removed | `server/google-auth.test.ts`, `security.test.ts` |
 | P1 | App accessibility: skip link, focus on route change, page titles, disclosure navigation, named icon buttons, carousel pause, reduced motion, 24px targets, contrast fixes in light/dark/high contrast | axe (WCAG 2.2 A/AA tags) and scripted keyboard checks |
 
-## Needs a person (can't be done in code)
+## First deployment checklist
 
-1. **Postgres deployments: run `npm run db:push`** for the new `review_votes` and
-   `accessibility_observations` tables and the new columns (`users.session_version`,
-   `accessibility_features.status/source_type/source_url`, nullable `reports.reporter_id`). Existing
-   sessions are signed out once.
-2. **Clean deployed data:** run `npx tsx scripts/decode-legacy-entities.ts` (dry run, then `--apply`),
-   `npx tsx scripts/remove-unknown-places.ts` (dry run, then `--apply`), and
-   `npm run seed:places -- --update` to label venue-sourced facts. Back up first.
-3. **Talk to disabled Philadelphians** before building more (see research gaps).
+The site isn't deployed yet. A fresh Postgres database starts clean, so the cleanup scripts
+(`decode-legacy-entities`, `remove-unknown-places`) aren't needed for it.
+
+1. **Database:** create a Postgres database and set `DATABASE_URL`. Run `npm run db:push` to create the
+   tables.
+2. **Environment** (set in the host's settings, never committed):
+   - `NODE_ENV=production`
+   - `SESSION_SECRET`: a random string of 32+ characters
+   - `APP_BASE_URL`: the site's public address, e.g. `https://openway.example.org`
+   - `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, and `ADMIN_EMAILS` (your Google email)
+3. **Build and start:** `npm ci && npm run build`, then `npm run start`. The host must allow native
+   modules (`sharp`, `better-sqlite3`).
+4. **Uploads need persistent storage.** Photos are saved to `uploads/` on local disk; on hosts with
+   temporary disks they vanish on every redeploy. Use a persistent volume (or move uploads to object
+   storage).
+5. **Content:** set `OPENWAY_SEED_ON_STARTUP=true` for the first start (adds the sourced places, FAQ and
+   resources), then turn it off.
+6. **Google sign-in:** add `https://<your-domain>/api/auth/google/callback` as an authorized redirect
+   URI on the Google OAuth client, and publish the app in Google Auth Platform so anyone can sign in.
+   Your account becomes admin on first sign-in through `ADMIN_EMAILS`.
+7. **Talk to disabled Philadelphians** before building more (see research gaps).
 
 ## Next three (highest value)
 
-1. **P1 — Google sign-in (planned).** Replace password accounts with Google OAuth.
-   - Acceptance: sign-in and sign-out work with Google; sessions are regenerated at sign-in; bans and
-     `session_version` still apply; password, reset and 2FA pages are removed or redirect; existing
-     accounts are matched by verified email; route tests cover sign-in, a banned user and a revoked session.
-   - Depends on: Google Cloud OAuth client ID/secret; `google-auth-library` is already a dependency.
-2. **P1 — Usability testing with disabled users.** Five or more sessions covering the scenarios in the
+1. **P1 — Usability testing with disabled users.** Five or more sessions covering the scenarios in the
    brief (step-free restaurant, blind museum visitor, sensory library visit, SEPTA elevator, reporting a
    barrier, conflicting reports).
    - Acceptance: each scenario attempted with real participants, findings written up, top three issues
      fixed or scheduled.
    - Depends on: recruitment (e.g. through the City's Office for People with Disabilities or local groups).
-3. **P1 — Grow sourced listings.** Add places only with sourced facts (venue pages, official data), with
+2. **P1 — Grow sourced listings.** Add places only with sourced facts (venue pages, official data), with
    check dates.
    - Acceptance: at least 30 places across transit, libraries, parks and restaurants, each with at least
      one dated, sourced key fact; the seed test keeps passing.
    - Depends on: curation time; link checking (some venue sites block automated requests).
+
+3. **P1 — First deployment.** Put the site online following the checklist above.
+   - Acceptance: the public URL serves the app over HTTPS; Google sign-in works there; an uploaded photo
+     survives a redeploy; `npm run db:push` and the seed ran once.
+   - Depends on: choosing a host with Postgres and a persistent disk; a domain (optional).
 
 ## P1 — other
 

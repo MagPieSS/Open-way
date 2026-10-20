@@ -8,7 +8,6 @@ import { Navigation } from "@/components/Navigation";
 import { Footer } from "@/components/Footer";
 import { Breadcrumbs } from "@/components/Breadcrumbs";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
-import { VerifyEmailBanner } from "@/components/VerifyEmailBanner";
 import { ReadAloudProvider } from "@/components/ReadAloudProvider";
 import { useSettings } from "@/hooks/use-settings";
 import { useEffect, useRef } from "react";
@@ -30,10 +29,6 @@ import Blog from "@/pages/Blog";
 import FAQ from "@/pages/FAQ";
 import Contact from "@/pages/Contact";
 import Login from "@/pages/Login";
-import Register from "@/pages/Register";
-import ForgotPassword from "@/pages/ForgotPassword";
-import ResetPassword from "@/pages/ResetPassword";
-import VerifyEmail from "@/pages/VerifyEmail";
 import SavedPlaces from "@/pages/SavedPlaces";
 import Profile from "@/pages/Profile";
 import AdminDashboard from "@/pages/AdminDashboard";
@@ -61,10 +56,8 @@ function Router() {
       <Route path="/faq" component={FAQ} />
       <Route path="/contact" component={Contact} />
       <Route path="/login" component={Login} />
-      <Route path="/register" component={Register} />
-      <Route path="/forgot-password" component={ForgotPassword} />
-      <Route path="/reset-password" component={ResetPassword} />
-      <Route path="/verify-email" component={VerifyEmail} />
+      {/* Sign-in is through Google; old account links lead to the sign-in page. */}
+      <Route path="/register" component={Login} />
       <Route path="/saved" component={SavedPlaces} />
       <Route path="/profile" component={Profile} />
       <Route path="/admin/dashboard" component={AdminDashboard} />
@@ -111,7 +104,6 @@ function AppContent() {
       </a>
       <Navigation />
       <div className="pt-16">
-        <VerifyEmailBanner />
         <Breadcrumbs />
         <main id="main-content" tabIndex={-1} className="flex-grow focus:outline-none">
           <ErrorBoundary>

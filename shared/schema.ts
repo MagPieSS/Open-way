@@ -9,6 +9,9 @@ import { z } from "zod";
 export const users = pgTable("users", {
   id: serial("id").primaryKey(),
   email: text("email").notNull().unique(),
+  // Google's account id (the ID token's `sub`). Sign-in is through Google only.
+  googleSub: text("google_sub"),
+  // Unused since sign-in moved to Google; Google accounts store "". Kept until the column is dropped.
   passwordHash: text("password_hash").notNull(),
   displayName: text("display_name"),
   // 2FA fields
@@ -30,7 +33,9 @@ export const users = pgTable("users", {
   // existing session for the account. Independent of passwords, so it also works for OAuth sign-in.
   sessionVersion: integer("session_version").default(0),
   createdAt: timestamp("created_at").default(sql`CURRENT_TIMESTAMP`),
-});
+}, (table) => [
+  uniqueIndex("users_google_sub_unique").on(table.googleSub),
+]);
 
 // Email verification tokens
 export const emailVerificationTokens = pgTable("email_verification_tokens", {
@@ -337,27 +342,6 @@ export const passwordResetTokens = pgTable("password_reset_tokens", {
 
 // === INSERT SCHEMAS ===
 
-export const insertUserSchema = createInsertSchema(users).omit({ 
-  id: true, 
-  passwordHash: true, 
-  twoFactorEnabled: true, 
-  twoFactorSecret: true, 
-  backupCodes: true, 
-  isActive: true, 
-  lastLoginAt: true, 
-  createdAt: true 
-}).extend({
-  password: z.string()
-    .min(8, "Password must be at least 8 characters")
-    .regex(/[0-9!@#$%^&*(),.?":{}|<>]/, "Password must contain at least one number or symbol"),
-});
-
-export const loginSchema = z.object({
-  email: z.string().email("Invalid email address"),
-  password: z.string().min(1, "Password is required"),
-  twoFactorCode: z.string().optional(),
-});
-
 export const insertSavedPlaceSchema = createInsertSchema(savedPlaces).omit({ id: true, savedAt: true });
 export const insertCategorySchema = createInsertSchema(categories).omit({ id: true });
 export const insertPlaceSchema = createInsertSchema(places).omit({
@@ -394,25 +378,10 @@ export const insertPasswordResetTokenSchema = createInsertSchema(passwordResetTo
 
 export const insertEmailVerificationTokenSchema = createInsertSchema(emailVerificationTokens).omit({ id: true, createdAt: true, usedAt: true });
 
-// Forgot password request schema
-export const forgotPasswordSchema = z.object({
-  email: z.string().email("Invalid email address"),
-});
-
-// Reset password schema
-export const resetPasswordSchema = z.object({
-  token: z.string().min(1, "Token is required"),
-  password: z.string()
-    .min(8, "Password must be at least 8 characters")
-    .regex(/[0-9!@#$%^&*(),.?":{}|<>]/, "Password must contain at least one number or symbol"),
-});
-
 // === TYPES ===
 
 export type User = typeof users.$inferSelect;
-export type InsertUser = z.infer<typeof insertUserSchema>;
-export type LoginInput = z.infer<typeof loginSchema>;
-export type SafeUser = Omit<User, 'passwordHash' | 'twoFactorSecret' | 'backupCodes' | 'failedLoginAttempts' | 'lockedUntil' | 'sessionVersion'>;
+export type SafeUser = Omit<User, 'passwordHash' | 'twoFactorSecret' | 'backupCodes' | 'failedLoginAttempts' | 'lockedUntil' | 'sessionVersion' | 'googleSub'>;
 
 export type SavedPlace = typeof savedPlaces.$inferSelect;
 export type InsertSavedPlace = z.infer<typeof insertSavedPlaceSchema>;
@@ -476,8 +445,6 @@ export type InsertReport = z.infer<typeof insertReportSchema>;
 
 export type PasswordResetToken = typeof passwordResetTokens.$inferSelect;
 export type InsertPasswordResetToken = z.infer<typeof insertPasswordResetTokenSchema>;
-export type ForgotPasswordInput = z.infer<typeof forgotPasswordSchema>;
-export type ResetPasswordInput = z.infer<typeof resetPasswordSchema>;
 
 export type EmailVerificationToken = typeof emailVerificationTokens.$inferSelect;
 export type InsertEmailVerificationToken = z.infer<typeof insertEmailVerificationTokenSchema>;

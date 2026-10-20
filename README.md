@@ -13,7 +13,7 @@ How the information is labelled, and the research behind it, is in
 ## Stack
 
 - **Client:** React 18 + TypeScript + Vite + Tailwind CSS + TanStack Query + wouter (routing)
-- **Server:** Express + TypeScript, session-based auth (bcrypt + optional TOTP 2FA)
+- **Server:** Express + TypeScript, session-based auth with Google sign-in (no passwords stored)
 - **Database:** Drizzle ORM against PostgreSQL, with an automatic SQLite fallback for local dev
   (see [DATABASE_SETUP.md](./DATABASE_SETUP.md))
 - **Shared:** `shared/schema.ts` and `shared/routes.ts` define the DB schema and typed API
@@ -34,11 +34,33 @@ For a real Postgres database, email sending, and other optional integrations, co
 [`.env.example`](./.env.example) to `.env.local` and fill in the values you need — see
 [DATABASE_SETUP.md](./DATABASE_SETUP.md) for step-by-step Postgres setup options.
 
-### Creating an admin account
+### Google sign-in
 
-```powershell
-$env:ADMIN_EMAIL = "you@example.com"; $env:ADMIN_PASSWORD = "choose-a-password"; npx tsx scripts/create-admin.ts
-```
+People sign in with their Google account; Open Way stores no passwords. Browsing and reporting a
+barrier work without signing in. To make sign-in work (locally or deployed):
+
+1. In [Google Cloud Console](https://console.cloud.google.com/), create a project (e.g. "Open Way").
+2. Open **Google Auth Platform** (APIs & Services → OAuth consent screen in older layouts) and set it
+   up: app name, a support email, audience **External**. Open Way only asks for `openid` and `email`.
+3. Under **Clients**, create an OAuth client of type **Web application**. Add this
+   **Authorized redirect URI** (it must match exactly):
+   - local: `http://localhost:5000/api/auth/google/callback`
+   - deployed: `https://<your-domain>/api/auth/google/callback` (add when you deploy)
+4. Put the values in `.env.local` (never commit it):
+   ```
+   GOOGLE_CLIENT_ID=...apps.googleusercontent.com
+   GOOGLE_CLIENT_SECRET=...
+   APP_BASE_URL=http://localhost:5000
+   ADMIN_EMAILS=you@gmail.com
+   ```
+5. Restart `npm run dev`, open http://localhost:5000/login (use `localhost`, not `127.0.0.1`, so it
+   matches the redirect URI) and choose "Sign in with Google". Accounts listed in `ADMIN_EMAILS`
+   become admins when they sign in.
+
+While the app is in Google's "Testing" mode, only the test users you add on the Audience page can sign
+in. Publish it to let anyone with a Google account sign in.
+
+To make an existing account an admin later: `npx tsx scripts/grant-admin.ts someone@example.com`.
 
 ## Scripts
 
@@ -74,7 +96,7 @@ server/           Express app: app.ts (middleware), routes.ts (HTTP endpoints), 
                   seed.ts + seed-data/, auth.ts, db.ts, index.ts (entrypoint)
 shared/           schema.ts (Drizzle schema), routes.ts (typed API contract),
                   accessibility.ts (feature catalog and evidence rules)
-scripts/          Admin/maintenance scripts (create-admin, seed-places, decode-legacy-entities,
+scripts/          Admin/maintenance scripts (grant-admin, seed-places, decode-legacy-entities,
                   remove-unknown-places)
 docs/             research.md, roadmap.md
 script/           Production build script (build.ts)
@@ -90,10 +112,11 @@ type-check, tests and a production build on pushes and pull requests to `main` a
 ## Security notes
 
 - Sessions require `SESSION_SECRET` (32+ chars) in production; the app fails to start without it.
-- 2FA secrets/backup codes are encrypted at rest; set `TWO_FACTOR_ENCRYPTION_KEY` separately from
-  `SESSION_SECRET` so rotating one doesn't invalidate the other.
-- Login attempts are rate-limited per IP and locked out per-account after repeated failures.
-- Set `APP_BASE_URL` in production so email links always point at your site.
+- No passwords are stored: Google verifies identity and email address. Sign-in uses PKCE and a
+  one-time state check, and only returns people to same-site pages.
+- Sign-in attempts are rate-limited per IP. "Sign out of other devices" (Profile) ends every other
+  session for an account.
+- Set `APP_BASE_URL` everywhere so the Google redirect address can't be changed by a forged Host header.
 - Uploaded photos are re-encoded to remove location and device metadata.
 - The dev server listens on 127.0.0.1 unless `HOST` is set.
 - See [.env.example](./.env.example) for the full list of configuration options.

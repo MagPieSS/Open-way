@@ -17,8 +17,8 @@ npm run test                 # vitest run (node env, **/*.test.ts)
 npm run db:push              # drizzle-kit push — Postgres only, requires DATABASE_URL
 npx vitest run server/auth.test.ts          # single test file
 npx vitest run -t "locks the account"       # single test by name
-# create/reset a local admin (writes directly to sqlite.db):
-$env:ADMIN_EMAIL="you@example.com"; $env:ADMIN_PASSWORD="pw"; npx tsx scripts/create-admin.ts
+# make an existing (Google) account an admin; or list it in ADMIN_EMAILS before signing in:
+npx tsx scripts/grant-admin.ts you@example.com
 ```
 
 No client-side test setup exists (vitest runs in `node` environment), so tests cover server modules and
@@ -70,14 +70,18 @@ makes env vars available, so nothing should read `process.env` config before tha
 
 ### Auth, session, CSRF
 
-Session-based auth (`openway.sid` cookie, bcrypt, optional TOTP 2FA in `server/auth.ts`; 2FA secrets and backup
-codes are encrypted with `TWO_FACTOR_ENCRYPTION_KEY`, falling back to a key derived from `SESSION_SECRET`).
-Postgres uses `connect-pg-simple`; without it sessions fall back to an in-memory store (dev only). Password
-sign-in is planned to be replaced by Google OAuth.
+Sign-in is Google only (`server/google-oauth.ts`: authorization-code flow with PKCE, `openid email` scopes,
+verified emails only); no passwords are stored. `GET /api/auth/google` stores `state`, the PKCE verifier and
+`returnTo` in the session and redirects to Google; `GET /api/auth/google/callback` checks the state, finds the
+user by `users.google_sub` (or links by verified email, or creates one), refuses banned users, grants admin to
+`ADMIN_EMAILS`, then calls `establishSession()`. The session cookie is `SameSite=Lax` because the callback is
+a cross-site navigation. Route tests replace Google with a stand-in (`server/test-setup.ts`; sign in with
+`signInWithGoogle()` from `test-helpers.ts`). Sessions use `connect-pg-simple` on Postgres, else an in-memory
+store (dev only). The `password_hash`, 2FA and lockout columns on `users` are unused leftovers.
 
 Sign-in goes through `establishSession()` in `routes.ts`, which regenerates the session and stores
 `users.session_version`. `requireAuth`/`requireAdmin` reload the user on every request and end the session if
-the user is banned, inactive, or their `session_version` changed (bumped by a password change). The CSRF
+the user is banned, inactive, or their `session_version` changed (bumped by "sign out everywhere"). The CSRF
 token is created on demand by `GET /api/csrf-token`, so anonymous reads don't create sessions.
 
 State-changing endpoints compose `requireAuth`/`requireAdmin` (defined in `routes.ts`) with `validateCsrf` and a
@@ -132,11 +136,9 @@ fonts, and respect `reducedMotion` in framer-motion animations.
 - Map tiles default to OpenStreetMap (`VITE_MAP_TILE_URL` overrides); CARTO's free tiles now need a key.
 - `server/septa.ts` proxies SEPTA's elevator outage feed with a 3-minute cache. A failed fetch is a 503 /
   "unavailable", never an empty list, because an empty list reads as "all elevators working".
-- Email (password reset, verification) goes through Resend in `server/email.ts`; without `RESEND_API_KEY` +
-  `RESET_EMAIL_FROM` it logs to the console in dev and silently no-ops in production.
 - `script/build.ts` keeps an explicit allowlist of server deps to bundle; everything else stays external. Adding
   a server dependency that must be bundled means adding it there.
 - `express-async-errors` is imported first in `app.ts` on purpose — Express 4 would otherwise crash the
   process on a rejected promise in an async handler. `uncaughtException` intentionally exits.
-- Path aliases `@/*` (client/src), `@shared/*`, `@assets/*` are declared in `tsconfig.json`, `vite.config.ts`,
+- Path aliases `@/*` (client/src) and `@shared/*` are declared in `tsconfig.json`, `vite.config.ts`,
   and `vitest.config.ts` — all three need updating if aliases change.

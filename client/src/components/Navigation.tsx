@@ -203,12 +203,11 @@ export function Navigation() {
                     </>
                   ) : (
                     <ul className="space-y-1">
-                      {menuLink("/login", "Sign In", LogIn, "link-nav-login")}
                       {menuLink(
-                        "/register",
-                        "Create Account",
-                        User,
-                        "link-nav-register",
+                        "/login",
+                        "Sign in with Google",
+                        LogIn,
+                        "link-nav-login",
                         "flex items-center gap-3 px-4 py-2.5 rounded-lg font-medium transition-colors w-full bg-primary text-primary-foreground hover:bg-primary/90",
                       )}
                     </ul>

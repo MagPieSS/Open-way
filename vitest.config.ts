@@ -20,6 +20,8 @@ export default defineConfig({
       // Route tests upload images; keep them out of the project's uploads/ folder.
       UPLOADS_DIR: path.join(os.tmpdir(), "openway-test-uploads"),
     },
+    // Stands in for Google sign-in (see the file for how test sign-in codes work).
+    setupFiles: ["server/test-setup.ts"],
     include: ["**/*.test.ts"],
     exclude: ["node_modules/**", "dist/**"],
   },

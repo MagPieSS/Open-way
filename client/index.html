@@ -10,8 +10,11 @@
     />
     <meta name="theme-color" content="#0f766e" />
     <link rel="manifest" href="/manifest.json" />
-    <link rel="icon" type="image/png" href="/favicon.png" />
-    <link rel="apple-touch-icon" href="/favicon.png" />
+    <!-- ?v=2: browsers keep a tab icon cached by URL long after the file changes, so the new
+         URL makes them fetch it again. Bump it whenever the icon changes again. -->
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg?v=2" />
+    <link rel="icon" type="image/png" href="/favicon.png?v=2" />
+    <link rel="apple-touch-icon" href="/favicon.png?v=2" />
     <meta property="og:type" content="website" />
     <meta property="og:site_name" content="Open Way" />
     <meta property="og:title" content="Open Way — Find Accessible Places" />

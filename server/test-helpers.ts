@@ -2,12 +2,8 @@
 // ephemeral port and talk to it over HTTP with a cookie-carrying client, so tests exercise the same
 // middleware stack (session, CSRF, validation) a browser does.
 import type { AddressInfo } from "net";
-import { eq } from "drizzle-orm";
 import { createApp } from "./app";
-import { db } from "./db";
-import { users } from "@shared/schema";
-
-export const TEST_PASSWORD = "correct-horse-battery-9";
+import { storage } from "./storage";
 
 export interface TestServer {
   baseUrl: string;
@@ -115,32 +111,36 @@ export function uniqueEmail(prefix = "user"): string {
   return `${prefix}-${Date.now()}-${emailCounter}@example.com`;
 }
 
-// Registers a new account (which also logs the client in) and returns its user record.
+// Signs the client in through the real /api/auth/google endpoints, with Google stood in for by
+// server/test-setup.ts. Returns the Location the callback redirected to.
+export async function signInWithGoogle(client: TestClient, email: string, options: { code?: string; returnTo?: string } = {}) {
+  const start = await client.get(`/api/auth/google${options.returnTo ? `?returnTo=${encodeURIComponent(options.returnTo)}` : ""}`);
+  if (start.status !== 302) throw new Error(`sign-in start failed: ${start.status}`);
+  const state = new URL(start.headers.get("location")!).searchParams.get("state") ?? "";
+  const code = options.code ?? `test-signin|${email}|google-${email}`;
+  const callback = await client.get(`/api/auth/google/callback?code=${encodeURIComponent(code)}&state=${state}`);
+  return callback.headers.get("location") ?? "";
+}
+
+// Creates an account by signing in with Google (which also signs the client in) and returns it.
 export async function registerUser(client: TestClient, options: { email?: string; displayName?: string } = {}) {
   const email = options.email ?? uniqueEmail();
-  const res = await client.post("/api/auth/register", {
-    email,
-    password: TEST_PASSWORD,
-    displayName: options.displayName,
-  });
-  if (res.status !== 201) {
-    throw new Error(`register failed: ${res.status} ${JSON.stringify(res.body)}`);
+  await signInWithGoogle(client, email);
+  if (options.displayName) {
+    const named = await client.patch("/api/profile/display-name", { displayName: options.displayName });
+    if (named.status !== 200) throw new Error(`setting display name failed: ${named.status}`);
   }
-  return { ...res.body.user, email } as { id: number; email: string; displayName: string | null };
+  const me = await client.get("/api/auth/me");
+  if (!me.body?.user) throw new Error("sign-in did not create a session");
+  return { ...me.body.user, email } as { id: number; email: string; displayName: string | null };
 }
 
 export async function makeAdmin(userId: number): Promise<void> {
-  // Raw SQL so this works under both drivers without depending on boolean binding.
-  await db.update(users).set({ isAdmin: sqlTrue() }).where(eq(users.id, userId));
+  await storage.setAdmin(userId);
 }
 
 export async function registerAdmin(client: TestClient) {
   const user = await registerUser(client, { displayName: "Test Admin" });
   await makeAdmin(user.id);
   return user;
-}
-
-function sqlTrue(): boolean {
-  // better-sqlite3 cannot bind JS booleans; Postgres can. Mirrors boolEq() in storage.ts.
-  return (process.env.DATABASE_URL?.startsWith("postgres") ? true : 1) as unknown as boolean;
 }

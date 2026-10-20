@@ -386,16 +386,11 @@ function SignPetitionForm({ petitionId, onSuccess }: { petitionId: number; onSuc
         <User className="w-12 h-12 mx-auto mb-4 text-muted-foreground" />
         <h3 className="font-bold text-lg mb-2">Sign In to Add Your Signature</h3>
         <p className="text-muted-foreground mb-4">
-          Create an account or sign in to add your voice to this petition.
+          Sign in with your Google account to add your voice to this petition.
         </p>
-        <div className="flex flex-col gap-2">
-          <Button asChild className="w-full" data-testid="button-login-to-sign">
-            <Link href="/login">Sign In</Link>
-          </Button>
-          <Button asChild variant="outline" className="w-full" data-testid="button-register-to-sign">
-            <Link href="/register">Create Account</Link>
-          </Button>
-        </div>
+        <Button asChild className="w-full" data-testid="button-login-to-sign">
+          <Link href={`/login?returnTo=${encodeURIComponent(window.location.pathname)}`}>Sign in with Google</Link>
+        </Button>
       </div>
     );
   }

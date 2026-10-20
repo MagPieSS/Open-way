@@ -62,6 +62,7 @@ if (useSqliteFallback) {
     `CREATE TABLE IF NOT EXISTS users (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       email TEXT UNIQUE NOT NULL,
+      google_sub TEXT,
       password_hash TEXT NOT NULL,
       display_name TEXT,
       two_factor_enabled BOOLEAN DEFAULT false,
@@ -362,12 +363,16 @@ if (useSqliteFallback) {
     ["failed_login_attempts", "INTEGER DEFAULT 0"],
     ["locked_until", "TIMESTAMP"],
     ["session_version", "INTEGER DEFAULT 0"],
+    ["google_sub", "TEXT"],
   ];
   for (const [column, definition] of userColumnMigrations) {
     if (!columnExists("users", column)) {
       sqlite.exec(`ALTER TABLE users ADD COLUMN ${column} ${definition}`);
     }
   }
+
+  // SQLite can't add a UNIQUE column with ALTER TABLE, so uniqueness comes from an index.
+  sqlite.exec(`CREATE UNIQUE INDEX IF NOT EXISTS users_google_sub_unique ON users (google_sub)`);
 
   const featureColumnMigrations: Array<[string, string]> = [
     ["status", "TEXT"],

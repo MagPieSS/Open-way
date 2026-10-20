@@ -1,14 +1,13 @@
 // Route-level tests for permission, validation and session rules. Each block here was written
 // against the pre-fix code first and failed there (see the commit that introduced it).
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
-import speakeasy from "speakeasy";
 import {
   startTestServer,
   TestClient,
   registerUser,
   registerAdmin,
   uniqueEmail,
-  TEST_PASSWORD,
+  signInWithGoogle,
   type TestServer,
 } from "./test-helpers";
 import { storage } from "./storage";
@@ -234,7 +233,7 @@ describe("events", () => {
 });
 
 describe("bans", () => {
-  it("block a banned user's open session and future logins", async () => {
+  it("block a banned user's open session and future sign-ins", async () => {
     const admin = client();
     await registerAdmin(admin);
     const target = client();
@@ -246,38 +245,32 @@ describe("bans", () => {
     const post = await target.post("/api/community/posts", { content: "Still here?" });
     expect(post.status).toBe(403);
 
-    const login = await client().post("/api/auth/login", { email: targetUser.email, password: TEST_PASSWORD });
-    expect(login.status).toBe(401);
-    expect(login.body.user).toBeUndefined();
+    const again = client();
+    expect(await signInWithGoogle(again, targetUser.email)).toBe("/login?error=suspended");
+    expect((await again.get("/api/auth/me")).body.user).toBeNull();
   });
 });
 
 describe("sessions", () => {
-  it("issue a new session id at login", async () => {
-    const setup = client();
-    const user = await registerUser(setup);
-
+  it("issue a new session id at sign-in", async () => {
     const c = client();
     await c.get("/api/csrf-token");
     const before = c.sessionCookie;
-    const login = await c.post("/api/auth/login", { email: user.email, password: TEST_PASSWORD });
-    expect(login.status).toBe(200);
+    await signInWithGoogle(c, uniqueEmail());
     expect(c.sessionCookie).not.toBe("");
     expect(c.sessionCookie).not.toBe(before);
+    expect((await c.get("/api/auth/me")).body.user).not.toBeNull();
   });
 
-  it("end other sessions when the password changes", async () => {
+  it("end on other devices with 'sign out everywhere', keeping this one", async () => {
+    const email = uniqueEmail();
     const first = client();
-    const user = await registerUser(first);
+    const user = await registerUser(first, { email });
     const second = client();
-    await second.post("/api/auth/login", { email: user.email, password: TEST_PASSWORD });
+    await signInWithGoogle(second, email);
     expect((await second.get("/api/auth/me")).body.user?.id).toBe(user.id);
 
-    const change = await first.post("/api/profile/change-password", {
-      currentPassword: TEST_PASSWORD,
-      newPassword: "another-strong-pass-7",
-    });
-    expect(change.status).toBe(200);
+    expect((await first.post("/api/profile/sign-out-everywhere")).status).toBe(200);
 
     expect((await second.get("/api/auth/me")).body.user).toBeNull();
     expect((await first.get("/api/auth/me")).body.user?.id).toBe(user.id);
@@ -286,36 +279,6 @@ describe("sessions", () => {
   it("are not created for anonymous page reads", async () => {
     const res = await client().get("/api/places");
     expect(res.headers.getSetCookie()).toHaveLength(0);
-  });
-
-  it("cannot be logged into with a cross-site form post", async () => {
-    const setup = client();
-    const user = await registerUser(setup);
-    const res = await client().raw(
-      "POST",
-      "/api/auth/login",
-      `email=${encodeURIComponent(user.email)}&password=${TEST_PASSWORD}`,
-      { "content-type": "application/x-www-form-urlencoded" },
-    );
-    expect(res.status).toBe(400);
-  });
-});
-
-describe("two-factor management needs re-authentication", () => {
-  it("will not restart setup while 2FA is on, and regenerating codes needs the password", async () => {
-    const c = client();
-    await registerUser(c);
-    const setup = await c.post("/api/auth/2fa/setup");
-    expect(setup.status).toBe(200);
-    const code = speakeasy.totp({ secret: setup.body.secret, encoding: "base32" });
-    expect((await c.post("/api/auth/2fa/confirm", { code })).status).toBe(200);
-
-    expect((await c.post("/api/auth/2fa/setup")).status).toBe(400);
-    expect((await c.post("/api/auth/2fa/regenerate-backup")).status).toBe(400);
-    expect((await c.post("/api/auth/2fa/regenerate-backup", { password: "wrong-password-1" })).status).toBe(400);
-    const ok = await c.post("/api/auth/2fa/regenerate-backup", { password: TEST_PASSWORD });
-    expect(ok.status).toBe(200);
-    expect(ok.body.backupCodes).toHaveLength(10);
   });
 });
 

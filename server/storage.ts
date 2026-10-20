@@ -3,7 +3,7 @@ import {
   places, reviews, signatures, categories, accessibilityFeatures,
   placeMedia, placeTips, petitions, petitionUpdates, events, resources,
   blogPosts, faqEntries, contactSubmissions, activityLog, partners,
-  users, savedPlaces, communityPosts, passwordResetTokens, reports, emailVerificationTokens, reviewVotes,
+  users, savedPlaces, communityPosts, reports, reviewVotes,
   accessibilityObservations,
   type Place, type InsertPlace,
   type Review, type InsertReview,
@@ -24,12 +24,9 @@ import {
   type Partner, type InsertPartner,
   type User, type SavedPlace, type InsertSavedPlace,
   type CommunityPost, type InsertCommunityPost,
-  type PasswordResetToken, type InsertPasswordResetToken,
-  type Report, type InsertReport,
-  type EmailVerificationToken, type InsertEmailVerificationToken,
+type Report, type InsertReport,
 } from "@shared/schema";
-import { eq, desc, sql, and, inArray, gte, lt } from "drizzle-orm";
-import { isAccountLocked, shouldLockAccount, LOCKOUT_DURATION_MS } from "./account-lockout";
+import { eq, desc, sql, and, inArray, gte } from "drizzle-orm";
 
 // The schema's boolean columns are defined via drizzle-orm/pg-core; under the Postgres driver
 // a raw JS boolean binds fine, but better-sqlite3 only accepts numbers/strings/bigints/buffers/null
@@ -154,18 +151,13 @@ export interface IStorage {
   // Users (Authentication)
   getUserByEmail(email: string): Promise<User | undefined>;
   getUserById(id: number): Promise<User | undefined>;
-  createUser(email: string, passwordHash: string, displayName?: string): Promise<User>;
+  getUserByGoogleSub(googleSub: string): Promise<User | undefined>;
+  createGoogleUser(email: string, googleSub: string): Promise<User>;
+  linkGoogleAccount(id: number, googleSub: string): Promise<void>;
+  setAdmin(id: number): Promise<void>;
   updateUserLastLogin(id: number): Promise<void>;
   updateUserDisplayName(id: number, displayName: string): Promise<User | undefined>;
-  updateUserPassword(id: number, passwordHash: string): Promise<void>;
-  updateUser2FA(id: number, enabled: boolean, secret?: string, backupCodes?: string[]): Promise<void>;
-  recordFailedLogin(id: number): Promise<void>;
-  resetFailedLogins(id: number): Promise<void>;
-  isAccountLocked(user: User): boolean;
-  setEmailVerified(id: number): Promise<void>;
-  createEmailVerificationToken(token: InsertEmailVerificationToken): Promise<EmailVerificationToken>;
-  getEmailVerificationToken(token: string): Promise<EmailVerificationToken | undefined>;
-  markEmailVerificationTokenUsed(tokenId: number): Promise<void>;
+  endAllSessions(id: number): Promise<void>;
 
   // Saved Places
   getSavedPlaces(userId: number): Promise<SavedPlace[]>;
@@ -178,14 +170,9 @@ export interface IStorage {
   getCommunityPosts(): Promise<CommunityPost[]>;
   createCommunityPost(post: InsertCommunityPost): Promise<CommunityPost>;
 
-  // Password Reset Tokens
-  createPasswordResetToken(token: InsertPasswordResetToken): Promise<PasswordResetToken>;
-  getPasswordResetToken(token: string): Promise<PasswordResetToken | undefined>;
-  markTokenUsed(tokenId: number): Promise<void>;
-  deleteExpiredTokens(): Promise<void>;
 
   // Admin User Management
-  getAllUsers(): Promise<Omit<User, 'passwordHash' | 'twoFactorSecret' | 'backupCodes' | 'sessionVersion'>[]>;
+  getAllUsers(): Promise<Omit<User, 'passwordHash' | 'twoFactorSecret' | 'backupCodes' | 'sessionVersion' | 'googleSub'>[]>;
   banUser(id: number, reason: string): Promise<void>;
   unbanUser(id: number): Promise<void>;
   getUserStats(userId: number): Promise<{ reviewCount: number; communityPostCount: number; mediaCount: number }>;
@@ -652,13 +639,29 @@ export class DatabaseStorage implements IStorage {
     return user;
   }
 
-  async createUser(email: string, passwordHash: string, displayName?: string): Promise<User> {
+  async getUserByGoogleSub(googleSub: string): Promise<User | undefined> {
+    const [user] = await db.select().from(users).where(eq(users.googleSub, googleSub));
+    return user;
+  }
+
+  // Google confirmed the address, so the account starts verified. No display name is copied from
+  // Google: names on reviews and posts are public, so people choose their own in Profile.
+  async createGoogleUser(email: string, googleSub: string): Promise<User> {
     const [newUser] = await db.insert(users).values({
       email: email.toLowerCase(),
-      passwordHash,
-      displayName,
+      googleSub,
+      passwordHash: "",
+      emailVerified: true,
     }).returning();
     return newUser;
+  }
+
+  async linkGoogleAccount(id: number, googleSub: string): Promise<void> {
+    await db.update(users).set({ googleSub, emailVerified: true }).where(eq(users.id, id));
+  }
+
+  async setAdmin(id: number): Promise<void> {
+    await db.update(users).set({ isAdmin: true }).where(eq(users.id, id));
   }
 
   async updateUserLastLogin(id: number): Promise<void> {
@@ -668,61 +671,6 @@ export class DatabaseStorage implements IStorage {
   async updateUserDisplayName(id: number, displayName: string): Promise<User | undefined> {
     const [updated] = await db.update(users).set({ displayName }).where(eq(users.id, id)).returning();
     return updated;
-  }
-
-  // Also bumps sessionVersion, which ends every existing session for the account.
-  async updateUserPassword(id: number, passwordHash: string): Promise<void> {
-    await db.update(users).set({
-      passwordHash,
-      sessionVersion: sql`COALESCE(${users.sessionVersion}, 0) + 1`,
-    }).where(eq(users.id, id));
-  }
-
-  async updateUser2FA(id: number, enabled: boolean, secret?: string, backupCodes?: string[]): Promise<void> {
-    await db.update(users).set({
-      twoFactorEnabled: enabled,
-      twoFactorSecret: secret,
-      backupCodes: backupCodes ? JSON.stringify(backupCodes) : null,
-    }).where(eq(users.id, id));
-  }
-
-  // Brute-force protection
-  async recordFailedLogin(id: number): Promise<void> {
-    const user = await this.getUserById(id);
-    if (!user) return;
-    const attempts = (user.failedLoginAttempts ?? 0) + 1;
-    const updates: { failedLoginAttempts: number; lockedUntil?: Date } = { failedLoginAttempts: attempts };
-    if (shouldLockAccount(attempts)) {
-      updates.lockedUntil = new Date(Date.now() + LOCKOUT_DURATION_MS);
-    }
-    await db.update(users).set(updates).where(eq(users.id, id));
-  }
-
-  async resetFailedLogins(id: number): Promise<void> {
-    await db.update(users).set({ failedLoginAttempts: 0, lockedUntil: null }).where(eq(users.id, id));
-  }
-
-  isAccountLocked(user: User): boolean {
-    return isAccountLocked(user.lockedUntil);
-  }
-
-  // Email verification
-  async setEmailVerified(id: number): Promise<void> {
-    await db.update(users).set({ emailVerified: true }).where(eq(users.id, id));
-  }
-
-  async createEmailVerificationToken(token: InsertEmailVerificationToken): Promise<EmailVerificationToken> {
-    const [newToken] = await db.insert(emailVerificationTokens).values(token).returning();
-    return newToken;
-  }
-
-  async getEmailVerificationToken(token: string): Promise<EmailVerificationToken | undefined> {
-    const [result] = await db.select().from(emailVerificationTokens).where(eq(emailVerificationTokens.token, token));
-    return result;
-  }
-
-  async markEmailVerificationTokenUsed(tokenId: number): Promise<void> {
-    await db.update(emailVerificationTokens).set({ usedAt: new Date() }).where(eq(emailVerificationTokens.id, tokenId));
   }
 
   // Saved Places
@@ -765,27 +713,8 @@ export class DatabaseStorage implements IStorage {
     return newPost;
   }
 
-  // Password Reset Tokens
-  async createPasswordResetToken(token: InsertPasswordResetToken): Promise<PasswordResetToken> {
-    const [newToken] = await db.insert(passwordResetTokens).values(token).returning();
-    return newToken;
-  }
-
-  async getPasswordResetToken(token: string): Promise<PasswordResetToken | undefined> {
-    const [resetToken] = await db.select().from(passwordResetTokens).where(eq(passwordResetTokens.token, token));
-    return resetToken;
-  }
-
-  async markTokenUsed(tokenId: number): Promise<void> {
-    await db.update(passwordResetTokens).set({ usedAt: new Date() }).where(eq(passwordResetTokens.id, tokenId));
-  }
-
-  async deleteExpiredTokens(): Promise<void> {
-    await db.delete(passwordResetTokens).where(lt(passwordResetTokens.expiresAt, new Date()));
-  }
-
   // Admin User Management
-  async getAllUsers(): Promise<Omit<User, 'passwordHash' | 'twoFactorSecret' | 'backupCodes' | 'sessionVersion'>[]> {
+  async getAllUsers(): Promise<Omit<User, 'passwordHash' | 'twoFactorSecret' | 'backupCodes' | 'sessionVersion' | 'googleSub'>[]> {
     const result = await db.select({
       id: users.id,
       email: users.email,
@@ -806,6 +735,13 @@ export class DatabaseStorage implements IStorage {
 
   async banUser(id: number, reason: string): Promise<void> {
     await db.update(users).set({ isBanned: true, banReason: reason }).where(eq(users.id, id));
+  }
+
+  // Bumps sessionVersion, which ends every existing session for the account on its next request.
+  async endAllSessions(id: number): Promise<void> {
+    await db.update(users).set({
+      sessionVersion: sql`COALESCE(${users.sessionVersion}, 0) + 1`,
+    }).where(eq(users.id, id));
   }
 
   async unbanUser(id: number): Promise<void> {

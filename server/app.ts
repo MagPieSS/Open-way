@@ -21,8 +21,11 @@ declare module "express-session" {
   interface SessionData {
     userId: number;
     email: string;
-    pending2FAUserId?: number;
     csrfToken?: string;
+    // Google sign-in in progress (see /api/auth/google).
+    oauthState?: string;
+    oauthCodeVerifier?: string;
+    oauthReturnTo?: string;
     // users.session_version at sign-in; see checkSessionUser() in routes.ts.
     sessionVersion?: number;
   }
@@ -69,7 +72,7 @@ export async function createApp(): Promise<{ app: Express; httpServer: Server }>
 
   if (isProduction && !process.env.APP_BASE_URL) {
     console.warn(
-      "[security] APP_BASE_URL is not set. Password-reset and verification links will be built from " +
+      "[security] APP_BASE_URL is not set. The Google sign-in redirect address will be built from " +
       "the request's Host header, which can be forged. Set APP_BASE_URL to the site's public address."
     );
   }
@@ -151,7 +154,10 @@ export async function createApp(): Promise<{ app: Express; httpServer: Server }>
       cookie: {
         secure: isProduction,
         httpOnly: true,
-        sameSite: "strict",
+        // Lax, not Strict: Google's redirect back to /api/auth/google/callback is a cross-site
+        // navigation, and a Strict cookie wouldn't be sent with it, so sign-in could never finish.
+        // Cross-site POSTs still don't carry the cookie, and writes also need the CSRF token.
+        sameSite: "lax",
         maxAge: 24 * 60 * 60 * 1000, // 24 hours
       },
     })
@@ -174,10 +180,6 @@ export async function createApp(): Promise<{ app: Express; httpServer: Server }>
 
   // Serve static uploads
   app.use("/uploads", express.static(uploadsDir(), { maxAge: "1d" }));
-
-  // Serve stock images from attached_assets folder
-  const assetsPath = path.resolve(process.cwd(), "attached_assets");
-  app.use("/assets", express.static(assetsPath));
 
   // Serve place images - try multiple paths for dev vs production
   const possibleImagePaths = [

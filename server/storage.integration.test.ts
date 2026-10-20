@@ -19,7 +19,7 @@ afterAll(async () => {
 
 describe("storage writes against the real SQLite fallback", () => {
   it("creates a user without crashing on boolean column defaults", async () => {
-    const user = await storage.createUser(testEmail, "not-a-real-hash");
+    const user = await storage.createGoogleUser(testEmail, `google-${testEmail}`);
     createdUserId = user.id;
     expect(user.email).toBe(testEmail);
     expect(user.isActive).toBeTruthy();
@@ -63,10 +63,12 @@ describe("storage writes against the real SQLite fallback", () => {
     expect(place?.lastCheckedAt?.getTime()).toBe(when.getTime());
   });
 
-  it("locks an account after repeated failed logins", async () => {
-    for (let i = 0; i < 5; i++) await storage.recordFailedLogin(createdUserId!);
+  it("records the last sign-in time as a real date", async () => {
+    const before = Date.now();
+    await storage.updateUserLastLogin(createdUserId!);
     const user = await storage.getUserById(createdUserId!);
-    expect(storage.isAccountLocked(user!)).toBe(true);
+    // Second precision in SQLite; allow for it.
+    expect(user?.lastLoginAt?.getTime()).toBeGreaterThanOrEqual(before - 1000);
   });
 
   it("deletes the place it created and cleans up related rows", async () => {
